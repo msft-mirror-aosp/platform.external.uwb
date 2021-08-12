@@ -1,0 +1,63 @@
+package {
+    default_applicable_licenses: ["external_uwb_license"],
+}
+
+cc_library_shared {
+    arch: {
+        arm: {
+            instruction_set: "arm",
+        },
+    },
+    name: "libuwb-uci",
+    static_libs: [
+        "android.system.suspend-V1-ndk",
+        "android.hardware.uwb-V1-ndk_platform",
+        "libbase",
+        "libchrome",
+        "libcutils",
+        "libpower",
+        "libutils",
+        "libz",
+    ],
+    shared_libs: [
+        "libbinder_ndk",
+        "liblog",
+    ],
+
+    cflags: [
+        "-DBUILDCFG=1",
+        "-Werror",
+        "-Wall",
+        "-Wextra",
+        "-DNXP_UWB_EXTNS=TRUE",
+        "-DNXP_UWB_DEBUG_LOG=TRUE",
+    ],
+    local_include_dirs: [
+        "include",
+        "log",
+        "gki/ulinux",
+        "gki/common",
+        "uci/include",
+        "uwa/include",
+        "uwb/include",
+    ],
+    srcs: [
+        "uwa/dm/*.cc",
+        "uwa/sys/*.cc",
+        "uwb/uci/*.cc",
+        "uwb/uwb/*.cc",
+        "adaptation/*.cc",
+        "gki/common/*.cc",
+        "gki/ulinux/*.cc",
+    ],
+    product_variables: {
+        debuggable: {
+            cflags: [
+                "-DDCHECK_ALWAYS_ON",
+            ],
+        },
+    },
+    apex_available: [
+        "com.android.uwb",
+    ],
+}
