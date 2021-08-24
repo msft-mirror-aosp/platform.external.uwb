@@ -40,6 +40,7 @@
 #include "uci_log.h"
 
 using IUwbV1_0 = aidl::android::hardware::uwb::IUwb;
+using IUwbChipV1_0 = aidl::android::hardware::uwb::IUwbChip;
 using UwbStatus = aidl::android::hardware::uwb::UwbStatus;
 using aidl::android::hardware::uwb::IUwbClientCallback;
 using aidl::android::hardware::uwb::BnUwbClientCallback;
@@ -59,8 +60,7 @@ std::mutex sIoctlMutex;
 
 tHAL_UWB_CBACK* UwbAdaptation::mHalCallback = NULL;
 tHAL_UWB_DATA_CBACK* UwbAdaptation::mHalDataCallback = NULL;
-std::shared_ptr<IUwbV1_0> mHal = nullptr;
-
+std::shared_ptr<IUwbChipV1_0> mHal = nullptr;
 
 namespace {
 void initializeGlobalDebugEnabledFlag() {
@@ -69,14 +69,28 @@ void initializeGlobalDebugEnabledFlag() {
   UCI_TRACE_I("%s: Debug log is enabled =%u", __func__, uwb_debug_enabled);
 }
 
-std::shared_ptr<IUwbV1_0> getHalService() {
+std::shared_ptr<IUwbChipV1_0> getHalService() {
   ::ndk::SpAIBinder binder(AServiceManager_getService(UWB_HAL_SERVICE_NAME.c_str()));
-  std::shared_ptr<IUwbV1_0> mService = IUwbV1_0::fromBinder(binder);
-  if (mService == nullptr) {
+  std::shared_ptr<IUwbV1_0> iUwb = IUwbV1_0::fromBinder(binder);
+  if (iUwb == nullptr) {
       ALOGE("Failed to connect to the AIDL HAL service.");
       return nullptr;
   }
-  return mService;
+  std::vector<std::string> chipNames;
+  ndk::ScopedAStatus status = iUwb->getChips(&chipNames);
+  if (!status.isOk() || chipNames.empty()) {
+    ALOGE("Failed to retrieve the HAL chip names");
+    return nullptr;
+  }
+  // TODO (b/197638976): We pick the first chip here. Need to fix this
+  // for supporting multiple chips in the future.
+  std::shared_ptr<IUwbChipV1_0> iUwbChip;
+  status = iUwb->getChip(chipNames.front(), &iUwbChip);
+  if (!status.isOk() || iUwbChip == nullptr) {
+    ALOGE("Failed to retrieve the HAL chip");
+    return nullptr;
+  }
+  return iUwbChip;
 }
 
 }  // namespace
@@ -368,7 +382,7 @@ void UwbAdaptation::HalWrite(__attribute__((unused)) uint16_t data_len,
   int ret;
   copy(&p_data[0], &p_data[data_len], back_inserter(data));
   if(mHal != nullptr) {
-    mHal->write(data, &ret);
+    mHal->sendUciMessage(data, &ret);
   } else {
     UCI_TRACE_E("mHal is NULL");
   }
