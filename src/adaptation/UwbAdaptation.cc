@@ -17,10 +17,10 @@
  *
  ******************************************************************************/
 
-#include <base/command_line.h>
 #include <cutils/properties.h>
 #include <algorithm>
 #include <pthread.h>
+#include <android-base/logging.h>
 #include <android/binder_ibinder.h>
 #include <android/binder_manager.h>
 #include <binder/IServiceManager.h>
