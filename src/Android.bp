@@ -2,22 +2,21 @@ package {
     default_applicable_licenses: ["external_uwb_license"],
 }
 
-cc_library_shared {
+cc_library_static {
     arch: {
         arm: {
             instruction_set: "arm",
         },
     },
     name: "libuwb-uci",
+    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
     static_libs: [
         "android.system.suspend-V1-ndk",
         "android.hardware.uwb-V1-ndk_platform",
         "libbase",
-        "libchrome",
         "libcutils",
         "libpower",
         "libutils",
-        "libz",
     ],
     shared_libs: [
         "libbinder_ndk",
