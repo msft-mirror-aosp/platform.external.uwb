@@ -39,6 +39,7 @@ cc_library_static {
         "uci/include",
         "uwa/include",
         "uwb/include",
+        "rust/adaptation"
     ],
     srcs: [
         "uwa/dm/*.cc",
@@ -59,4 +60,50 @@ cc_library_static {
     apex_available: [
         "com.android.uwb",
     ],
+}
+
+filegroup {
+    name: "libuwb_uci_rust_srcs",
+    srcs: [
+        "rust/adaptation/src/lib.rs",
+    ],
+}
+
+rust_library {
+    name: "libuwb_uci_rust",
+    crate_name: "uwb_uci_rust",
+    srcs: [
+        ":libuwb_uci_rust_srcs",
+    ],
+    rustlibs: [
+        "android.hardware.uwb-V1-rust",
+        "liblazy_static",
+        "libbinder_rs",
+        "libbinder_ndk_sys",
+    ],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+    ],
+    target: {
+        android: {
+            shared_libs: [
+                "libhidlbase",
+                "libutils",
+            ],
+        },
+    },
+}
+
+rust_test {
+    name: "libuwb_uci_rust_tests",
+    srcs: [
+        ":libuwb_uci_rust_srcs",
+    ],
+    test_suites: ["general-tests"],
+    auto_gen_config: true,
+    rustlibs:[
+        "libuwb_uci_rust",
+        "android.hardware.uwb-V1-rust",
+        ],
 }

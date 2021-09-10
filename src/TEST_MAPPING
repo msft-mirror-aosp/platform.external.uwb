@@ -1,0 +1,7 @@
+{
+  "presubmit": [
+    {
+      "name": "libuwb_uci_rust_tests"
+    }
+  ]
+}
