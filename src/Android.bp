@@ -80,6 +80,7 @@ rust_library {
         "liblazy_static",
         "libbinder_rs",
         "libbinder_ndk_sys",
+        "liblog_rust",
     ],
     shared_libs: [
         "libbase",
@@ -105,5 +106,6 @@ rust_test {
     rustlibs:[
         "libuwb_uci_rust",
         "android.hardware.uwb-V1-rust",
+        "liblog_rust",
         ],
 }
