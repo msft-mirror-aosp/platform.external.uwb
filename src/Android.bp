@@ -74,6 +74,7 @@ rust_library {
     crate_name: "uwb_uci_rust",
     srcs: [
         ":libuwb_uci_rust_srcs",
+        ":UwbGeneratedPackets_rust",
     ],
     rustlibs: [
         "android.hardware.uwb-V1-rust",
@@ -108,4 +109,36 @@ rust_test {
         "android.hardware.uwb-V1-rust",
         "liblog_rust",
         ],
+}
+
+rust_test {
+    name: "libuwb_uci_packet_tests",
+    srcs: [
+        ":UwbGeneratedPackets_rust",
+    ],
+    test_suites: ["general-tests"],
+    auto_gen_config: true,
+    proc_macros: ["libnum_derive"],
+    rustlibs:[
+        "libuwb_uci_rust",
+        "android.hardware.uwb-V1-rust",
+        "liblog_rust",
+        "libbytes",
+        "libnum_traits",
+        "libthiserror",
+        ],
+}
+
+genrule {
+    name: "UwbGeneratedPackets_rust",
+    tools: [
+        "bluetooth_packetgen",
+    ],
+    cmd: "$(location bluetooth_packetgen) --include=external/uwb/src --out=$(genDir) $(in) --rust",
+    srcs: [
+        "rust/uci_packets.pdl",
+    ],
+    out: [
+        "rust/uci_packets.rs",
+    ],
 }

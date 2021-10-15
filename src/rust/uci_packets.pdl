@@ -1,0 +1,223 @@
+little_endian_packets
+
+enum PacketBoundaryFlag : 1 {
+    COMPLETE = 0x00,
+    NOT_COMPLETE = 0x01,
+}
+
+enum MessageType : 3 {
+    COMMAND = 0x01,
+    RESPONSE = 0x02,
+    NOTIFICATION = 0x03,
+}
+
+enum GroupId : 4 {
+    CORE = 0x00,
+    SESSION_CONFIG = 0x01,
+    RANGING_SESSION_CONTROL = 0x02,
+    DATA_CONTROL = 0x03,
+    TEST = 0x0d,
+}
+
+enum OpCode : 6 {
+    CORE_DEVICE_RESET = 0x00,
+    CORE_DEVICE_STATUS_NTF = 0x01,
+    CORE_DEVICE_INFO = 0x02,
+    CORE_GET_CAPS_INFO = 0x03,
+    CORE_SET_CONFIG = 0x04,
+    CORE_GET_CONFIG = 0x05,
+    CORE_DEVICE_SUSPEND = 0x06,
+    CORE_GENERIC_ERROR_NTF = 0x07,
+
+    SESSION_INIT = 0x00,
+    SESSION_DEINIT = 0x01,
+    SESSION_STATUS_NTF = 0x02,
+    SESSION_SET_APP_CONFIG = 0x03,
+    SESSION_GET_APP_CONFIG = 0x04,
+    SESSION_GET_COUNT = 0x05,
+    SESSION_GET_STATE = 0x06,
+    SESSION_UPDATE_CONTROLLER_MULTICAST_LIST = 0x07,
+
+    RANGE_START = 0x00,
+    RANGE_STOP = 0x01,
+    RANGE_INTERVAL_UPDATE_REQ = 0x02,
+    RANGE_GET_RANGING_COUNT = 0x03,
+
+    APP_DATA_TX = 0x00,
+    APP_DATA_RX = 0x01,
+}
+
+enum StatusCode : 8 {
+    // Generic Status Codes
+    UCI_STATUS_OK = 0x00,
+    UCI_STATUS_REJECTED = 0x01,
+    UCI_STATUS_FAILED = 0x02,
+    UCI_STATUS_SYNTAX_ERROR = 0x03,
+    UCI_STATUS_INVALID_PARAM = 0x04,
+    UCI_STATUS_INVALID_RANGE = 0x05,
+    UCI_STATUS_INVALID_MSG_SIZE = 0x06,
+    UCI_STATUS_UNKNOWN_GID = 0x07,
+    UCI_STATUS_UNKNOWN_OID = 0x08,
+    UCI_STATUS_READ_ONLY = 0x09,
+    UCI_STATUS_COMMAND_RETRY = 0x0A,
+
+    // UWB Session Specific Status Codes
+    UCI_STATUS_SESSSION_NOT_EXIST = 0x11,
+    UCI_STATUS_SESSSION_DUPLICATE = 0x12,
+    UCI_STATUS_SESSSION_ACTIVE = 0x13,
+    UCI_STATUS_MAX_SESSSIONS_EXCEEDED = 0x14,
+    UCI_STATUS_SESSION_NOT_CONFIGURED = 0x15,
+
+    // UWB Ranging Session Specific Status Codes
+    UCI_STATUS_RANGING_TX_FAILED = 0x20,
+    UCI_STATUS_RANGING_RX_TIMEOUT = 0x21,
+    UCI_STATUS_RANGING_RX_PHY_DEC_FAILED = 0x22,
+    UCI_STATUS_RANGING_RX_PHY_TOA_FAILED = 0x23,
+    UCI_STATUS_RANGING_RX_PHY_STS_FAILED = 0x24,
+    UCI_STATUS_RANGING_RX_MAC_DEC_FAILED = 0x25,
+    UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED = 0x26,
+    UCI_STATUS_RANGING_RX_MAC_IE_MISSING = 0x27,
+
+    // UWB Data Session Specific Status Codes
+    UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
+    UCI_STATUS_DATA_RX_CRC_ERROR = 0x31,
+}
+
+enum CfgId : 8 {
+    DEVICE_STATE = 0x00,
+    LOW_POWER_MODE = 0x01,
+}
+
+enum DeviceState : 8 {
+    DEVICE_STATE_READY = 0x01,
+    DEVICE_STATE_ACTIVE = 0x02,
+    DEVICE_STATE_ERROR = 0xff,
+}
+
+packet UciControlMessage {
+    message_type: MessageType,
+    packet_boundary_flag: PacketBoundaryFlag,
+    group_id: GroupId,
+    _reserved_: 2,
+    opcode: OpCode,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet GetDeviceInfoCmd : UciControlMessage (message_type = COMMAND, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_DEVICE_INFO) {
+}
+
+test GetDeviceInfoCmd {
+    "\x01\x08\x00\x00",
+}
+
+packet GetDeviceInfoRsp : UciControlMessage (message_type = RESPONSE, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_DEVICE_INFO) {
+    status: StatusCode,
+    uci_version: 16,
+    mac_version: 16,
+    phy_version: 16,
+    uci_test_version: 16,
+    _count_(vendor_spec_info): 8,
+    vendor_spec_info: 8[],
+}
+
+test GetDeviceInfoRsp {
+    "\x02\x08\x00\x0b\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
+}
+
+packet GetCapsInfoCmd : UciControlMessage (message_type = COMMAND, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_GET_CAPS_INFO) {
+}
+
+test GetCapsInfoCmd {
+    "\x01\x0c\x00\x00",
+}
+
+struct TLV {
+    t: 8,
+    _count_(v): 8,
+    v: 8[],
+}
+
+packet GetCapsInfoRsp : UciControlMessage (message_type = RESPONSE, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_GET_CAPS_INFO) {
+    status: StatusCode,
+    _count_(tlvs): 8,
+    tlvs: TLV[],
+}
+
+test GetCapsInfoRsp {
+    "\x02\x0c\x00\x05\x00\x01\x00\x01\x01",
+}
+
+packet SetConfigCmd : UciControlMessage (message_type = COMMAND, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_SET_CONFIG) {
+    tlvs: TLV[],
+}
+
+test SetConfigCmd {
+    "\x01\x10\x00\x03\x00\x01\x01",
+}
+
+struct SetConfigRspPara {
+    cfg_id: CfgId,
+    status: StatusCode,
+}
+
+packet SetConfigRsp : UciControlMessage (message_type = RESPONSE, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_SET_CONFIG) {
+    status: StatusCode,
+    _count_(para): 8,
+    para: SetConfigRspPara[],
+}
+
+test SetConfigRsp {
+    "\x02\x10\x00\x04\x01\x01\x01\x01",
+}
+
+packet GetConfigCmd : UciControlMessage (message_type = COMMAND, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_GET_CONFIG) {
+    _count_(para): 8,
+    para: 8[],
+}
+
+test GetConfigCmd {
+    "\x01\x14\x00\x02\x01\x01",
+}
+
+packet GetConfigRsp : UciControlMessage (message_type = RESPONSE, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_GET_CONFIG) {
+    status: StatusCode,
+    _count_(tlvs): 8,
+    tlvs: TLV[]
+}
+
+test GetConfigRsp {
+    "\x02\x14\x00\x05\x01\x01\x00\x01\x01",
+}
+
+packet DeviceStatusNtf : UciControlMessage (message_type = NOTIFICATION, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_DEVICE_STATUS_NTF) {
+    device_state: DeviceState,
+}
+
+test DeviceStatusNtf {
+    "\x03\x04\x00\x01\x00",
+}
+
+packet DeviceResetCmd : UciControlMessage (message_type = COMMAND, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_DEVICE_RESET) {
+}
+
+test DeviceResetCmd {
+    "\x01\x00\x00\x00",
+}
+
+packet DeviceResetRsp : UciControlMessage (message_type = RESPONSE, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_DEVICE_RESET) {
+    status: StatusCode,
+}
+
+test DeviceResetRsp {
+    "\x01\x00\x00\x01\x00",
+}
+
+packet GenericError : UciControlMessage (message_type = NOTIFICATION, packet_boundary_flag = COMPLETE, group_id = CORE, opcode = CORE_GENERIC_ERROR_NTF) {
+    status: StatusCode,
+}
+
+test GenericError {
+    "\x03\x1c\x00\x01\x01",
+}
