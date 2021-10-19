@@ -21,14 +21,14 @@
  *  Protocol timer services (taken from bta ptim)
  *
  ******************************************************************************/
-#include "uwb_target.h"
-#include "uwb_gki.h"
 #include "uwa_sys_ptim.h"
-#include "uwa_sys.h"
-#include "uwa_sys_int.h"
-#include "uwb_osal_common.h"
 
 #include "uci_log.h"
+#include "uwa_sys.h"
+#include "uwa_sys_int.h"
+#include "uwb_gki.h"
+#include "uwb_osal_common.h"
+#include "uwb_target.h"
 
 /*******************************************************************************
 **
@@ -75,11 +75,12 @@ void uwa_sys_ptim_timer_update(tPTIM_CB* p_cb) {
     period_in_ticks = (uint32_t)(new_ticks_count - p_cb->last_gki_ticks);
   } else {
     period_in_ticks = (uint32_t)(((uint32_t)0xffffffff - p_cb->last_gki_ticks) +
-                                new_ticks_count + 1);
+                                 new_ticks_count + 1);
   }
 
   /* update timer list */
-  phUwb_GKI_update_timer_list(&p_cb->timer_queue, GKI_TICKS_TO_MS(period_in_ticks));
+  phUwb_GKI_update_timer_list(&p_cb->timer_queue,
+                              GKI_TICKS_TO_MS(period_in_ticks));
 
   p_cb->last_gki_ticks = new_ticks_count;
 
@@ -107,7 +108,7 @@ void uwa_sys_ptim_timer_update(tPTIM_CB* p_cb) {
   /* if timer list is empty stop periodic GKI timer */
   if (p_cb->timer_queue.p_first == NULL) {
     UCI_TRACE_I("ptim timer stop");
-    phUwb_GKI_stop_timer(p_cb->timer_id,0);
+    phUwb_GKI_stop_timer(p_cb->timer_id, 0);
   }
 }
 
@@ -157,6 +158,6 @@ void uwa_sys_ptim_stop_timer(tPTIM_CB* p_cb, TIMER_LIST_ENT* p_tle) {
   /* if timer list is empty stop periodic GKI timer */
   if (p_cb->timer_queue.p_first == NULL) {
     UCI_TRACE_I("ptim timer stop");
-    phUwb_GKI_stop_timer(p_cb->timer_id,0);
+    phUwb_GKI_stop_timer(p_cb->timer_id, 0);
   }
 }

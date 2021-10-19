@@ -20,8 +20,8 @@
 #ifndef UWA_SYS_H
 #define UWA_SYS_H
 
-#include "uwb_gki.h"
 #include "uwa_api.h"
+#include "uwb_gki.h"
 #include "uwb_target.h"
 
 /*****************************************************************************
@@ -44,7 +44,6 @@ typedef bool(tUWA_SYS_EVT_HDLR)(UWB_HDR* p_msg);
 
 /* disable function type */
 typedef void(tUWA_SYS_DISABLE)(void);
-
 
 typedef void(tUWA_SYS_ENABLE_CBACK)(void);
 

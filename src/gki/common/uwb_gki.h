@@ -20,8 +20,9 @@
 #define UWB_GKI_H
 
 #include <string>
-#include "uwb_target.h"
+
 #include "uwb_gki_target.h"
+#include "uwb_target.h"
 
 /* Error codes */
 #define GKI_SUCCESS 0x00
@@ -88,12 +89,12 @@
 #endif
 
 /* Timer list entry callback type
-*/
+ */
 struct TIMER_LIST_ENT;
 typedef void(TIMER_CBACK)(TIMER_LIST_ENT* p_tle);
 
 /* Define a timer list entry
-*/
+ */
 struct TIMER_LIST_ENT {
   TIMER_LIST_ENT* p_next;
   TIMER_LIST_ENT* p_prev;
@@ -105,7 +106,7 @@ struct TIMER_LIST_ENT {
 };
 
 /* Define a timer list queue
-*/
+ */
 typedef struct {
   TIMER_LIST_ENT* p_first;
   TIMER_LIST_ENT* p_last;
@@ -122,7 +123,7 @@ typedef struct {
 } BUFFER_Q;
 
 /* Task constants
-*/
+ */
 #ifndef TASKPTR
 typedef uint32_t (*TASKPTR)(uint32_t);
 #endif
@@ -135,42 +136,42 @@ typedef uint32_t (*TASKPTR)(uint32_t);
 */
 
 /* Task management
-*/
-extern uint8_t phUwb_GKI_create_task(TASKPTR, uint8_t, int8_t*, uint16_t*, uint16_t,
-                               void*, void*);
+ */
+extern uint8_t phUwb_GKI_create_task(TASKPTR, uint8_t, int8_t*, uint16_t*,
+                                     uint16_t, void*, void*);
 extern void phUwb_GKI_exit_task(uint8_t);
 extern uint8_t phUwb_GKI_get_taskid(void);
 extern void phUwb_GKI_init(void);
 extern void phUwb_GKI_run(void*);
 
 /* To send buffers and events between tasks
-*/
+ */
 extern uint8_t phUwb_GKI_isend_event(uint8_t, uint16_t);
 extern void* phUwb_GKI_read_mbox(uint8_t);
 extern void phUwb_GKI_send_msg(uint8_t, uint8_t, void*);
 extern uint8_t phUwb_GKI_send_event(uint8_t, uint16_t);
 
 /* To get and release buffers, change owner and get size
-*/
+ */
 extern void phUwb_GKI_freebuf(void*);
 extern void* phUwb_GKI_getbuf(uint16_t);
 extern uint16_t phUwb_GKI_get_buf_size(void*);
 extern void* phUwb_GKI_getpoolbuf(uint8_t);
 
 /* User buffer queue management
-*/
+ */
 extern void* phUwb_GKI_dequeue(BUFFER_Q*);
 extern void phUwb_GKI_enqueue(BUFFER_Q*, void*);
-extern void phUwb_GKI_init_q (BUFFER_Q *);
+extern void phUwb_GKI_init_q(BUFFER_Q*);
 
 /* Timer management
-*/
+ */
 extern void phUwb_GKI_add_to_timer_list(TIMER_LIST_Q*, TIMER_LIST_ENT*);
 extern uint32_t phUwb_GKI_get_tick_count(void);
 extern void phUwb_GKI_init_timer_list(TIMER_LIST_Q*);
 extern void phUwb_GKI_remove_from_timer_list(TIMER_LIST_Q*, TIMER_LIST_ENT*);
 extern void phUwb_GKI_start_timer(uint8_t, int32_t, bool);
-extern void phUwb_GKI_stop_timer(uint8_t,int);
+extern void phUwb_GKI_stop_timer(uint8_t, int);
 extern void phUwb_GKI_timer_update(uint32_t);
 extern uint16_t phUwb_GKI_update_timer_list(TIMER_LIST_Q*, uint32_t);
 extern uint32_t phUwb_GKI_get_remaining_ticks(TIMER_LIST_Q*, TIMER_LIST_ENT*);
@@ -179,26 +180,25 @@ extern uint16_t phUwb_GKI_wait(uint16_t, uint32_t);
 /* Start and Stop system time tick callback
  * true for start system tick if time queue is not empty
  * false to stop system tick if time queue is empty
-*/
+ */
 typedef void(SYSTEM_TICK_CBACK)(bool);
 
 /* Time queue management for system ticks
-*/
+ */
 extern void phUwb_GKI_timer_queue_register_callback(SYSTEM_TICK_CBACK*);
 
 /* Disable Interrupts, Enable Interrupts
-*/
+ */
 extern void phUwb_GKI_enable(void);
 extern void phUwb_GKI_disable(void);
 
 /* Allocate (Free) memory from an OS
-*/
+ */
 extern void* phUwb_GKI_os_malloc(uint32_t);
 extern void phUwb_GKI_os_free(void*);
 
 /* Exception handling
-*/
+ */
 extern void phUwb_GKI_exception(uint16_t, std::string);
-
 
 #endif

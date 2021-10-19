@@ -17,8 +17,8 @@
  ******************************************************************************/
 #ifndef ANDROID_HARDWARE_HAL_NXPUWB_V1_0_H
 #define ANDROID_HARDWARE_HAL_NXPUWB_V1_0_H
-#include <vector>
 #include <string>
+#include <vector>
 
 enum {
   HAL_UWB_STATUS_OK = 0x00,
@@ -27,8 +27,8 @@ enum {
 };
 
 enum NxpUwbHalStatus {
-    /** In case of an error, HCI network needs to be re-initialized */
-    HAL_STATUS_OK = 0x00,
+  /** In case of an error, HCI network needs to be re-initialized */
+  HAL_STATUS_OK = 0x00,
 };
 
 #endif  // ANDROID_HARDWARE_HAL_NXPUWB_V1_0_H

@@ -17,27 +17,27 @@
 
 #pragma once
 
+#include <config.h>
+
 #include <string>
 #include <vector>
-
-#include <config.h>
 
 #define NAME_UWB_CORE_DEVICE_DEFAULT_CONFIG "UWB_CORE_DEVICE_DEFAULT_CONFIG"
 #define NAME_UWB_LOW_POWER_MODE "UWB_LOW_POWER_MODE"
 #define NAME_UWB_DPD_ENTRY_TIMEOUT "UWB_DPD_ENTRY_TIMEOUT"
 
 #define CHECK_RETURN(condition, str, ret) \
-    do { \
-        if (condition) { \
-            return ret; \
-        } \
-    } while (0)
+  do {                                    \
+    if (condition) {                      \
+      return ret;                         \
+    }                                     \
+  } while (0)
 #define CHECK_RETURN_VOID(condition, str) \
-    do { \
-        if (condition) { \
-            return; \
-        } \
-    } while (0)
+  do {                                    \
+    if (condition) {                      \
+      return;                             \
+    }                                     \
+  } while (0)
 class UwbConfig {
  public:
   static bool hasKey(const std::string& key);
@@ -48,6 +48,7 @@ class UwbConfig {
   static unsigned getUnsigned(const std::string& key, unsigned default_value);
   static std::vector<uint8_t> getBytes(const std::string& key);
   static void clear();
+
  private:
   void loadConfig();
   static UwbConfig& getInstance();

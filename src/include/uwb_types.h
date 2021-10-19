@@ -142,15 +142,15 @@ typedef struct {
     u8 = (uint8_t)(*(p));      \
     (p) += 1;                  \
   }
-#define STREAM_TO_UINT16(u16, p)                                \
-  {                                                             \
+#define STREAM_TO_UINT16(u16, p)                                          \
+  {                                                                       \
     u16 = (uint16_t)((uint16_t)(*(p)) + (((uint16_t)(*((p) + 1))) << 8)); \
-    (p) += 2;                                                   \
+    (p) += 2;                                                             \
   }
-#define STREAM_TO_INT16(i16, p)                                \
-  {                                                             \
+#define STREAM_TO_INT16(i16, p)                                          \
+  {                                                                      \
     i16 = (int16_t)((uint16_t)(*(p)) + (((uint16_t)(*((p) + 1))) << 8)); \
-    (p) += 2;                                                   \
+    (p) += 2;                                                            \
   }
 #define STREAM_TO_UINT24(u32, p)                                    \
   {                                                                 \
