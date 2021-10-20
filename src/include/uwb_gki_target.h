@@ -112,7 +112,6 @@
 #define GKI_DELAY_STOP_SYS_TICK 10
 #endif
 
-
 /******************************************************************************
 **
 ** Buffer configuration

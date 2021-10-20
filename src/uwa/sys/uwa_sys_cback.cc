@@ -22,11 +22,10 @@
  *
  ******************************************************************************/
 
+#include "uci_log.h"
 #include "uwa_sys.h"
 #include "uwa_sys_int.h"
-
 #include "uwb_osal_common.h"
-#include "uci_log.h"
 
 /*******************************************************************************
 **
@@ -56,9 +55,8 @@ void uwa_sys_cback_reg_enable_complete(tUWA_SYS_ENABLE_CBACK* p_cback) {
 void uwa_sys_cback_notify_enable_complete(uint8_t id) {
   uwa_sys_cb.enable_cplt_flags |= (uint16_t)(0x0001 << id);
 
-  UCI_TRACE_I(
-      "enable_cplt_flags=0x%x, enable_cplt_mask=0x%x",
-      uwa_sys_cb.enable_cplt_flags, uwa_sys_cb.enable_cplt_mask);
+  UCI_TRACE_I("enable_cplt_flags=0x%x, enable_cplt_mask=0x%x",
+              uwa_sys_cb.enable_cplt_flags, uwa_sys_cb.enable_cplt_mask);
 
   if ((uwa_sys_cb.enable_cplt_flags == uwa_sys_cb.enable_cplt_mask) &&
       (uwa_sys_cb.p_enable_cback)) {

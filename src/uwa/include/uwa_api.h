@@ -17,7 +17,7 @@
  *
  ******************************************************************************/
 
- /******************************************************************************
+/******************************************************************************
  *
  *  This is the public interface file for UWA, NXP's UWB application
  *  layer for mobile phones/IOT devices.
@@ -26,9 +26,9 @@
 #ifndef UWA_API_H
 #define UWA_API_H
 
-#include "uwb_gki.h"
 #include "uci_defs.h"
 #include "uwb_api.h"
+#include "uwb_gki.h"
 #include "uwb_hal_api.h"
 #include "uwb_target.h"
 
@@ -60,7 +60,6 @@
 /* retry the command */
 #define UWA_STATUS_COMMAND_RETRY UCI_STATUS_COMMAND_RETRY
 
-
 /* UWA session Specific status code */
 /* session is not exist in UWBD */
 #define UWA_STATUS_SESSSION_NOT_EXIST UCI_STATUS_SESSSION_NOT_EXIST
@@ -73,27 +72,33 @@
 /*session not configured */
 #define UWA_STATUS_SESSION_NOT_CONFIGURED UCI_STATUS_SESSION_NOT_CONFIGURED
 
-
 /* UWA Ranging Session Specific Status Codes */
 /* Ranging tx failed */
 #define UWA_STATUS_RANGING_TX_FAILED UCI_STATUS_RANGING_TX_FAILED
 /* Ranging rx timeout */
 #define UWA_STATUS_RANGING_RX_TIMEOUT UCI_STATUS_RANGING_RX_TIMEOUT
 /* Physical layer decoding failed */
-#define UWA_STATUS_RANGING_RX_PHY_DEC_FAILED UCI_STATUS_RANGING_RX_PHY_DEC_FAILED
+#define UWA_STATUS_RANGING_RX_PHY_DEC_FAILED \
+  UCI_STATUS_RANGING_RX_PHY_DEC_FAILED
 /* Physical layer TOA failed */
-#define UWA_STATUS_RANGING_RX_PHY_TOA_FAILED UCI_STATUS_RANGING_RX_PHY_TOA_FAILED
+#define UWA_STATUS_RANGING_RX_PHY_TOA_FAILED \
+  UCI_STATUS_RANGING_RX_PHY_TOA_FAILED
 /* Physical layer STS failed */
-#define UWA_STATUS_RANGING_RX_PHY_STS_FAILED UCI_STATUS_RANGING_RX_PHY_STS_FAILED
+#define UWA_STATUS_RANGING_RX_PHY_STS_FAILED \
+  UCI_STATUS_RANGING_RX_PHY_STS_FAILED
 /* MAC decoding failed */
-#define UWA_STATUS_RANGING_RX_MAC_DEC_FAILED UCI_STATUS_RANGING_RX_MAC_DEC_FAILED
+#define UWA_STATUS_RANGING_RX_MAC_DEC_FAILED \
+  UCI_STATUS_RANGING_RX_MAC_DEC_FAILED
 /* MAC information decoding failed */
-#define UWA_STATUS_RANGING_RX_MAC_IE_DEC_FAILED UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED
+#define UWA_STATUS_RANGING_RX_MAC_IE_DEC_FAILED \
+  UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED
 /* MAC information missing */
-#define UWA_STATUS_RANGING_RX_MAC_IE_MISSING  UCI_STATUS_RANGING_RX_MAC_IE_MISSING
+#define UWA_STATUS_RANGING_RX_MAC_IE_MISSING \
+  UCI_STATUS_RANGING_RX_MAC_IE_MISSING
 
 /* UWA Data Session Specific Status Codes */
-#define UWA_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED
+#define UWA_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED \
+  UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED
 #define UWA_STATUS_DATA_RX_CRC_ERROR UCI_STATUS_DATA_RX_CRC_ERROR
 
 typedef uint8_t tUWA_STATUS;
@@ -104,55 +109,58 @@ typedef uint16_t tUWA_HANDLE;
 
 /* UWA_DM callback events */
 
-#define UWA_DM_EVENT      0x00
+#define UWA_DM_EVENT 0x00
 #define UWA_TEST_DM_EVENT 0xA0
 
-
 enum {
-  UWA_DM_ENABLE_EVT = UWA_DM_EVENT,            /* Result of UWA_Enable             */
-  UWA_DM_DISABLE_EVT, /* Result of UWA_Disable            */
-  UWA_DM_REGISTER_EXT_CB_EVT, /* Result of UWA Register Ext Callback */
-  UWA_DM_UWBS_RESP_TIMEOUT_EVT, /* Result of command response timeout */
-  UWA_DM_UWBS_ERROR_EVT, /* Result of UWB error ntf */
+  UWA_DM_ENABLE_EVT = UWA_DM_EVENT,    /* Result of UWA_Enable             */
+  UWA_DM_DISABLE_EVT,                  /* Result of UWA_Disable            */
+  UWA_DM_REGISTER_EXT_CB_EVT,          /* Result of UWA Register Ext Callback */
+  UWA_DM_UWBS_RESP_TIMEOUT_EVT,        /* Result of command response timeout */
+  UWA_DM_UWBS_ERROR_EVT,               /* Result of UWB error ntf */
   UWA_DM_CORE_GET_DEVICE_INFO_RSP_EVT, /* Result of get device info */
-  UWA_DM_CORE_SET_CONFIG_RSP_EVT, /* Result of UWA_SetCoreConfig          */
-  UWA_DM_CORE_GET_CONFIG_RSP_EVT, /* Result of UWA_GetCoreConfig          */
-  UWA_DM_DEVICE_RESET_RSP_EVT, /* Result of Core Dev Reset */
-  UWA_DM_DEVICE_STATUS_NTF_EVT, /* Result of device status ntf */
-  UWA_DM_CORE_GEN_ERR_STATUS_EVT, /* Result of core generic error status */
-  UWA_DM_SESSION_INIT_RSP_EVT, /* Result of session Init cmd */
-  UWA_DM_SESSION_DEINIT_RSP_EVT, /* Result of session Deinit cmd */
-  UWA_DM_SESSION_STATUS_NTF_EVT, /* Result of session NTF  */
-  UWA_DM_SESSION_SET_CONFIG_RSP_EVT, /* Result of setAppConfig */
-  UWA_DM_SESSION_GET_CONFIG_RSP_EVT, /* Result of getAppConfig */
-  UWA_DM_SESSION_GET_COUNT_RSP_EVT, /* Result of get session count */
-  UWA_DM_SESSION_GET_STATE_RSP_EVT, /* Result of get session count */
-  UWA_DM_RANGE_START_RSP_EVT, /* Result of range start cmd */
-  UWA_DM_RANGE_STOP_RSP_EVT, /* Result of range start cmd */
-  UWA_DM_RANGE_DATA_NTF_EVT, /* Result of range data ntf */
-  UWA_DM_GET_RANGE_COUNT_RSP_EVT, /* Result of range get count */
-  UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT, /* Results of UWA_GetCoreDeviceCapability  */
-  UWA_DM_SESSION_MC_LIST_UPDATE_RSP_EVT, /* Session Update Multicast List resp event*/
-  UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT, /* Session Update Multicast List ntf event*/
-  UWA_DM_SEND_BLINK_DATA_RSP_EVT, /* Blink Data Tx event*/
-  UWA_DM_SEND_BLINK_DATA_NTF_EVT, /* Blink Data Tx ntf event*/
-  UWA_DM_CONFORMANCE_NTF_EVT,     /* Conformance Test Ntf Event */
+  UWA_DM_CORE_SET_CONFIG_RSP_EVT,     /* Result of UWA_SetCoreConfig          */
+  UWA_DM_CORE_GET_CONFIG_RSP_EVT,     /* Result of UWA_GetCoreConfig          */
+  UWA_DM_DEVICE_RESET_RSP_EVT,        /* Result of Core Dev Reset */
+  UWA_DM_DEVICE_STATUS_NTF_EVT,       /* Result of device status ntf */
+  UWA_DM_CORE_GEN_ERR_STATUS_EVT,     /* Result of core generic error status */
+  UWA_DM_SESSION_INIT_RSP_EVT,        /* Result of session Init cmd */
+  UWA_DM_SESSION_DEINIT_RSP_EVT,      /* Result of session Deinit cmd */
+  UWA_DM_SESSION_STATUS_NTF_EVT,      /* Result of session NTF  */
+  UWA_DM_SESSION_SET_CONFIG_RSP_EVT,  /* Result of setAppConfig */
+  UWA_DM_SESSION_GET_CONFIG_RSP_EVT,  /* Result of getAppConfig */
+  UWA_DM_SESSION_GET_COUNT_RSP_EVT,   /* Result of get session count */
+  UWA_DM_SESSION_GET_STATE_RSP_EVT,   /* Result of get session count */
+  UWA_DM_RANGE_START_RSP_EVT,         /* Result of range start cmd */
+  UWA_DM_RANGE_STOP_RSP_EVT,          /* Result of range start cmd */
+  UWA_DM_RANGE_DATA_NTF_EVT,          /* Result of range data ntf */
+  UWA_DM_GET_RANGE_COUNT_RSP_EVT,     /* Result of range get count */
+  UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT, /* Results of UWA_GetCoreDeviceCapability
+                                       */
+  UWA_DM_SESSION_MC_LIST_UPDATE_RSP_EVT, /* Session Update Multicast List resp
+                                            event*/
+  UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT, /* Session Update Multicast List ntf
+                                            event*/
+  UWA_DM_SEND_BLINK_DATA_RSP_EVT,        /* Blink Data Tx event*/
+  UWA_DM_SEND_BLINK_DATA_NTF_EVT,        /* Blink Data Tx ntf event*/
+  UWA_DM_CONFORMANCE_NTF_EVT,            /* Conformance Test Ntf Event */
 };
 
 /* UWA_DM callback events for UWB RF events */
 
 enum {
-  UWA_DM_TEST_SET_CONFIG_RSP_EVT = UWA_TEST_DM_EVENT, /* Results of set test config event*/
-  UWA_DM_TEST_GET_CONFIG_RSP_EVT, /* Results of get test config event*/
+  UWA_DM_TEST_SET_CONFIG_RSP_EVT =
+      UWA_TEST_DM_EVENT,            /* Results of set test config event*/
+  UWA_DM_TEST_GET_CONFIG_RSP_EVT,   /* Results of get test config event*/
   UWA_DM_TEST_STOP_SESSION_RSP_EVT, /* Result of test session stop response */
-  UWA_DM_TEST_PERIODIC_TX_RSP_EVT, /* Results of periodic tx response event*/
-  UWA_DM_TEST_PERIODIC_TX_NTF_EVT ,  /* Results of periodic tx test NTF event*/
-  UWA_DM_TEST_PER_RX_RSP_EVT, /* Results of per rx response event*/
-  UWA_DM_TEST_PER_RX_NTF_EVT, /* Results of per rx test NTF  event*/
-  UWA_DM_TEST_LOOPBACK_RSP_EVT, /* Rf Loop Back Test resp event*/
-  UWA_DM_TEST_LOOPBACK_NTF_EVT, /* Rf Loop Back Test NTF event*/
-  UWA_DM_TEST_RX_RSP_EVT, /* Rf RX Test resp event*/
-  UWA_DM_TEST_RX_NTF_EVT /* Rf RX Test ntf event*/
+  UWA_DM_TEST_PERIODIC_TX_RSP_EVT,  /* Results of periodic tx response event*/
+  UWA_DM_TEST_PERIODIC_TX_NTF_EVT,  /* Results of periodic tx test NTF event*/
+  UWA_DM_TEST_PER_RX_RSP_EVT,       /* Results of per rx response event*/
+  UWA_DM_TEST_PER_RX_NTF_EVT,       /* Results of per rx test NTF  event*/
+  UWA_DM_TEST_LOOPBACK_RSP_EVT,     /* Rf Loop Back Test resp event*/
+  UWA_DM_TEST_LOOPBACK_NTF_EVT,     /* Rf Loop Back Test NTF event*/
+  UWA_DM_TEST_RX_RSP_EVT,           /* Rf RX Test resp event*/
+  UWA_DM_TEST_RX_NTF_EVT            /* Rf RX Test ntf event*/
 };
 
 /* UCI Parameter IDs */
@@ -160,12 +168,12 @@ typedef uint8_t tUWA_PMID;
 
 /* Data for UWA_DM_DEVICE_STATUS_NTF_EVT */
 typedef struct {
-  uint8_t status;     /* device status             */
+  uint8_t status; /* device status             */
 } tUWA_DEVICE_STATUS_NTF;
 
 /* Data for UWA_DM_CORE_GEN_ERR_STATUS_EVT */
 typedef struct {
-  uint8_t status;     /* generic error             */
+  uint8_t status; /* generic error             */
 } tUWA_CORE_GEN_ERR_STATUS_NTF;
 
 /* the data type associated with UWB_GET_DEVICE_INFO_REVT */
@@ -177,7 +185,7 @@ typedef struct {
   uint16_t uciTest_version;
   uint8_t vendor_info_len;
   uint8_t vendor_info[UCI_VENDOR_INFO_MAX_SIZE];
-}tUWA_GET_DEVICE_INFO_REVT;
+} tUWA_GET_DEVICE_INFO_REVT;
 
 /* Data for UWA_DM_CORE_SET_CONFIG_RSP_EVT */
 typedef struct {
@@ -189,34 +197,36 @@ typedef struct {
 
 /* Data for UWA_DM_CORE_GET_CONFIG_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;     /* UWA_STATUS_OK if successful              */
+  tUWA_STATUS status; /* UWA_STATUS_OK if successful              */
   uint8_t no_of_ids;
-  uint8_t param_tlvs[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte stream) */
-  uint16_t tlv_size;      /* The length of TLV                        */
+  uint8_t param_tlvs[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte
+                                               stream) */
+  uint16_t tlv_size; /* The length of TLV                        */
 } tUWA_GET_CORE_CONFIG;
 
 /* Data for UWA_DM_DEVICE_RESET_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;                   /* UWA_STATUS_OK if successful  */
+  tUWA_STATUS status; /* UWA_STATUS_OK if successful  */
 } tUWA_DEVICE_RESET;
 
 /* Data for UWA_DM_SESSION_GET_COUNT_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;     /* device status             */
+  tUWA_STATUS status; /* device status             */
   uint8_t count;      /* active session count      */
 } tUWA_SESSION_GET_COUNT;
 
 /* Data for UWA_DM_SESSION_GET_STATE_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;     /* device status             */
-  uint8_t session_state;      /* current session state      */
+  tUWA_STATUS status;    /* device status             */
+  uint8_t session_state; /* current session state      */
 } tUWA_SESSION_GET_STATE;
 
 /* Data for UWA_DM_SESSION_GET_CONFIG_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;      /* UWA_STATUS_OK if successful              */
-  uint8_t tlv_size;        /* The length of TLV                        */
-  uint8_t param_tlvs[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte stream) */
+  tUWA_STATUS status; /* UWA_STATUS_OK if successful              */
+  uint8_t tlv_size;   /* The length of TLV                        */
+  uint8_t param_tlvs[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte
+                                               stream) */
 } tUWA_GET_SESSION_APP_CONFIG;
 
 /* Data for UWA_DM_SESSION_SET_CONFIG_RSP_EVT */
@@ -231,13 +241,13 @@ typedef struct {
   uint32_t session_id;
   uint8_t state;
   uint8_t reason_code;
-}tUWA_SESSION_STATUS_NTF_REVT;
+} tUWA_SESSION_STATUS_NTF_REVT;
 
 /* Data for UWA_DM_RANGE_DATA_NTF_EVT */
 /* the data type associated with UWB_RANGE_DATA_REVT */
 typedef struct {
   uint8_t mac_addr[8];
-  uint8_t  status;
+  uint8_t status;
   uint8_t nLos; /* non line of sight */
   uint16_t distance;
   uint16_t aoa_azimuth;
@@ -254,25 +264,26 @@ typedef struct {
 
 typedef struct {
   uint8_t mac_addr[8];
-  uint8_t  frame_type;
+  uint8_t frame_type;
   uint8_t nLos; /* non line of sight */
   uint16_t aoa_azimuth;
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
   uint64_t timeStamp;
-  uint32_t blink_frame_number; /* blink frame number received from tag/master anchor */
+  uint32_t blink_frame_number; /* blink frame number received from tag/master
+                                  anchor */
   uint8_t rfu[12];
-  uint8_t device_info_size;  /* Size of Device Specific Information */
-  uint8_t* device_info;  /* Device Specific Information */
+  uint8_t device_info_size;    /* Size of Device Specific Information */
+  uint8_t* device_info;        /* Device Specific Information */
   uint8_t blink_payload_size;  /* Size of Blink Payload Data */
-  uint8_t* blink_payload_data;  /* Blink Payload Data */
+  uint8_t* blink_payload_data; /* Blink Payload Data */
 } tUWA_TDoA_RANGING_MEASR;
 
 typedef union {
   tUWA_TWR_RANGING_MEASR twr_range_measr[MAX_NUM_RESPONDERS];
   tUWA_TDoA_RANGING_MEASR tdoa_range_measr[MAX_NUM_OF_TDOA_MEASURES];
-}tUWA_RANGING_MEASR;
+} tUWA_RANGING_MEASR;
 
 typedef struct {
   uint16_t ranging_data_len;
@@ -286,20 +297,21 @@ typedef struct {
   uint8_t reserved[8];
   uint8_t no_of_measurements;
   tUWA_RANGING_MEASR ranging_measures;
-}tUWA_RANGE_DATA_NTF;
+} tUWA_RANGE_DATA_NTF;
 
 /* the data type associated with UWB_GET_RANGE_COUNT_REVT */
 typedef struct {
   uint8_t status;
   uint32_t count;
-}tUWA_RANGE_GET_RNG_COUNT_REVT;
+} tUWA_RANGE_GET_RNG_COUNT_REVT;
 
 /* Data for UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT */
 typedef struct {
-  tUWA_STATUS status;     /* UWA_STATUS_OK if successful              */
+  tUWA_STATUS status; /* UWA_STATUS_OK if successful              */
   uint8_t no_of_tlvs;
-  uint8_t tlv_buffer[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte stream) */
-  uint16_t tlv_buffer_len;      /* The length of TLV                        */
+  uint8_t tlv_buffer[UCI_MAX_PAYLOAD_SIZE]; /* TLV (Parameter ID-Len-Value byte
+                                               stream) */
+  uint16_t tlv_buffer_len; /* The length of TLV                        */
 } tUWA_GET_CORE_DEVICE_CAPABILITY;
 
 /* the data type associated with UWB_SESSION_UPDATE_MULTICAST_LIST_NTF */
@@ -307,45 +319,55 @@ typedef struct {
   uint32_t session_id;
   uint8_t remaining_list;
   uint8_t no_of_controlees;
+  uint16_t controlee_mac_address_list[MAX_NUM_CONTROLLEES];
   uint32_t subsession_id_list[MAX_NUM_CONTROLLEES];
-  uint8_t  status_list[MAX_NUM_CONTROLLEES];
+  uint8_t status_list[MAX_NUM_CONTROLLEES];
 } tUWA_SESSION_UPDATE_MULTICAST_LIST_NTF;
 
 /* the data type associated with UWB_BLINK_DATA_TX_NTF */
 typedef struct {
-  uint8_t repetition_count_status;   /* Status to indicate Repetition Count is exhausted */
+  uint8_t repetition_count_status; /* Status to indicate Repetition Count is
+                                      exhausted */
 } tUWA_SEND_BLINK_DATA_NTF;
 
 /* the data type associated with UWB_CONFORMANCE_TEST_DATA */
 typedef struct {
   uint16_t length;
-  uint8_t data[CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH ];
-}tUWA_CONFORMANCE_TEST_DATA;
-
+  uint8_t data[CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH];
+} tUWA_CONFORMANCE_TEST_DATA;
 
 /* Union of all DM callback structures */
 typedef union {
-  tUWA_STATUS status;         /* UWA_DM_ENABLE_EVT        */
+  tUWA_STATUS status;                /* UWA_DM_ENABLE_EVT        */
   tUWA_DEVICE_STATUS_NTF dev_status; /*UWA_DM_DEVICE_STATUS_NTF_EVT */
-  tUWA_CORE_GEN_ERR_STATUS_NTF sCore_gen_err_status; /*UWA_DM_CORE_GEN_ERR_STATUS_EVT */
+  tUWA_CORE_GEN_ERR_STATUS_NTF
+      sCore_gen_err_status;        /*UWA_DM_CORE_GEN_ERR_STATUS_EVT */
   tUWA_DEVICE_RESET sDevice_reset; /* UWA_DM_DEVICE_RESET_RSP_EVT    */
-  tUWA_GET_DEVICE_INFO_REVT sGet_device_info; /* UWA_DM_CORE_GET_DEVICE_INFO_RSP_EVT */
+  tUWA_GET_DEVICE_INFO_REVT
+      sGet_device_info; /* UWA_DM_CORE_GET_DEVICE_INFO_RSP_EVT */
   tUWA_SET_CORE_CONFIG sCore_set_config; /* UWA_DM_CORE_SET_CONFIG_RSP_EVT    */
   tUWA_GET_CORE_CONFIG sCore_get_config; /* UWA_DM_CORE_GET_CONFIG_RSP_EVT    */
-  tUWA_GET_CORE_CONFIG sApp_get_config; /* UWA_DM_SESSION_GET_CONFIG_RSP_EVT    */
-  tUWA_SET_CORE_CONFIG sApp_set_config; /* UWA_DM_SESSION_SET_CONFIG_RSP_EVT    */
-  tUWA_SESSION_STATUS_NTF_REVT sSessionStatus;  /* UWA_DM_SESSION_STATUS_NTF_EVT */
-  tUWA_SESSION_GET_COUNT sGet_session_cnt; /* UWA_DM_SESSION_GET_COUNT_RSP_EVT    */
-  tUWA_SESSION_GET_STATE sGet_session_state; /* UWA_DM_SESSION_GET_STATE_RSP_EVT    */
+  tUWA_GET_CORE_CONFIG
+      sApp_get_config; /* UWA_DM_SESSION_GET_CONFIG_RSP_EVT    */
+  tUWA_SET_CORE_CONFIG
+      sApp_set_config; /* UWA_DM_SESSION_SET_CONFIG_RSP_EVT    */
+  tUWA_SESSION_STATUS_NTF_REVT
+      sSessionStatus; /* UWA_DM_SESSION_STATUS_NTF_EVT */
+  tUWA_SESSION_GET_COUNT
+      sGet_session_cnt; /* UWA_DM_SESSION_GET_COUNT_RSP_EVT    */
+  tUWA_SESSION_GET_STATE
+      sGet_session_state;          /* UWA_DM_SESSION_GET_STATE_RSP_EVT    */
   tUWA_RANGE_DATA_NTF sRange_data; /*UWA_DM_RANGE_DATA_NTF_EVT */
-  tUWA_RANGE_GET_RNG_COUNT_REVT sGet_range_cnt; /*UWA_DM_GET_RANGE_COUNT_RSP_EVT */
-  tUWA_GET_CORE_DEVICE_CAPABILITY sGet_device_capability; /*UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT*/
-  tUWA_SESSION_UPDATE_MULTICAST_LIST_NTF sMulticast_list_ntf; /*UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT*/
+  tUWA_RANGE_GET_RNG_COUNT_REVT
+      sGet_range_cnt; /*UWA_DM_GET_RANGE_COUNT_RSP_EVT */
+  tUWA_GET_CORE_DEVICE_CAPABILITY
+      sGet_device_capability; /*UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT*/
+  tUWA_SESSION_UPDATE_MULTICAST_LIST_NTF
+      sMulticast_list_ntf; /*UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT*/
   tUWA_SEND_BLINK_DATA_NTF sBlink_data_ntf; /*UWA_DM_SEND_BLINK_DATA_NTF_EVT*/
   tUWA_CONFORMANCE_TEST_DATA sConformance_ntf; /* UWA_DM_CONFORMANCE_NTF_EVT */
-  void* p_vs_evt_data;          /* Vendor-specific evt data */
+  void* p_vs_evt_data;                         /* Vendor-specific evt data */
 } tUWA_DM_CBACK_DATA;
-
 
 /* Data for UWA_DM_RF_TEST_DATA_EVT */
 typedef struct {
@@ -355,17 +377,16 @@ typedef struct {
 
 /* Union of all DM callback structures */
 typedef union {
-  tUWA_STATUS status;         /*  Response status for RF Test commands        */
+  tUWA_STATUS status; /*  Response status for RF Test commands        */
   tUWA_GET_CORE_CONFIG sTest_get_config; /* UWA_DM_TEST_GET_CONFIG_RSP_EVT    */
   tUWA_SET_CORE_CONFIG sTest_set_config; /* UWA_DM_TEST_SET_CONFIG_RSP_EVT    */
-  tUWA_RF_TEST_DATA rf_test_data; /*UWA_DM_RF_TEST_DATA_EVT*/
+  tUWA_RF_TEST_DATA rf_test_data;        /*UWA_DM_RF_TEST_DATA_EVT*/
 } tUWA_DM_TEST_CBACK_DATA;
-
 
 /* UWA_DM callback */
 typedef void(tUWA_DM_CBACK)(uint8_t event, tUWA_DM_CBACK_DATA* p_data);
-typedef void(tUWA_DM_TEST_CBACK)(uint8_t event, tUWA_DM_TEST_CBACK_DATA* p_data);
-
+typedef void(tUWA_DM_TEST_CBACK)(uint8_t event,
+                                 tUWA_DM_TEST_CBACK_DATA* p_data);
 
 /* UWA_RAW_CMD callback */
 typedef void(tUWA_RAW_CMD_CBACK)(uint8_t event, uint16_t param_len,
@@ -407,7 +428,8 @@ extern void UWA_Init(tHAL_UWB_ENTRY* p_hal_entry_tbl);
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_Enable(tUWA_DM_CBACK* p_dm_cback, tUWA_DM_TEST_CBACK* p_dm_test_cback);
+extern tUWA_STATUS UWA_Enable(tUWA_DM_CBACK* p_dm_cback,
+                              tUWA_DM_TEST_CBACK* p_dm_test_cback);
 
 /*******************************************************************************
 **
@@ -442,23 +464,23 @@ extern tUWA_STATUS UWA_GetDeviceInfo();
 ** Function         UWA_SetCoreConfig
 **
 ** Description      Set the configuration parameters to UWBS. The result is
-**                  reported with an UWA_DM_CORE_SET_CONFIG_RSP_EVT in the tUWA_DM_CBACK
-**                  callback.
+**                  reported with an UWA_DM_CORE_SET_CONFIG_RSP_EVT in the
+**                  tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
 extern tUWA_STATUS UWA_SetCoreConfig(tUWA_PMID param_id, uint8_t length,
-                                 uint8_t* p_data);
+                                     uint8_t* p_data);
 
 /*******************************************************************************
 **
 ** Function         UWA_GetCoreConfig
 **
 ** Description      Get the configuration parameters from UWBS. The result is
-**                  reported with an UWA_DM_CORE_GET_CONFIG_RSP_EVT in the tUWA_DM_CBACK
-**                  callback.
+**                  reported with an UWA_DM_CORE_GET_CONFIG_RSP_EVT in the
+**                  tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
@@ -471,8 +493,8 @@ extern tUWA_STATUS UWA_GetCoreConfig(uint8_t num_ids, tUWA_PMID* p_param_ids);
 ** Function         UWA_SendDeviceReset
 **
 ** Description      Send Device Reset Command to UWBS. The result is
-**                  reported with an UWA_DM_DEVICE_RESET_RSP_EVT in the tUWA_DM_CBACK
-**                  callback.
+**                  reported with an UWA_DM_DEVICE_RESET_RSP_EVT in the
+**                  tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
@@ -495,7 +517,8 @@ extern tUWA_STATUS UWA_SendDeviceReset(uint8_t resetConfig);
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_SendSessionInit(uint32_t session_id, uint8_t sessionType);
+extern tUWA_STATUS UWA_SendSessionInit(uint32_t session_id,
+                                       uint8_t sessionType);
 
 /*******************************************************************************
 **
@@ -518,7 +541,8 @@ extern tUWA_STATUS UWA_SendSessionDeInit(uint32_t session_id);
 ** Function         UWA_GetSessionCount
 **
 ** Description      This function is called to send get session count command.
-**                  The result is reported with an UWA_DM_SESSION_GET_COUNT_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_SESSION_GET_COUNT_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is successfully sent
@@ -532,28 +556,31 @@ extern tUWA_STATUS UWA_GetSessionCount();
 ** Function         UWA_SetAppConfig
 **
 ** Description      Set the configuration parameters to UWBS. The result is
-**                  reported with an UWA_DM_SESSION_SET_CONFIG_RSP_EVT in the tUWA_DM_CBACK
-**                  callback.
+**                  reported with an UWA_DM_SESSION_SET_CONFIG_RSP_EVT in the
+**                  tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_SetAppConfig(uint32_t session_id, uint8_t noOfParams, uint8_t appConfigParamLen, uint8_t AppConfigParmas[]);
+extern tUWA_STATUS UWA_SetAppConfig(uint32_t session_id, uint8_t noOfParams,
+                                    uint8_t appConfigParamLen,
+                                    uint8_t AppConfigParmas[]);
 
 /*******************************************************************************
 **
 ** Function         UWA_GetAppConfig
 **
 ** Description      Get the configuration parameters from UWBS. The result is
-**                  reported with an UWA_DM_SESSION_GET_CONFIG_RSP_EVT in the tUWA_DM_CBACK
-**                  callback.
+**                  reported with an UWA_DM_SESSION_GET_CONFIG_RSP_EVT in the
+**                  tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_GetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_t paramLen, tUWA_PMID* p_param_ids);
+extern tUWA_STATUS UWA_GetAppConfig(uint32_t session_id, uint8_t num_ids,
+                                    uint8_t paramLen, tUWA_PMID* p_param_ids);
 
 /*******************************************************************************
 **
@@ -568,7 +595,6 @@ extern tUWA_STATUS UWA_GetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_
 **
 *******************************************************************************/
 extern tUWA_STATUS UWA_StartRangingSession(uint32_t session_id);
-
 
 /*******************************************************************************
 **
@@ -589,7 +615,8 @@ extern tUWA_STATUS UWA_StopRangingSession(uint32_t session_id);
 ** Function         UWA_GetRangingCount
 **
 ** Description      Get ranging count.
-**                  The result is reported with an UWA_DM_GET_RANGE_COUNT_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_GET_RANGE_COUNT_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
@@ -598,13 +625,13 @@ extern tUWA_STATUS UWA_StopRangingSession(uint32_t session_id);
 *******************************************************************************/
 extern tUWA_STATUS UWA_GetRangingCount(uint32_t session_id);
 
-
 /*******************************************************************************
 **
 ** Function         UWA_GetSessionStatus
 **
 ** Description      Get session status.
-**                  The result is reported with an UWA_DM_SESSION_GET_STATE_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_SESSION_GET_STATE_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
@@ -613,13 +640,13 @@ extern tUWA_STATUS UWA_GetRangingCount(uint32_t session_id);
 *******************************************************************************/
 extern tUWA_STATUS UWA_GetSessionStatus(uint32_t session_id);
 
-
 /*******************************************************************************
 **
 ** Function         UWA_GetCoreGetDeviceCapability
 **
 ** Description      Get core device capability info command.
-**                  The result is reported with an UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_GET_CORE_DEVICE_CAP_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is successfully initiated
@@ -633,75 +660,86 @@ extern tUWA_STATUS UWA_GetCoreGetDeviceCapability(void);
 **
 ** Function         UWA_ControllerMulticastListUpdate
 **
-** Description      This function is called to send Controller Multicast List Update.
-**                  The result is reported with an UWA_DM_SESSION_MC_LIST_UPDATE_RSP_EVT
+** Description      This function is called to send Controller Multicast List
+**                  Update.
+**                  The result is reported with an
+**                  UWA_DM_SESSION_MC_LIST_UPDATE_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is successfully initiated
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_ControllerMulticastListUpdate(uint32_t session_id, uint8_t action, uint8_t noOfControlees, uint16_t* shortAddressList, uint32_t* subSessionIdList);
+extern tUWA_STATUS UWA_ControllerMulticastListUpdate(
+    uint32_t session_id, uint8_t action, uint8_t noOfControlees,
+    uint16_t* shortAddressList, uint32_t* subSessionIdList);
 
 /*******************************************************************************
 **
 ** Function         UWA_SendBlinkData
 **
 ** Description      This function is called to send Blink Data Tx.
-**                  The result is reported with an UWA_DM_SEND_BLINK_DATA_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_SEND_BLINK_DATA_RSP_EVT
 **                  in the tUWA_DM_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is successfully initiated
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_SendBlinkData(uint32_t session_id, uint8_t repetition_count, uint8_t app_data_len, uint8_t* app_data);
+extern tUWA_STATUS UWA_SendBlinkData(uint32_t session_id,
+                                     uint8_t repetition_count,
+                                     uint8_t app_data_len, uint8_t* app_data);
 
-
-/*                      UWA APIs for RF Test functionality                                               */
+/*                      UWA APIs for RF Test functionality */
 
 /*******************************************************************************
 **
 ** Function         UWA_TestSetConfig
 **
 ** Description      Set the configuration parameters to UWBS.
-**                     The result is  reported with an UWA_DM_TEST_SET_CONFIG_RSP_EVT
+**                     The result is  reported with an
+**                     UWA_DM_TEST_SET_CONFIG_RSP_EVT
 **                     in the tUWA_DM_TEST_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_TestSetConfig(uint32_t session_id, uint8_t noOfParams, uint8_t testConfigParamLen, uint8_t testConfigParmas[]);
+extern tUWA_STATUS UWA_TestSetConfig(uint32_t session_id, uint8_t noOfParams,
+                                     uint8_t testConfigParamLen,
+                                     uint8_t testConfigParmas[]);
 
 /*******************************************************************************
 **
 ** Function         UWA_TestGetConfig
 **
 ** Description      Get the configuration parameters from UWBS.
-**                  The result is reported with an UWA_DM_TEST_GET_CONFIG_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_TEST_GET_CONFIG_RSP_EVT
 **                  in the tUWA_DM_TEST_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_TestGetConfig(uint32_t session_id, uint8_t num_ids, uint8_t paramLen, tUWA_PMID* p_param_ids);
+extern tUWA_STATUS UWA_TestGetConfig(uint32_t session_id, uint8_t num_ids,
+                                     uint8_t paramLen, tUWA_PMID* p_param_ids);
 
 /*******************************************************************************
 **
 ** Function         UWA_PeriodicTxTest
 **
 ** Description      This function is called to trigger the periodic Tx Test.
-**                  The result is reported with an UWA_DM_TEST_PERIODIC_TX_RSP_EVT
+**                  The result is reported with an
+**                  UWA_DM_TEST_PERIODIC_TX_RSP_EVT
 **                  in the tUWA_DM_TEST_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_PeriodicTxTest(uint16_t psduLen , uint8_t psduData[]);
-
+extern tUWA_STATUS UWA_PeriodicTxTest(uint16_t psduLen, uint8_t psduData[]);
 
 /*******************************************************************************
 **
@@ -715,21 +753,22 @@ extern tUWA_STATUS UWA_PeriodicTxTest(uint16_t psduLen , uint8_t psduData[]);
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_PerRxTest(uint16_t psduLen , uint8_t psduData[]);
+extern tUWA_STATUS UWA_PerRxTest(uint16_t psduLen, uint8_t psduData[]);
 
 /*******************************************************************************
 **
 ** Function         UWA_UwbLoopBackTest
 **
 ** Description      This function is called to trigger the loop back Test.
-**                  The result is reported with an UWA_DM_TEST_LOOPBACK_RSP_EVT in the
+**                  The result is reported with an UWA_DM_TEST_LOOPBACK_RSP_EVT
+*in the
 **                  tUWA_DM_TEST_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if command is sent successfully
 **                  UWA_STATUS_FAILED otherwise
 **
 *******************************************************************************/
-extern tUWA_STATUS UWA_UwbLoopBackTest(uint16_t psduLen , uint8_t psduData[]);
+extern tUWA_STATUS UWA_UwbLoopBackTest(uint16_t psduLen, uint8_t psduData[]);
 
 /*******************************************************************************
 **
@@ -750,7 +789,8 @@ extern tUWA_STATUS UWA_RxTest();
 ** Function         UWA_TestStopSession
 **
 ** Description      This function is called to stop the ongoing test session
-**                  The result is reported with an UWA_DM_TEST_STOP_SESSION_RSP_EVT in the
+**                  The result is reported with an
+**                  UWA_DM_TEST_STOP_SESSION_RSP_EVT in the
 **                  tUWA_DM_TEST_CBACK callback.
 **
 ** Returns          UWA_STATUS_OK if Per Session stopped successfully
@@ -758,7 +798,6 @@ extern tUWA_STATUS UWA_RxTest();
 **
 *******************************************************************************/
 extern tUWA_STATUS UWA_TestStopSession(void);
-
 
 /*******************************************************************************
 **

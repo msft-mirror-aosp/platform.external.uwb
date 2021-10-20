@@ -261,7 +261,7 @@ void phUwb_GKI_start_timer(uint8_t tnum, int32_t ticks, bool is_continuous) {
 ** Returns          void
 **
 *******************************************************************************/
-void phUwb_GKI_stop_timer(uint8_t tnum,int value) {
+void phUwb_GKI_stop_timer(uint8_t tnum, int value) {
   uint8_t task_id = phUwb_GKI_get_taskid();
   value = 0;
   phUwb_GKI_disable();
@@ -573,7 +573,7 @@ void phUwb_GKI_init_timer_list(TIMER_LIST_Q* p_timer_listq) {
 **
 *******************************************************************************/
 uint16_t phUwb_GKI_update_timer_list(TIMER_LIST_Q* p_timer_listq,
-                               uint32_t num_units_since_last_update) {
+                                     uint32_t num_units_since_last_update) {
   TIMER_LIST_ENT* p_tle;
   uint16_t num_time_out = 0;
   uint32_t rem_ticks;
@@ -613,9 +613,9 @@ uint16_t phUwb_GKI_update_timer_list(TIMER_LIST_Q* p_timer_listq,
     p_timer_listq->last_ticks -= num_units_since_last_update;
 
     /* If the last timer has expired set last_ticks to 0 so that other list
-    * update
-    * functions will calculate correctly
-    */
+     * update
+     * functions will calculate correctly
+     */
     if (p_timer_listq->last_ticks < 0) p_timer_listq->last_ticks = 0;
   }
 
@@ -638,7 +638,7 @@ uint16_t phUwb_GKI_update_timer_list(TIMER_LIST_Q* p_timer_listq,
 **
 *******************************************************************************/
 uint32_t phUwb_GKI_get_remaining_ticks(TIMER_LIST_Q* p_timer_listq,
-                                 TIMER_LIST_ENT* p_target_tle) {
+                                       TIMER_LIST_ENT* p_target_tle) {
   TIMER_LIST_ENT* p_tle;
   uint32_t rem_ticks = 0;
 
@@ -655,13 +655,11 @@ uint32_t phUwb_GKI_get_remaining_ticks(TIMER_LIST_Q* p_timer_listq,
     if (p_tle == p_target_tle) {
       rem_ticks += p_tle->ticks;
     } else {
-      UCI_TRACE_E(
-          "GKI_get_remaining_ticks: No timer entry in the list");
+      UCI_TRACE_E("GKI_get_remaining_ticks: No timer entry in the list");
       return (0);
     }
   } else {
-    UCI_TRACE_E(
-        "GKI_get_remaining_ticks: timer entry is not active");
+    UCI_TRACE_E("GKI_get_remaining_ticks: timer entry is not active");
   }
 
   return (rem_ticks);
@@ -685,14 +683,14 @@ uint32_t phUwb_GKI_get_remaining_ticks(TIMER_LIST_Q* p_timer_listq,
 ** Returns          void
 **
 *******************************************************************************/
-void phUwb_GKI_add_to_timer_list(TIMER_LIST_Q* p_timer_listq, TIMER_LIST_ENT* p_tle) {
+void phUwb_GKI_add_to_timer_list(TIMER_LIST_Q* p_timer_listq,
+                                 TIMER_LIST_ENT* p_tle) {
   uint32_t nr_ticks_total;
   uint8_t tt;
   TIMER_LIST_ENT* p_temp;
   if (p_tle == NULL || p_timer_listq == NULL) {
-    UCI_TRACE_I(
-        "%s: invalid argument %p, %p****************************<<", __func__,
-        p_timer_listq, p_tle);
+    UCI_TRACE_I("%s: invalid argument %p, %p****************************<<",
+                __func__, p_timer_listq, p_tle);
     return;
   }
 
@@ -775,7 +773,7 @@ void phUwb_GKI_add_to_timer_list(TIMER_LIST_Q* p_timer_listq, TIMER_LIST_ENT* p_
 **
 *******************************************************************************/
 void phUwb_GKI_remove_from_timer_list(TIMER_LIST_Q* p_timer_listq,
-                                TIMER_LIST_ENT* p_tle) {
+                                      TIMER_LIST_ENT* p_tle) {
   uint8_t tt;
 
   /* Verify that the entry is valid */
@@ -794,7 +792,7 @@ void phUwb_GKI_remove_from_timer_list(TIMER_LIST_Q* p_timer_listq,
   }
 
   /* Unlink timer from the list.
-  */
+   */
   if (p_timer_listq->p_first == p_tle) {
     p_timer_listq->p_first = p_tle->p_next;
 

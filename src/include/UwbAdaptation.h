@@ -18,12 +18,13 @@
  ******************************************************************************/
 #pragma once
 #include <pthread.h>
+#include <utils/RefBase.h>
+
 #include "config.h"
-#include "uwb_target.h"
+#include "hal_uwb.h"
 #include "uwb_hal_api.h"
 #include "uwb_hal_int.h"
-#include "hal_uwb.h"
-#include <utils/RefBase.h>
+#include "uwb_target.h"
 
 class ThreadMutex {
  public:

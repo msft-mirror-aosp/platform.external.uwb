@@ -36,7 +36,7 @@ typedef void(tHAL_UWB_DATA_CBACK)(uint16_t data_len, uint8_t* p_data);
 typedef void(tHAL_API_OPEN)(tHAL_UWB_CBACK* p_hal_cback,
                             tHAL_UWB_DATA_CBACK* p_data_cback);
 typedef void(tHAL_API_CLOSE)(void);
-typedef tUWB_STATUS (tHAL_API_CORE_INIT)();
+typedef tUWB_STATUS(tHAL_API_CORE_INIT)();
 typedef void(tHAL_API_WRITE)(uint16_t data_len, uint8_t* p_data);
 typedef tUWB_STATUS(tHAL_API_IOCTL)(long arg, void* p_data);
 
@@ -48,6 +48,8 @@ typedef struct {
   tHAL_API_CORE_INIT* CoreInitialization;
 } tHAL_UWB_ENTRY;
 
-typedef struct { tHAL_UWB_ENTRY* hal_entry_func; } tHAL_UWB_CONTEXT;
+typedef struct {
+  tHAL_UWB_ENTRY* hal_entry_func;
+} tHAL_UWB_CONTEXT;
 
 #endif /* UWB_HAL_API_H  */

@@ -20,6 +20,7 @@
 #define UWB_GKI_INT_H
 
 #include <pthread.h>
+
 #include "uwb_gki_common.h"
 
 /**********************************************************************

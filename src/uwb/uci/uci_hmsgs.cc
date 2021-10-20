@@ -22,21 +22,22 @@
  *  commands(for DH).
  *
  ******************************************************************************/
-#include "uwb_target.h"
-#include "uci_defs.h"
-#include "uci_test_defs.h"
 #include "uci_hmsgs.h"
+
+#include "uci_defs.h"
+#include "uci_log.h"
+#include "uci_test_defs.h"
 #include "uwb_api.h"
 #include "uwb_int.h"
 #include "uwb_osal_common.h"
-#include "uci_log.h"
-
+#include "uwb_target.h"
 
 /*******************************************************************************
 **
 ** Function         uci_snd_get_device_info_cmd
 **
-** Description      compose and send CORE_GET_DEVICE_INFO_CMD command to command queue
+** Description      compose and send CORE_GET_DEVICE_INFO_CMD command to command
+**                  queue
 **
 ** Returns          status
 **
@@ -65,7 +66,8 @@ uint8_t uci_snd_get_device_info_cmd(void) {
 **
 ** Function         uci_snd_device_reset_cmd
 **
-** Description      compose and send CORE_DEVICE_RESET_CMD command to command queue
+** Description      compose and send CORE_DEVICE_RESET_CMD command to command
+**                  queue
 **
 ** Returns          status
 **
@@ -95,7 +97,8 @@ uint8_t uci_snd_device_reset_cmd(uint8_t resetConfig) {
 **
 ** Function         uci_snd_core_set_config_cmd
 **
-** Description      compose and send CORE CORE_SET_CONFIG_CMD command to command queue
+** Description      compose and send CORE CORE_SET_CONFIG_CMD command to command
+**                  queue
 **
 ** Returns          status
 **
@@ -109,7 +112,7 @@ uint8_t uci_snd_core_set_config_cmd(uint8_t* p_param_tlvs, uint8_t tlv_size) {
   if (p == NULL) return (UCI_STATUS_FAILED);
 
   p->event = BT_EVT_TO_UWB_UCI;
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + tlv_size + 1);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + tlv_size + 1);
   p->offset = UCI_MSG_OFFSET_SIZE;
   pp = (uint8_t*)(p + 1) + p->offset;
 
@@ -126,7 +129,7 @@ uint8_t uci_snd_core_set_config_cmd(uint8_t* p_param_tlvs, uint8_t tlv_size) {
     ulen = *pt++;
     pt += ulen;
     if (len >= ulen) {
-      len = (uint8_t) (len - ulen);
+      len = (uint8_t)(len - ulen);
     } else {
       phUwb_GKI_freebuf(p);
       return UCI_STATUS_FAILED;
@@ -143,7 +146,8 @@ uint8_t uci_snd_core_set_config_cmd(uint8_t* p_param_tlvs, uint8_t tlv_size) {
 **
 ** Function         uci_snd_core_get_config_cmd
 **
-** Description      compose and send CORE_GET_CONFIG_CMD command to command queue
+** Description      compose and send CORE_GET_CONFIG_CMD command to command
+**                  queue
 **
 ** Returns          status
 **
@@ -156,7 +160,7 @@ uint8_t uci_snd_core_get_config_cmd(uint8_t* param_ids, uint8_t num_ids) {
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + num_ids + 1);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + num_ids + 1);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -183,8 +187,7 @@ uint8_t uci_snd_core_get_config_cmd(uint8_t* param_ids, uint8_t num_ids) {
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_session_init_cmd(uint32_t session_id,uint8_t sessionType){
-
+uint8_t uci_snd_session_init_cmd(uint32_t session_id, uint8_t sessionType) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -214,8 +217,7 @@ uint8_t uci_snd_session_init_cmd(uint32_t session_id,uint8_t sessionType){
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_session_deinit_cmd(uint32_t session_id){
-
+uint8_t uci_snd_session_deinit_cmd(uint32_t session_id) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -244,7 +246,8 @@ uint8_t uci_snd_session_deinit_cmd(uint32_t session_id){
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_app_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* data) {
+uint8_t uci_snd_app_set_config_cmd(uint32_t session_id, uint8_t num_ids,
+                                   uint8_t length, uint8_t* data) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -252,7 +255,8 @@ uint8_t uci_snd_app_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) + length);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) +
+                      length);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -280,7 +284,8 @@ uint8_t uci_snd_app_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_app_get_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* param_ids) {
+uint8_t uci_snd_app_get_config_cmd(uint32_t session_id, uint8_t num_ids,
+                                   uint8_t length, uint8_t* param_ids) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -288,7 +293,8 @@ uint8_t uci_snd_app_get_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) + length);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) +
+                      length);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -482,12 +488,16 @@ uint8_t uci_snd_core_get_device_capability(void) {
 **
 ** Function         uci_snd_multicast_list_update_cmd
 **
-** Description      compose and send SESSION_UPDATE_CONTROLLER _MULTICAST_LIST_CMD command
+** Description      compose and send SESSION_UPDATE_CONTROLLER
+**                   _MULTICAST_LIST_CMD command
 **
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action, uint8_t noOfControlees, uint16_t* shortAddressList, uint32_t* subSessionIdList) {
+uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
+                                          uint8_t noOfControlees,
+                                          uint16_t* shortAddressList,
+                                          uint32_t* subSessionIdList) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -495,7 +505,10 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action, u
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(action)+ sizeof(noOfControlees) + (noOfControlees*SHORT_ADDRESS_LEN) + (noOfControlees*SESSION_ID_LEN));
+  p->len =
+      (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(action) +
+                 sizeof(noOfControlees) + (noOfControlees * SHORT_ADDRESS_LEN) +
+                 (noOfControlees * SESSION_ID_LEN));
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -504,7 +517,10 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action, u
   UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_SESSION_MANAGE);
   UCI_MSG_BLD_HDR1(pp, UCI_MSG_SESSION_UPDATE_CONTROLLER_MULTICAST_LIST);
   UINT8_TO_STREAM(pp, 0x00);
-  UINT8_TO_STREAM(pp, sizeof(session_id) + sizeof(action)+ sizeof(noOfControlees) + (noOfControlees*SHORT_ADDRESS_LEN) + (noOfControlees*SESSION_ID_LEN));
+  UINT8_TO_STREAM(pp, sizeof(session_id) + sizeof(action) +
+                          sizeof(noOfControlees) +
+                          (noOfControlees * SHORT_ADDRESS_LEN) +
+                          (noOfControlees * SESSION_ID_LEN));
 
   UINT32_TO_STREAM(pp, session_id);
   UINT8_TO_STREAM(pp, action);
@@ -527,15 +543,20 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action, u
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_blink_data_cmd(uint32_t session_id, uint8_t repetition_count, uint8_t app_data_len, uint8_t* app_data) {
+uint8_t uci_snd_blink_data_cmd(uint32_t session_id, uint8_t repetition_count,
+                               uint8_t app_data_len, uint8_t* app_data) {
   UWB_HDR* p;
   uint8_t* pp;
 
-  if ((p = UCI_GET_CMD_BUF(sizeof(session_id) + sizeof(repetition_count) + sizeof(app_data_len) + app_data_len)) == NULL) return (UCI_STATUS_FAILED);
+  if ((p = UCI_GET_CMD_BUF(sizeof(session_id) + sizeof(repetition_count) +
+                           sizeof(app_data_len) + app_data_len)) == NULL)
+    return (UCI_STATUS_FAILED);
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(repetition_count) + sizeof(app_data_len) + app_data_len);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) +
+                      sizeof(repetition_count) + sizeof(app_data_len) +
+                      app_data_len);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -544,12 +565,13 @@ uint8_t uci_snd_blink_data_cmd(uint32_t session_id, uint8_t repetition_count, ui
   UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_RANGE_MANAGE);
   UCI_MSG_BLD_HDR1(pp, UCI_MSG_RANGE_BLINK_DATA_TX);
   UINT8_TO_STREAM(pp, 0x00);
-  UINT8_TO_STREAM(pp, sizeof(session_id) + sizeof(repetition_count) + sizeof(app_data_len) + app_data_len);
+  UINT8_TO_STREAM(pp, sizeof(session_id) + sizeof(repetition_count) +
+                          sizeof(app_data_len) + app_data_len);
 
   UINT32_TO_STREAM(pp, session_id);
   UINT8_TO_STREAM(pp, repetition_count);
   UINT8_TO_STREAM(pp, app_data_len);
-  if((app_data_len > 0) && (app_data != NULL)){
+  if ((app_data_len > 0) && (app_data != NULL)) {
     ARRAY_TO_STREAM(pp, app_data, app_data_len);
   }
 
@@ -568,7 +590,8 @@ uint8_t uci_snd_blink_data_cmd(uint32_t session_id, uint8_t repetition_count, ui
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_test_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* data) {
+uint8_t uci_snd_test_set_config_cmd(uint32_t session_id, uint8_t num_ids,
+                                    uint8_t length, uint8_t* data) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -576,7 +599,8 @@ uint8_t uci_snd_test_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) + length);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) +
+                      length);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -604,7 +628,8 @@ uint8_t uci_snd_test_set_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_
 ** Returns          status
 **
 *******************************************************************************/
-uint8_t uci_snd_test_get_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* param_ids) {
+uint8_t uci_snd_test_get_config_cmd(uint32_t session_id, uint8_t num_ids,
+                                    uint8_t length, uint8_t* param_ids) {
   UWB_HDR* p;
   uint8_t* pp;
 
@@ -612,7 +637,8 @@ uint8_t uci_snd_test_get_config_cmd(uint32_t session_id, uint8_t num_ids, uint8_
 
   p->event = BT_EVT_TO_UWB_UCI;
 
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) + length);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + sizeof(session_id) + sizeof(num_ids) +
+                      length);
 
   p->offset = UCI_MSG_OFFSET_SIZE;
   p->layer_specific = 0;
@@ -644,23 +670,22 @@ uint8_t uci_snd_test_periodic_tx_cmd(uint16_t psduLen, uint8_t* psduData) {
   UWB_HDR* p;
   uint8_t* pp;
 
-  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL)
-    return (UCI_STATUS_FAILED);
+  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL) return (UCI_STATUS_FAILED);
   p->event = BT_EVT_TO_UWB_UCI;
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + psduLen);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + psduLen);
   p->offset = UCI_MSG_OFFSET_SIZE;
   pp = (uint8_t*)(p + 1) + p->offset;
   UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_TEST);
-  if(psduLen <= UCI_MAX_PAYLOAD_SIZE) {
-        UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_PERIODIC_TX);
-        UINT8_TO_STREAM(pp, 0x00);
-        UINT8_TO_STREAM(pp, psduLen);
-    } else { /* extended len apdu */
-        UCI_MSG_BLD_HDR1(pp,(1 << 7) | UCI_MSG_TEST_PERIODIC_TX);
-        UINT8_TO_STREAM(pp, psduLen & 0x00FF);
-        UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
-    }
-  if((psduLen > 0) && (psduData != NULL)){
+  if (psduLen <= UCI_MAX_PAYLOAD_SIZE) {
+    UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_PERIODIC_TX);
+    UINT8_TO_STREAM(pp, 0x00);
+    UINT8_TO_STREAM(pp, psduLen);
+  } else { /* extended len apdu */
+    UCI_MSG_BLD_HDR1(pp, (1 << 7) | UCI_MSG_TEST_PERIODIC_TX);
+    UINT8_TO_STREAM(pp, psduLen & 0x00FF);
+    UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
+  }
+  if ((psduLen > 0) && (psduData != NULL)) {
     ARRAY_TO_STREAM(pp, psduData, psduLen);
   }
 
@@ -681,23 +706,22 @@ uint8_t uci_snd_test_per_rx_cmd(uint16_t psduLen, uint8_t* psduData) {
   UWB_HDR* p;
   uint8_t* pp;
 
-  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL)
-    return (UCI_STATUS_FAILED);
+  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL) return (UCI_STATUS_FAILED);
   p->event = BT_EVT_TO_UWB_UCI;
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + psduLen);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + psduLen);
   p->offset = UCI_MSG_OFFSET_SIZE;
   pp = (uint8_t*)(p + 1) + p->offset;
   UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_TEST);
-  if(psduLen <= UCI_MAX_PAYLOAD_SIZE) {
-        UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_PER_RX);
-        UINT8_TO_STREAM(pp, 0x00);
-        UINT8_TO_STREAM(pp, psduLen);
-    } else { /* extended len apdu */
-        UCI_MSG_BLD_HDR1(pp,(1 << 7) | UCI_MSG_TEST_PER_RX);
-        UINT8_TO_STREAM(pp, psduLen & 0x00FF);
-        UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
-    }
-  if((psduLen > 0) && (psduData != NULL)){
+  if (psduLen <= UCI_MAX_PAYLOAD_SIZE) {
+    UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_PER_RX);
+    UINT8_TO_STREAM(pp, 0x00);
+    UINT8_TO_STREAM(pp, psduLen);
+  } else { /* extended len apdu */
+    UCI_MSG_BLD_HDR1(pp, (1 << 7) | UCI_MSG_TEST_PER_RX);
+    UINT8_TO_STREAM(pp, psduLen & 0x00FF);
+    UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
+  }
+  if ((psduLen > 0) && (psduData != NULL)) {
     ARRAY_TO_STREAM(pp, psduData, psduLen);
   }
 
@@ -718,23 +742,22 @@ uint8_t uci_snd_test_uwb_loopback_cmd(uint16_t psduLen, uint8_t* psduData) {
   UWB_HDR* p;
   uint8_t* pp;
 
-  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL)
-    return (UCI_STATUS_FAILED);
+  if ((p = UCI_GET_CMD_BUF(psduLen)) == NULL) return (UCI_STATUS_FAILED);
   p->event = BT_EVT_TO_UWB_UCI;
-  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + psduLen);
+  p->len = (uint16_t)(UCI_MSG_HDR_SIZE + psduLen);
   p->offset = UCI_MSG_OFFSET_SIZE;
   pp = (uint8_t*)(p + 1) + p->offset;
   UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_TEST);
-  if(psduLen <= UCI_MAX_PAYLOAD_SIZE) {
-        UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_LOOPBACK);
-        UINT8_TO_STREAM(pp, 0x00);
-        UINT8_TO_STREAM(pp, psduLen);
-    } else { /* extended len apdu */
-        UCI_MSG_BLD_HDR1(pp,(1 << 7) | UCI_MSG_TEST_LOOPBACK);
-        UINT8_TO_STREAM(pp, psduLen & 0x00FF);
-        UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
-    }
-  if((psduLen > 0) && (psduData != NULL)){
+  if (psduLen <= UCI_MAX_PAYLOAD_SIZE) {
+    UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_LOOPBACK);
+    UINT8_TO_STREAM(pp, 0x00);
+    UINT8_TO_STREAM(pp, psduLen);
+  } else { /* extended len apdu */
+    UCI_MSG_BLD_HDR1(pp, (1 << 7) | UCI_MSG_TEST_LOOPBACK);
+    UINT8_TO_STREAM(pp, psduLen & 0x00FF);
+    UINT8_TO_STREAM(pp, (psduLen & 0xFF00) >> 8);
+  }
+  if ((psduLen > 0) && (psduData != NULL)) {
     ARRAY_TO_STREAM(pp, psduData, psduLen);
   }
 
@@ -797,8 +820,3 @@ uint8_t uci_snd_test_stop_session_cmd(void) {
   uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
 }
-
-
-
-
-

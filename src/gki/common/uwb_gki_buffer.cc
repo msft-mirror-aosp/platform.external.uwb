@@ -37,7 +37,7 @@
 **
 *******************************************************************************/
 static void phUwb_gki_init_free_queue(uint8_t id, uint16_t size, uint16_t total,
-                                void* p_mem) {
+                                      void* p_mem) {
   uint16_t i;
   uint16_t act_size;
   BUFFER_HDR_T* hdr;
@@ -91,14 +91,15 @@ static bool phUwb_gki_alloc_free_queue(uint8_t id) {
   Q = &p_cb->freeq[p_cb->pool_list[id]];
 
   if (Q->p_first == 0) {
-    void* p_mem = phUwb_GKI_os_malloc((Q->size + BUFFER_PADDING_SIZE) * Q->total);
+    void* p_mem =
+        phUwb_GKI_os_malloc((Q->size + BUFFER_PADDING_SIZE) * Q->total);
     if (p_mem) {
       // re-initialize the queue with allocated memory
       phUwb_gki_init_free_queue(id, Q->size, Q->total, p_mem);
       return true;
     }
     phUwb_GKI_exception(GKI_ERROR_BUF_SIZE_TOOBIG,
-                  "gki_alloc_free_queue: Not enough memory");
+                        "gki_alloc_free_queue: Not enough memory");
   }
   return false;
 }
@@ -176,12 +177,11 @@ void phUwb_gki_buffer_init(void) {
 ** Returns          void
 **
 *******************************************************************************/
-void phUwb_GKI_init_q (BUFFER_Q *p_q)
-{
-    p_q->p_first = p_q->p_last = NULL;
-    p_q->count = 0;
+void phUwb_GKI_init_q(BUFFER_Q* p_q) {
+  p_q->p_first = p_q->p_last = NULL;
+  p_q->count = 0;
 
-    return;
+  return;
 }
 
 /*******************************************************************************
@@ -298,7 +298,8 @@ void* phUwb_GKI_getpoolbuf(uint8_t pool_id) {
 
   Q = &p_cb->freeq[pool_id];
   if (Q->cur_cnt < Q->total) {
-    if (Q->p_first == 0 && phUwb_gki_alloc_free_queue(pool_id) != true) return NULL;
+    if (Q->p_first == 0 && phUwb_gki_alloc_free_queue(pool_id) != true)
+      return NULL;
 
     if (Q->p_first == 0) {
       /* gki_alloc_free_queue() failed to alloc memory */
@@ -557,7 +558,8 @@ void phUwb_GKI_enqueue(BUFFER_Q* p_q, void* p_buf) {
   p_hdr = (BUFFER_HDR_T*)((uint8_t*)p_buf - BUFFER_HDR_SIZE);
 
   if (p_hdr->status != BUF_STATUS_UNLINKED) {
-    phUwb_GKI_exception(GKI_ERROR_ENQUEUE_BUF_LINKED, "Eneueue - buf already linked");
+    phUwb_GKI_exception(GKI_ERROR_ENQUEUE_BUF_LINKED,
+                        "Eneueue - buf already linked");
     return;
   }
 
@@ -607,7 +609,7 @@ void* phUwb_GKI_dequeue(BUFFER_Q* p_q) {
   p_hdr = (BUFFER_HDR_T*)((uint8_t*)p_q->p_first - BUFFER_HDR_SIZE);
 
   /* Keep buffers such that GKI header is invisible
-  */
+   */
   if (p_hdr->p_next)
     p_q->p_first = ((uint8_t*)p_hdr->p_next + BUFFER_HDR_SIZE);
   else {
@@ -626,8 +628,8 @@ void* phUwb_GKI_dequeue(BUFFER_Q* p_q) {
 }
 
 /********************************************************
-* The following functions are not needed for light stack
-*********************************************************/
+ * The following functions are not needed for light stack
+ *********************************************************/
 #ifndef BTU_STACK_LITE_ENABLED
 #define BTU_STACK_LITE_ENABLED FALSE
 #endif

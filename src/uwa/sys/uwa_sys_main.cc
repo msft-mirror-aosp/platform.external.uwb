@@ -22,11 +22,12 @@
  *
  ******************************************************************************/
 #include <string.h>
-#include "uwa_sys.h"
+
+#include "uci_log.h"
 #include "uwa_api.h"
 #include "uwa_dm_int.h"
+#include "uwa_sys.h"
 #include "uwa_sys_int.h"
-#include "uci_log.h"
 #include "uwb_osal_common.h"
 
 /* protocol timer update period, in milliseconds */
@@ -119,8 +120,7 @@ void uwa_sys_register(uint8_t id, const tUWA_SYS_REG* p_reg) {
   if ((id != UWA_ID_DM) && (id != UWA_ID_SYS))
     uwa_sys_cb.enable_cplt_mask |= (uint16_t)(0x0001 << id);
 
-  UCI_TRACE_I(
-      "id=%i, enable_cplt_mask=0x%x", id, uwa_sys_cb.enable_cplt_mask);
+  UCI_TRACE_I("id=%i, enable_cplt_mask=0x%x", id, uwa_sys_cb.enable_cplt_mask);
 }
 
 /*******************************************************************************
