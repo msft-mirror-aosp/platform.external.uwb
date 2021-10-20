@@ -16,19 +16,20 @@
  * limitations under the License.
  */
 
-#include <string.h>
 #include <stdlib.h>
-#include "uwb_gki.h"
-#include "uwb_target.h"
+#include <string.h>
+
+#include "uci_hmsgs.h"
+#include "uci_log.h"
+#include "uwa_dm_int.h"
 #include "uwa_sys.h"
+#include "uwb_api.h"
+#include "uwb_gki.h"
 #include "uwb_hal_api.h"
 #include "uwb_hal_int.h"
-#include "uwb_api.h"
 #include "uwb_int.h"
-#include "uci_hmsgs.h"
-#include "uwa_dm_int.h"
 #include "uwb_osal_common.h"
-#include "uci_log.h"
+#include "uwb_target.h"
 
 /****************************************************************************
 ** Declarations
@@ -141,9 +142,9 @@ void uwb_enabled(tUWB_STATUS uwb_status,
 **
 *******************************************************************************/
 void uwb_set_state(tUWB_STATE uwb_state) {
-    UCI_TRACE_I("uwb_set_state %d (%s)->%d (%s)", uwb_cb.uwb_state,
-                      uwb_state_name(uwb_cb.uwb_state).c_str(), uwb_state,
-                      uwb_state_name(uwb_state).c_str());
+  UCI_TRACE_I("uwb_set_state %d (%s)->%d (%s)", uwb_cb.uwb_state,
+              uwb_state_name(uwb_cb.uwb_state).c_str(), uwb_state,
+              uwb_state_name(uwb_state).c_str());
   uwb_cb.uwb_state = uwb_state;
 }
 
@@ -238,7 +239,8 @@ void uwb_main_flush_cmd_queue(void) {
   uwb_cb.cmd_retry_count = 0;
 
   /* dequeue and free buffer */
-  while ((p_msg = (UWB_HDR*)phUwb_GKI_dequeue(&uwb_cb.uci_cmd_xmit_q)) != NULL) {
+  while ((p_msg = (UWB_HDR*)phUwb_GKI_dequeue(&uwb_cb.uci_cmd_xmit_q)) !=
+         NULL) {
     phUwb_GKI_freebuf(p_msg);
   }
 }
@@ -281,7 +283,7 @@ void uwb_main_post_hal_evt(uint8_t hal_evt, tUWB_STATUS status) {
 *******************************************************************************/
 static void uwb_main_hal_cback(uint8_t event, tUWB_STATUS status) {
   UCI_TRACE_I("uwb_main_hal_cback event: %s(0x%x), status=%d",
-                      uwb_hal_event_name(event).c_str(), event, status);
+              uwb_hal_event_name(event).c_str(), event, status);
   switch (event) {
     case HAL_UWB_OPEN_CPLT_EVT:
       /*
@@ -366,7 +368,8 @@ static void uwb_main_hal_data_cback(uint16_t data_len, uint8_t* p_data) {
 ** Returns          tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_Enable(tUWB_RESPONSE_CBACK* p_cback, tUWB_TEST_RESPONSE_CBACK* p_test_cback) {
+tUWB_STATUS UWB_Enable(tUWB_RESPONSE_CBACK* p_cback,
+                       tUWB_TEST_RESPONSE_CBACK* p_test_cback) {
   UCI_TRACE_I(__func__);
   /* Validate callback */
   if (!p_cback) {
@@ -426,8 +429,10 @@ void UWB_Init(tHAL_UWB_CONTEXT* p_hal_entry_cntxt) {
   uwb_cb.p_hal = p_hal_entry_cntxt->hal_entry_func;
   uwb_cb.uwb_state = UWB_STATE_NONE;
   uwb_cb.uci_cmd_window = UCI_MAX_CMD_WINDOW;
-  uwb_cb.retry_rsp_timeout = ((UWB_CMD_RETRY_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000);
-  uwb_cb.uci_wait_rsp_tout = ((UWB_CMD_CMPL_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000);
+  uwb_cb.retry_rsp_timeout =
+      ((UWB_CMD_RETRY_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000);
+  uwb_cb.uci_wait_rsp_tout =
+      ((UWB_CMD_CMPL_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000);
   uwb_cb.pLast_cmd_buf = NULL;
   uwb_cb.is_resp_pending = false;
   uwb_cb.cmd_retry_count = 0;
@@ -440,7 +445,8 @@ void UWB_Init(tHAL_UWB_CONTEXT* p_hal_entry_cntxt) {
 ** Function         UWB_GetDeviceInfo
 **
 ** Description      This function is called to get Device Info
-**                  The response from UWBS is reported with an UWB_GET_DEVICE_INFO_REVT 
+**                  The response from UWBS is reported with an
+**                  UWB_GET_DEVICE_INFO_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters       None
@@ -448,16 +454,16 @@ void UWB_Init(tHAL_UWB_CONTEXT* p_hal_entry_cntxt) {
 ** Returns          none
 **
 *******************************************************************************/
-tUWB_STATUS UWB_GetDeviceInfo() {
-  return uci_snd_get_device_info_cmd();
-}
+tUWB_STATUS UWB_GetDeviceInfo() { return uci_snd_get_device_info_cmd(); }
 
 /*******************************************************************************
 **
 ** Function         UWB_DeviceResetCommand
 **
-** Description      This function is called to send Device Reset Command to UWBS.
-**                  The response from UWBS is reported with an UWB_DEVICE_RESET_REVT
+** Description      This function is called to send Device Reset Command to
+**                  UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_DEVICE_RESET_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters       resetConfig - Vendor Specific Reset Config to be sent
@@ -474,8 +480,10 @@ tUWB_STATUS UWB_DeviceResetCommand(uint8_t resetConfig) {
 **
 ** Function         UWB_SetCoreConfig
 **
-** Description      This function is called to send the configuration parameters.
-**                  The response from UWBS is reported with an UWB_SET_CORE_CONFIG_REVT
+** Description      This function is called to send the configuration
+**                  parameters.
+**                  The response from UWBS is reported with an
+**                  UWB_SET_CORE_CONFIG_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters       tlv_size - the length of p_param_tlvs.
@@ -492,8 +500,10 @@ tUWB_STATUS UWB_SetCoreConfig(uint8_t tlv_size, uint8_t* p_param_tlvs) {
 **
 ** Function         UWB_GetCoreConfig
 **
-** Description      This function is called to retrieve the configuration parameters from UWBS.
-**                  The response from UWBS is reported with an UWB_GET_CORE_CONFIG_REVT
+** Description      This function is called to retrieve the configuration
+**                  parameters from UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_GET_CORE_CONFIG_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters       num_ids - the number of parameter IDs
@@ -510,22 +520,26 @@ tUWB_STATUS UWB_GetCoreConfig(uint8_t num_ids, uint8_t* p_param_ids) {
 **
 ** Function         UWB_SessionInit
 **
-** Description      This function is called to send session init command to UWBS.
-**                  The response from UWBS is reported with an UWB_SESSION_INIT_REVT
+** Description      This function is called to send session init command to
+**                  UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_SESSION_INIT_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Returns          tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_SessionInit(uint32_t session_id,uint8_t session_type) {
-  return uci_snd_session_init_cmd(session_id,session_type);
+tUWB_STATUS UWB_SessionInit(uint32_t session_id, uint8_t session_type) {
+  return uci_snd_session_init_cmd(session_id, session_type);
 }
 /*******************************************************************************
 **
 ** Function         UWB_SessionDeInit
 **
-** Description      This function is called to send session DeInit command to UWBS.
-**                  The response from UWBS is reported with an UWB_SESSION_DEINIT_REVT
+** Description      This function is called to send session DeInit command to
+**                  UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_SESSION_DEINIT_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Returns          tUWB_STATUS
@@ -539,11 +553,14 @@ tUWB_STATUS UWB_SessionDeInit(uint32_t session_id) {
 **
 ** Function         UWB_GetAppConfig
 **
-** Description      This function is called to retrieve the parameter TLV from UWBS. 
-**                  The response from UWBS is reported with an UWB_GET_APP_CONFIG_REVT
+** Description      This function is called to retrieve the parameter TLV from
+**                  UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_GET_APP_CONFIG_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
-** Parameters       session_id - All APP configurations belonging to this Session ID
+** Parameters       session_id - All APP configurations belonging to this
+**                  Session ID
 **                  num_ids - the number of parameter IDs
 **                  length - Length of app parameter ID
 **                  p_param_ids - the parameter ID list.
@@ -551,7 +568,8 @@ tUWB_STATUS UWB_SessionDeInit(uint32_t session_id) {
 ** Returns          tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_GetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* p_param_ids) {
+tUWB_STATUS UWB_GetAppConfig(uint32_t session_id, uint8_t num_ids,
+                             uint8_t length, uint8_t* p_param_ids) {
   return uci_snd_app_get_config_cmd(session_id, num_ids, length, p_param_ids);
 }
 
@@ -560,18 +578,20 @@ tUWB_STATUS UWB_GetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_t lengt
 ** Function       UWB_SetAppConfig
 **
 ** Description    This function is called to set the parameter TLV to UWBS.
-**                The response from UWBS is reported with an UWB_SET_APP_CONFIG_REVT
+**                The response from UWBS is reported with an
+**                UWB_SET_APP_CONFIG_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
-** Parameters     session_id - All APP configurations belonging to this Session ID
+** Parameters     session_id - All APP configurations belonging to this SessionId
 **                num_ids - the number of parameter IDs
 **                length - Length of app parameter data
 **                p_data - SetAppConfig TLV data
-** 
+**
 ** Returns        tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_SetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* p_data) {
+tUWB_STATUS UWB_SetAppConfig(uint32_t session_id, uint8_t num_ids,
+                             uint8_t length, uint8_t* p_data) {
   return uci_snd_app_set_config_cmd(session_id, num_ids, length, p_data);
 }
 
@@ -579,23 +599,25 @@ tUWB_STATUS UWB_SetAppConfig(uint32_t session_id, uint8_t num_ids, uint8_t lengt
 **
 ** Function         UWB_GetSessionCount
 **
-** Description      This function is called to send get session count command to UWBS.
-**                  The response from UWBS is reported with an UWB_SESSION_GET_COUNT_REVT
+** Description      This function is called to send get session count command to
+**                  UWBS.
+**                  The response from UWBS is reported with an
+**                  UWB_SESSION_GET_COUNT_REVT
 **                  in the tUWB_RESPONSE_CBACK callback.
 **
 ** Returns          tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_GetSessionCount() {
-  return uci_snd_get_session_count_cmd();
-}
+tUWB_STATUS UWB_GetSessionCount() { return uci_snd_get_session_count_cmd(); }
 
 /*******************************************************************************
 **
 ** Function       UWB_StartRanging
 **
-** Description    This function is called to send the range start command to UWBS.
-**                The response from UWBS is reported with an UWB_START_RANGE_REVT
+** Description    This function is called to send the range start command to
+**                UWBS.
+**                The response from UWBS is reported with an
+**                UWB_START_RANGE_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     session_id -  Session ID for which ranging shall start
@@ -611,7 +633,8 @@ tUWB_STATUS UWB_StartRanging(uint32_t session_id) {
 **
 ** Function       UWB_StopRanging
 **
-** Description    This function is called to send the range stop command to UWBS.
+** Description    This function is called to send the range stop command to
+**                UWBS.
 **                The response from UWBS is reported with an UWB_STOP_RANGE_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
@@ -629,10 +652,12 @@ tUWB_STATUS UWB_StopRanging(uint32_t session_id) {
 ** Function       UWB_GetRangingCount
 **
 ** Description    This function is called to send get ranging count command.
-**                The response from UWBS is reported with an UWB_GET_RANGE_COUNT_REVT
+**                The response from UWBS is reported with an
+**                UWB_GET_RANGE_COUNT_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
-** Parameters     session_id -  Session ID for which ranging round count is required
+** Parameters     session_id -  Session ID for which ranging round count is
+**                required
 **
 ** Returns        tUWB_STATUS
 **
@@ -646,7 +671,8 @@ tUWB_STATUS UWB_GetRangingCount(uint32_t session_id) {
 ** Function       UWB_GetSessionStatus
 **
 ** Description    This function is called to send get session status command.
-**                The response from UWBS is reported with an UWB_SESSION_GET_STATE_REVT
+**                The response from UWBS is reported with an
+**                UWB_SESSION_GET_STATE_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     session_id -  Session ID for which session state is required
@@ -662,8 +688,10 @@ tUWB_STATUS UWB_GetSessionStatus(uint32_t session_id) {
 **
 ** Function       UWB_MulticastListUpdate
 **
-** Description    This function is called to send the Multicast list update command.
-**                The response from UWBS is reported with an UWB_SESSION_UPDATE_MULTICAST_LIST_REVT
+** Description    This function is called to send the Multicast list update
+**                command.
+**                The response from UWBS is reported with an
+**                UWB_SESSION_UPDATE_MULTICAST_LIST_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     session_id - Session ID
@@ -675,8 +703,12 @@ tUWB_STATUS UWB_GetSessionStatus(uint32_t session_id) {
 ** Returns          tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_MulticastListUpdate(uint32_t session_id, uint8_t action, uint8_t noOfControlees, uint16_t* shortAddressList, uint32_t* subSessionIdList) {
-  return uci_snd_multicast_list_update_cmd(session_id, action, noOfControlees, shortAddressList, subSessionIdList);
+tUWB_STATUS UWB_MulticastListUpdate(uint32_t session_id, uint8_t action,
+                                    uint8_t noOfControlees,
+                                    uint16_t* shortAddressList,
+                                    uint32_t* subSessionIdList) {
+  return uci_snd_multicast_list_update_cmd(session_id, action, noOfControlees,
+                                           shortAddressList, subSessionIdList);
 }
 
 /*******************************************************************************
@@ -684,7 +716,8 @@ tUWB_STATUS UWB_MulticastListUpdate(uint32_t session_id, uint8_t action, uint8_t
 ** Function       UWB_CoreGetDeviceCapability
 **
 ** Description    This function is called to send the Core Get Capability.
-**                The response from UWBS is reported with an UWB_CORE_GET_DEVICE_CAPABILITY_REVT 
+**                The response from UWBS is reported with an
+**                UWB_CORE_GET_DEVICE_CAPABILITY_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     None
@@ -701,7 +734,8 @@ tUWB_STATUS UWB_CoreGetDeviceCapability(void) {
 ** Function       UWB_SendBlinkData
 **
 ** Description    This function is called to send blink data tx  command.
-**                The response from UWBS is reported with an UWB_BLINK_DATA_TX_REVT
+**                The response from UWBS is reported with an
+**                UWB_BLINK_DATA_TX_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     session_id - Session ID
@@ -712,10 +746,11 @@ tUWB_STATUS UWB_CoreGetDeviceCapability(void) {
 ** Returns        tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_SendBlinkData(uint32_t session_id, uint8_t repetition_count, uint8_t app_data_len, uint8_t* app_data) {
-  return uci_snd_blink_data_cmd(session_id, repetition_count, app_data_len, app_data);
+tUWB_STATUS UWB_SendBlinkData(uint32_t session_id, uint8_t repetition_count,
+                              uint8_t app_data_len, uint8_t* app_data) {
+  return uci_snd_blink_data_cmd(session_id, repetition_count, app_data_len,
+                                app_data);
 }
-
 
 /* APIs for UWB RF test functionality */
 
@@ -723,11 +758,13 @@ tUWB_STATUS UWB_SendBlinkData(uint32_t session_id, uint8_t repetition_count, uin
 **
 ** Function       UWB_TestGetConfig
 **
-** Description    This function is called to retrieve the test configuration parameter from UWBS.
-**                The response from UWBS is reported with an UWB_TEST_GET_CONFIG_REVT
+** Description    This function is called to retrieve the test configuration
+**                parameter from UWBS.
+**                The response from UWBS is reported with an
+**                UWB_TEST_GET_CONFIG_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
-** Parameters     session_id - All TEST configurations belonging to this Session ID
+** Parameters     session_id - All TEST configurations belonging to this SessionId
 **                num_ids - the number of parameter IDs
 **                length - Length of test parameter ID
 **                p_param_ids - the parameter ID list.
@@ -735,7 +772,8 @@ tUWB_STATUS UWB_SendBlinkData(uint32_t session_id, uint8_t repetition_count, uin
 ** Returns        tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_TestGetConfig(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* p_param_ids) {
+tUWB_STATUS UWB_TestGetConfig(uint32_t session_id, uint8_t num_ids,
+                              uint8_t length, uint8_t* p_param_ids) {
   return uci_snd_test_get_config_cmd(session_id, num_ids, length, p_param_ids);
 }
 
@@ -743,11 +781,13 @@ tUWB_STATUS UWB_TestGetConfig(uint32_t session_id, uint8_t num_ids, uint8_t leng
 **
 ** Function       UWB_SetTestConfig
 **
-** Description    This function is called to set the test configuration parameters.
-**                The response from UWBS is reported with an UWB_TEST_SET_CONFIG_REVT
+** Description    This function is called to set the test configuration
+**                parameters.
+**                The response from UWBS is reported with an
+**                UWB_TEST_SET_CONFIG_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
-** Parameters     session_id - All TEST configurations belonging to this Session ID
+** Parameters     session_id - All TEST configurations belonging to this SessionId
 **                num_ids - the number of parameter IDs
 **                length - Length of test parameter data
 **                p_data - SetAppConfig TLV data
@@ -755,7 +795,8 @@ tUWB_STATUS UWB_TestGetConfig(uint32_t session_id, uint8_t num_ids, uint8_t leng
 ** Returns        tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_SetTestConfig(uint32_t session_id, uint8_t num_ids, uint8_t length, uint8_t* p_data) {
+tUWB_STATUS UWB_SetTestConfig(uint32_t session_id, uint8_t num_ids,
+                              uint8_t length, uint8_t* p_data) {
   return uci_snd_test_set_config_cmd(session_id, num_ids, length, p_data);
 }
 
@@ -764,7 +805,8 @@ tUWB_STATUS UWB_SetTestConfig(uint32_t session_id, uint8_t num_ids, uint8_t leng
 ** Function       UWB_TestPeriodicTx
 **
 ** Description    This function is called send periodic Tx test command.
-**                The response from UWBS is reported with an UWB_TEST_PERIODIC_TX_REVT
+**                The response from UWBS is reported with an
+**                UWB_TEST_PERIODIC_TX_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     length - Length of psdu data.
@@ -781,8 +823,10 @@ tUWB_STATUS UWB_TestPeriodicTx(uint16_t length, uint8_t* p_data) {
 **
 ** Function       UWB_TestPerRx
 **
-** Description    This function is called send Packet Error Rate(PER) Rx test command.
-**                The response from UWBS is reported with an UWB_TEST_PER_RX_REVT
+** Description    This function is called send Packet Error Rate(PER) Rx test
+**                command.
+**                The response from UWBS is reported with an
+**                UWB_TEST_PER_RX_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     length - Length of psdu data.
@@ -800,7 +844,8 @@ tUWB_STATUS UWB_TestPerRx(uint16_t length, uint8_t* p_data) {
 ** Function       UWB_TestUwbLoopBack
 **
 ** Description    This function is called send Loop Back test command.
-**                The response from UWBS is reported with an UWB_TEST_LOOPBACK_REVT
+**                The response from UWBS is reported with an
+**                UWB_TEST_LOOPBACK_REVT
 **                in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters     length - Length of psdu data.
@@ -813,13 +858,13 @@ tUWB_STATUS UWB_TestUwbLoopBack(uint16_t length, uint8_t* p_data) {
   return uci_snd_test_uwb_loopback_cmd(length, p_data);
 }
 
-
 /********************************************************************************
 **
 ** Function      UWB_TestStopSession
 **
 ** Description   This function is called to send test session stop command.
-**               The response from UWBS is reported with an UWB_TEST_STOP_SESSION_REVT
+**               The response from UWBS is reported with an
+**               UWB_TEST_STOP_SESSION_REVT
 **               in the tUWB_RESPONSE_CBACK callback.
 **
 ** Parameters    None
@@ -844,9 +889,7 @@ tUWB_STATUS UWB_TestStopSession(void) {
 ** Returns        tUWB_STATUS
 **
 *******************************************************************************/
-tUWB_STATUS UWB_TestRx(void) {
-  return uci_snd_test_rx_cmd();
-}
+tUWB_STATUS UWB_TestRx(void) { return uci_snd_test_rx_cmd(); }
 
 /*******************************************************************************
 **

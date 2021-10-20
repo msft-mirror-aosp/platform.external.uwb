@@ -29,36 +29,36 @@
 
 /* GID: Group Identifier (byte 0) */
 
-#define UCI_GID_TEST                           0x0D  /* 1101b UCI Test group */
+#define UCI_GID_TEST 0x0D /* 1101b UCI Test group */
 
 /**********************************************
  * UCI test group(UCI_GID_TEST)- 7: Opcodes
  **********************************************/
-#define UCI_MSG_TEST_SET_CONFIG           0
-#define UCI_MSG_TEST_GET_CONFIG           1
-#define UCI_MSG_TEST_PERIODIC_TX          2
-#define UCI_MSG_TEST_PER_RX               3
-#define UCI_MSG_TEST_TX                   4
-#define UCI_MSG_TEST_RX                   5
-#define UCI_MSG_TEST_LOOPBACK             6
-#define UCI_MSG_TEST_STOP_SESSION         7
+#define UCI_MSG_TEST_SET_CONFIG 0
+#define UCI_MSG_TEST_GET_CONFIG 1
+#define UCI_MSG_TEST_PERIODIC_TX 2
+#define UCI_MSG_TEST_PER_RX 3
+#define UCI_MSG_TEST_TX 4
+#define UCI_MSG_TEST_RX 5
+#define UCI_MSG_TEST_LOOPBACK 6
+#define UCI_MSG_TEST_STOP_SESSION 7
 
-#define UCI_MSG_TEST_PERIODIC_TX_CMD_SIZE       0
-#define UCI_MSG_TEST_PER_RX_CMD_SIZE            0
-#define UCI_MSG_TEST_STOP_SESSION_CMD_SIZE      0
-#define UCI_MSG_TEST_RX_CMD_SIZE                0
+#define UCI_MSG_TEST_PERIODIC_TX_CMD_SIZE 0
+#define UCI_MSG_TEST_PER_RX_CMD_SIZE 0
+#define UCI_MSG_TEST_STOP_SESSION_CMD_SIZE 0
+#define UCI_MSG_TEST_RX_CMD_SIZE 0
 
 /**********************************************************
  * UCI test Parameter IDs : RF Test Configurations
  *********************************************************/
-#define UCI_TEST_PARAM_ID_NUM_PACKETS          0x00
-#define UCI_TEST_PARAM_ID_T_GAP                0x01
-#define UCI_TEST_PARAM_ID_T_START              0x02
-#define UCI_TEST_PARAM_ID_T_WIN                0x03
-#define UCI_TEST_PARAM_ID_RANDOMIZE_PSDU       0x04
-#define UCI_TEST_PARAM_ID_PHR_RANGING_BIT      0x05
-#define UCI_TEST_PARAM_ID_RMARKER_TX_START     0x06
-#define UCI_TEST_PARAM_ID_RMARKER_RX_START     0x07
-#define UCI_TEST_PARAM_ID_STS_INDEX_AUTO_INCR  0x08
+#define UCI_TEST_PARAM_ID_NUM_PACKETS 0x00
+#define UCI_TEST_PARAM_ID_T_GAP 0x01
+#define UCI_TEST_PARAM_ID_T_START 0x02
+#define UCI_TEST_PARAM_ID_T_WIN 0x03
+#define UCI_TEST_PARAM_ID_RANDOMIZE_PSDU 0x04
+#define UCI_TEST_PARAM_ID_PHR_RANGING_BIT 0x05
+#define UCI_TEST_PARAM_ID_RMARKER_TX_START 0x06
+#define UCI_TEST_PARAM_ID_RMARKER_RX_START 0x07
+#define UCI_TEST_PARAM_ID_STS_INDEX_AUTO_INCR 0x08
 
 #endif

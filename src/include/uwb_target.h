@@ -156,7 +156,7 @@
 #define HAL_WRITE(p)                                            \
   {                                                             \
     uwb_cb.p_hal->write(p->len, (uint8_t*)(p + 1) + p->offset); \
-    phUwb_GKI_freebuf(p);                                             \
+    phUwb_GKI_freebuf(p);                                       \
   }
 #define HAL_RE_WRITE(p) \
   { uwb_cb.p_hal->write(p->len, (uint8_t*)(p + 1) + p->offset); }

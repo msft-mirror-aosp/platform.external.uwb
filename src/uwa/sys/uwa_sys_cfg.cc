@@ -23,8 +23,8 @@
  *
  ******************************************************************************/
 
-#include "uwb_gki.h"
 #include "uwa_sys.h"
+#include "uwb_gki.h"
 
 const tUWA_SYS_CFG uwa_sys_cfg = {
     UWA_MBOX_EVT_MASK, /* GKI mailbox event */

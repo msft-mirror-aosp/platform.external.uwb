@@ -17,25 +17,23 @@
  *
  ******************************************************************************/
 
-
 /******************************************************************************
  *
  *  Entry point for UWB_TASK
  *
  ******************************************************************************/
 #include <string.h>
-#include "uwb_gki.h"
-#include "uwb_target.h"
 
+#include "uci_hmsgs.h"
+#include "uci_log.h"
+#include "uwa_dm_int.h"
+#include "uwa_sys.h"
 #include "uwb_api.h"
+#include "uwb_gki.h"
 #include "uwb_hal_api.h"
 #include "uwb_int.h"
-#include "uci_hmsgs.h"
-
-#include "uwa_sys.h"
-#include "uwa_dm_int.h"
 #include "uwb_osal_common.h"
-#include "uci_log.h"
+#include "uwb_target.h"
 
 /*******************************************************************************
 **
@@ -98,7 +96,6 @@ uint32_t uwb_remaining_time(TIMER_LIST_ENT* p_tle) {
 **
 *******************************************************************************/
 void uwb_process_timer_evt(void) {
-
   TIMER_LIST_ENT* p_tle;
 
   phUwb_GKI_update_timer_list(&uwb_cb.timer_queue, 1);
@@ -113,11 +110,10 @@ void uwb_process_timer_evt(void) {
     }
     switch (p_tle->event) {
       default:
-        UCI_TRACE_I("uwb_process_timer_evt: timer:0x%p event (0x%04x)",
-                            p_tle, p_tle->event);
-        UCI_TRACE_W(
-            "uwb_process_timer_evt: unhandled timer event (0x%04x)",
-            p_tle->event);
+        UCI_TRACE_I("uwb_process_timer_evt: timer:0x%p event (0x%04x)", p_tle,
+                    p_tle->event);
+        UCI_TRACE_W("uwb_process_timer_evt: unhandled timer event (0x%04x)",
+                    p_tle->event);
     }
   }
 
@@ -125,7 +121,6 @@ void uwb_process_timer_evt(void) {
   if (uwb_cb.timer_queue.p_first == NULL) {
     phUwb_GKI_stop_timer(UWB_TIMER_ID, 0);
   }
-
 }
 
 /*******************************************************************************
@@ -161,8 +156,7 @@ void uwb_stop_timer(TIMER_LIST_ENT* p_tle) {
 *******************************************************************************/
 void uwb_start_quick_timer(TIMER_LIST_ENT* p_tle, uint16_t type,
                            uint32_t timeout) {
-
-  UCI_TRACE_I("uwb_start_quick_timer enter: timeout: %d",timeout);
+  UCI_TRACE_I("uwb_start_quick_timer enter: timeout: %d", timeout);
   UWB_HDR* p_msg;
 
   /* if timer list is currently empty, start periodic GKI timer */
@@ -177,9 +171,9 @@ void uwb_start_quick_timer(TIMER_LIST_ENT* p_tle, uint16_t type,
       }
     } else {
       /* Quick-timer is required for LLCP */
-      phUwb_GKI_start_timer(UWB_QUICK_TIMER_ID,
-                      ((GKI_SECS_TO_TICKS(1) / QUICK_TIMER_TICKS_PER_SEC)),
-                      true);
+      phUwb_GKI_start_timer(
+          UWB_QUICK_TIMER_ID,
+          ((GKI_SECS_TO_TICKS(1) / QUICK_TIMER_TICKS_PER_SEC)), true);
     }
   }
 
@@ -201,7 +195,6 @@ void uwb_start_quick_timer(TIMER_LIST_ENT* p_tle, uint16_t type,
 **
 *******************************************************************************/
 void uwb_stop_quick_timer(TIMER_LIST_ENT* p_tle) {
-
   UCI_TRACE_I("uwb_stop_quick_timer: enter");
   phUwb_GKI_remove_from_timer_list(&uwb_cb.quick_timer_queue, p_tle);
 
@@ -224,7 +217,7 @@ void uwb_process_quick_timer_evt(void) {
   TIMER_LIST_ENT* p_tle;
 
   if (uwb_cb.uwb_state == UWB_STATE_W4_HAL_CLOSE ||
-    uwb_cb.uwb_state == UWB_STATE_NONE) {
+      uwb_cb.uwb_state == UWB_STATE_NONE) {
     return;
   }
 
@@ -280,8 +273,7 @@ void uwb_task_shutdown_uwbc(void) {
   phUwb_GKI_stop_timer(UWA_TIMER_ID, 0);
 }
 
-
-#define UWB_TASK_ARGS    __attribute__((unused)) uint32_t arg
+#define UWB_TASK_ARGS __attribute__((unused)) uint32_t arg
 
 uint32_t uwb_task(__attribute__((unused)) uint32_t arg) {
   uint16_t event;
@@ -335,8 +327,8 @@ uint32_t uwb_task(__attribute__((unused)) uint32_t arg) {
             break;
 
           default:
-            UCI_TRACE_E(
-                "uwb_task: unhandle mbox message, event=%04x", p_msg->event);
+            UCI_TRACE_E("uwb_task: unhandle mbox message, event=%04x",
+                        p_msg->event);
             break;
         }
 

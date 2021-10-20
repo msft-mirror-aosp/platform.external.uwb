@@ -35,28 +35,32 @@ static const char* UWB_UCI_CORE_LOG = "UwbUciCore";
 
 /* ############## Logging APIs of actual modules ################# */
 /* Logging APIs used by UCI module */
-#if(ENABLE_UCI_LOGGING == TRUE)
-    #define UCI_TRACE_D(...) {                                               \
-        if (uwb_debug_enabled)                                               \
-          LOG_PRI(ANDROID_LOG_DEBUG, UWB_UCI_CORE_LOG, __VA_ARGS__);         \
-    }
-    #define UCI_TRACE_I(...) {                                               \
-        if (uwb_debug_enabled)                                               \
-          LOG_PRI(ANDROID_LOG_INFO, UWB_UCI_CORE_LOG, __VA_ARGS__);          \
-    }
-    #define UCI_TRACE_W(...) {                                               \
-        if (uwb_debug_enabled)                                               \
-          LOG_PRI(ANDROID_LOG_WARN, UWB_UCI_CORE_LOG, __VA_ARGS__);          \
-    }
-    #define UCI_TRACE_E(...) {                                               \
-        if (uwb_debug_enabled)                                               \
-          LOG_PRI(ANDROID_LOG_ERROR, UWB_UCI_CORE_LOG, __VA_ARGS__);         \
-    }
+#if (ENABLE_UCI_LOGGING == TRUE)
+#define UCI_TRACE_D(...)                                         \
+  {                                                              \
+    if (uwb_debug_enabled)                                       \
+      LOG_PRI(ANDROID_LOG_DEBUG, UWB_UCI_CORE_LOG, __VA_ARGS__); \
+  }
+#define UCI_TRACE_I(...)                                        \
+  {                                                             \
+    if (uwb_debug_enabled)                                      \
+      LOG_PRI(ANDROID_LOG_INFO, UWB_UCI_CORE_LOG, __VA_ARGS__); \
+  }
+#define UCI_TRACE_W(...)                                        \
+  {                                                             \
+    if (uwb_debug_enabled)                                      \
+      LOG_PRI(ANDROID_LOG_WARN, UWB_UCI_CORE_LOG, __VA_ARGS__); \
+  }
+#define UCI_TRACE_E(...)                                         \
+  {                                                              \
+    if (uwb_debug_enabled)                                       \
+      LOG_PRI(ANDROID_LOG_ERROR, UWB_UCI_CORE_LOG, __VA_ARGS__); \
+  }
 #else
-    #define UCI_TRACE_D(...)
-    #define UCI_TRACE_I(...)
-    #define UCI_TRACE_W(...)
-    #define UCI_TRACE_E(...)
+#define UCI_TRACE_D(...)
+#define UCI_TRACE_I(...)
+#define UCI_TRACE_W(...)
+#define UCI_TRACE_E(...)
 #endif /* Logging APIs used by UCI module */
 
 #endif /* UWB_UCI_LOG_H_ */

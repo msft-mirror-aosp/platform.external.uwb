@@ -67,7 +67,7 @@ typedef struct _free_queue {
 } FREE_QUEUE_T;
 
 /* Buffer related defines
-*/
+ */
 #define ALIGN_POOL(pl_size) \
   ((((pl_size) + 3) / sizeof(uint32_t)) * sizeof(uint32_t))
 /* Offset past header */
@@ -83,12 +83,12 @@ typedef struct _free_queue {
 #define BUF_STATUS_QUEUED 2
 
 /* Put all GKI variables into one control block
-*/
+ */
 typedef struct {
-/* Task management variables
-*/
-/* The stack and stack size are not used on Windows
-*/
+  /* Task management variables
+   */
+  /* The stack and stack size are not used on Windows
+   */
 
 #if (GKI_NUM_FIXED_BUF_POOLS > 0)
   uint8_t bufpool0[(ALIGN_POOL(GKI_BUF0_SIZE) + BUFFER_PADDING_SIZE) *
@@ -110,15 +110,14 @@ typedef struct {
                    GKI_BUF3_MAX];
 #endif
 
-
   uint8_t* OSStack[GKI_MAX_TASKS];     /* pointer to beginning of stack */
   uint16_t OSStackSize[GKI_MAX_TASKS]; /* stack size available to each task */
 
   int8_t* OSTName[GKI_MAX_TASKS]; /* name of the task */
 
-  uint8_t OSRdyTbl[GKI_MAX_TASKS]; /* current state of the task */
-  uint16_t OSWaitEvt
-      [GKI_MAX_TASKS]; /* events that have to be processed by the task */
+  uint8_t OSRdyTbl[GKI_MAX_TASKS];   /* current state of the task */
+  uint16_t OSWaitEvt[GKI_MAX_TASKS]; /* events that have to be processed by the
+                                        task */
   uint16_t OSWaitForEvt[GKI_MAX_TASKS]; /* events the task is waiting for*/
 
   uint32_t OSTicks;   /* system ticks from start */
@@ -129,7 +128,7 @@ typedef struct {
   int16_t OSIntNesting;  /* counter to keep track of interrupt nesting */
 
   /* Timer related variables
-  */
+   */
   int32_t OSTicksTilExp; /* Number of ticks till next timer expires */
 #if (GKI_DELAY_STOP_SYS_TICK > 0)
   uint32_t OSTicksTilStop; /* inactivity delay timer; OS Ticks till stopping
@@ -138,8 +137,8 @@ typedef struct {
   int32_t OSNumOrigTicks; /* Number of ticks between last timer expiration to
                              the next one */
 
-  int32_t OSWaitTmr
-      [GKI_MAX_TASKS]; /* ticks the task has to wait, for specific events */
+  int32_t OSWaitTmr[GKI_MAX_TASKS]; /* ticks the task has to wait, for specific
+                                       events */
 
 /* Only take up space timers used in the system (GKI_NUM_TIMERS defined in
  * target.h) */
@@ -164,7 +163,7 @@ typedef struct {
 #endif
 
   /* Buffer related variables
-  */
+   */
   BUFFER_HDR_T* OSTaskQFirst[GKI_MAX_TASKS]
                             [NUM_TASK_MBOX]; /* array of pointers to the first
                                                 event in the task mailbox */
@@ -173,7 +172,7 @@ typedef struct {
                                                event in the task mailbox */
 
   /* Define the buffer pool management variables
-  */
+   */
   FREE_QUEUE_T freeq[GKI_NUM_TOTAL_BUF_POOLS];
 
   uint16_t pool_buf_size[GKI_NUM_TOTAL_BUF_POOLS];
@@ -181,25 +180,22 @@ typedef struct {
   uint16_t pool_additions[GKI_NUM_TOTAL_BUF_POOLS];
 
   /* Define the buffer pool start addresses
-  */
+   */
   uint8_t* pool_start[GKI_NUM_TOTAL_BUF_POOLS]; /* array of pointers to the
                                                    start of each buffer pool */
-  uint8_t*
-      pool_end[GKI_NUM_TOTAL_BUF_POOLS]; /* array of pointers to the end of each
-                                            buffer pool */
-  uint16_t pool_size
-      [GKI_NUM_TOTAL_BUF_POOLS]; /* actual size of the buffers in a pool */
+  uint8_t* pool_end[GKI_NUM_TOTAL_BUF_POOLS]; /* array of pointers to the end of
+                                                 each buffer pool */
+  uint16_t pool_size[GKI_NUM_TOTAL_BUF_POOLS]; /* actual size of the buffers in
+                                                  a pool */
 
   /* Define the buffer pool access control variables */
-  void* p_user_mempool; /* User O/S memory pool */
-  uint16_t
-      pool_access_mask; /* Bits are set if the corresponding buffer pool is a
-                           restricted pool */
+  void* p_user_mempool;      /* User O/S memory pool */
+  uint16_t pool_access_mask; /* Bits are set if the corresponding buffer pool is
+                                a restricted pool */
   uint8_t pool_list[GKI_NUM_TOTAL_BUF_POOLS]; /* buffer pools arranged in the
                                                  order of size */
-  uint8_t
-      curr_total_no_of_pools; /* number of fixed buf pools + current number of
-                                 dynamic pools */
+  uint8_t curr_total_no_of_pools; /* number of fixed buf pools + current number
+                                     of dynamic pools */
 
   bool timer_nesting; /* flag to prevent timer interrupt nesting */
 
@@ -213,7 +209,7 @@ typedef struct {
 } tGKI_COM_CB;
 
 /* Internal GKI function prototypes
-*/
+ */
 extern bool phUwb_gki_chk_buf_damage(void*);
 extern void phUwb_gki_buffer_init(void);
 extern void phUwb_gki_timers_init(void);

@@ -20,6 +20,7 @@
 #define UWA_DM_INT_H
 
 #include <string.h>
+
 #include "uwa_api.h"
 #include "uwa_sys.h"
 #include "uwb_api.h"
@@ -55,7 +56,7 @@ enum {
   UWA_DM_API_CORE_GET_DEVICE_CAPABILITY_EVT,
   UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT,
   UWA_DM_API_SEND_BLINK_DATA_EVT,
-/*    UWB RF Test API events   */
+  /*    UWB RF Test API events   */
   UWA_DM_API_TEST_SET_CONFIG_EVT,
   UWA_DM_API_TEST_GET_CONFIG_EVT,
   UWA_DM_API_TEST_PERIODIC_TX_EVT,
@@ -63,7 +64,7 @@ enum {
   UWA_DM_API_TEST_UWB_LOOPBACK_EVT,
   UWA_DM_API_TEST_RX_EVT,
   UWA_DM_API_TEST_STOP_SESSION_EVT,
-/* UWB Data packet events */
+  /* UWB Data packet events */
   UWA_DM_MAX_EVT
 };
 
@@ -116,7 +117,7 @@ typedef struct {
 /* data type for UWA_DM_API_DEVICE_RESET_EVT */
 typedef struct {
   UWB_HDR hdr;
-  uint8_t resetConfig;                 /* Vendor Specific Reset Config*/
+  uint8_t resetConfig; /* Vendor Specific Reset Config*/
 } tUWA_DM_API_DEVICE_RESET;
 
 /* data type for UWA_DM_API_SEND_RAW_EVT */
@@ -131,13 +132,13 @@ typedef struct {
 /* data type for UWA_DM_API_START_RANGE_EVT */
 typedef struct {
   UWB_HDR hdr;
-  uint32_t session_id;   /* Session ID for which ranging shall start */
+  uint32_t session_id; /* Session ID for which ranging shall start */
 } tUWA_DM_API_RANGING_START;
 
 /* data type for UWA_DM_API_STOP_RANGE_EVT */
 typedef struct {
   UWB_HDR hdr;
-  uint32_t session_id;   /* Session ID for which ranging shall stop */
+  uint32_t session_id; /* Session ID for which ranging shall stop */
 } tUWA_DM_API_RANGING_STOP;
 
 /* data type for UWA_DM_API_SESSION_GET_COUNT_EVT */
@@ -160,14 +161,14 @@ typedef struct {
 /* data type for UWA_DM_API_SESSION_INIT_EVT */
 typedef struct {
   UWB_HDR hdr;
-  uint32_t session_id;  /* session_id for Particular Activity */
-  uint8_t sessionType;   /* session type for Particular Activity */
+  uint32_t session_id; /* session_id for Particular Activity */
+  uint8_t sessionType; /* session type for Particular Activity */
 } tUWA_DM_API_SESSION_INIT;
 
 /* data type for UWA_DM_API_SESSION_DEINIT_EVT */
 typedef struct {
   UWB_HDR hdr;
-  uint32_t session_id;  /* session_id for Particular activity */
+  uint32_t session_id; /* session_id for Particular activity */
 } tUWA_DM_API_SESSION_DEINIT;
 
 /* data type for UWA_DM_API_GET_DEVICE_INFO_EVT */
@@ -252,38 +253,52 @@ typedef struct {
 typedef union {
   /* GKI event buffer header */
   UWB_HDR hdr;
-  tUWA_DM_API_ENABLE enable;                       /* UWA_DM_API_ENABLE_EVT           */
-  tUWA_DM_API_DISABLE disable;                     /* UWA_DM_API_DISABLE_EVT          */
-  tUWA_DM_API_GET_DEVICE_INFO sGet_device_info;    /* UWA_DM_API_GET_DEVICE_INFO      */
-  tUWA_DM_API_DEVICE_RESET sDevice_reset;              /* UWA_DM_API_DEVICE_RESET_EVT        */
-  tUWA_DM_API_CORE_SET_CONFIG setconfig;           /* UWA_DM_API_SET_CORE_CONFIG_EVT       */
-  tUWA_DM_API_CORE_GET_CONFIG getconfig;           /* UWA_DM_API_GET_CORE_CONFIG_EVT       */
-  tUWA_DM_API_SESSION_INIT sessionInit;            /* UWA_DM_API_SESSION_INIT         */
-  tUWA_DM_API_SESSION_DEINIT sessionDeInit;        /* UWA_DM_API_SESSION_DEINIT       */
-  tUWA_DM_API_GET_SESSION_COUNT sGet_session_cnt; /* UWA_DM_API_SESSION_GET_COUNT_EVT*/
-  tUWA_DM_API_GET_APP_CONFIG sApp_get_config;       /* UWA_DM_API_GET_CORE_CONFIG_EVT       */
-  tUWA_DM_API_SET_APP_CONFIG sApp_set_config;       /* UWA_DM_API_SET_CORE_CONFIG_EVT       */
-  tUWA_DM_API_RANGING_START rang_start;            /* UWA_DM_API_START_RANGE_EVT        */
-  tUWA_DM_API_RANGING_STOP rang_stop;              /* UWA_DM_API_STOP_RANGE_EVT         */
-  tUWA_DM_API_SEND_RAW send_raw;                   /* UWA_DM_API_SEND_RAW_EVT         */
-  tUWA_DM_API_GET_RANGING_COUNT sGet_rang_count;    /* UWA_DM_API_GET_RANGE_COUNT_EVT         */
-  tUWA_DM_API_GET_SESSION_STATUS sGet_session_status;   /* UWA_DM_API_GET_SESSION_STATUS_EVT         */
-  tUWA_DM_API_CORE_GET_DEVICE_CAPABILITY get_device_capability; /* UWA_DM_API_CORE_GET_DEVICE_CAPABILITY_EVT  */
-  tUWA_DM_API_TEST_UWB_LOOPBACK sUwb_loopback;   /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT  */
-  tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST sMulticast_list; /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
-  tUWA_DM_API_SEND_BLINK_DATA sSend_blink_data; /* UWA_DM_API_SEND_BLINK_DATA_EVT */
-/*  data types for all UWB RF TEST events */
-  tUWA_DM_API_TEST_GET_CONFIG sTest_get_config;       /* UWA_DM_API_TEST_GET_CONFIG_EVT       */
-  tUWA_DM_API_TEST_SET_CONFIG sTest_set_config;       /* UWA_DM_API_TEST_SET_CONFIG_EVT       */
-  tUWA_DM_API_TEST_PERIODIC_TX sPeriodic_tx;           /* UWA_DM_API_TEST_PERIODIC_TX_EVT            */
-  tUWA_DM_API_TEST_PER_RX sPer_rx;                     /* UWA_DM_API_TEST_PER_RX_EVT            */
-  tUWA_DM_API_TEST_RX sTest_rx;                        /*UWA_DM_API_TEST_RX_EVT*/
-  tUWA_DM_API_TEST_STOP_SESSION sTest_stop_session;    /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
+  tUWA_DM_API_ENABLE enable;   /* UWA_DM_API_ENABLE_EVT           */
+  tUWA_DM_API_DISABLE disable; /* UWA_DM_API_DISABLE_EVT          */
+  tUWA_DM_API_GET_DEVICE_INFO
+      sGet_device_info;                   /* UWA_DM_API_GET_DEVICE_INFO      */
+  tUWA_DM_API_DEVICE_RESET sDevice_reset; /* UWA_DM_API_DEVICE_RESET_EVT */
+  tUWA_DM_API_CORE_SET_CONFIG setconfig;  /* UWA_DM_API_SET_CORE_CONFIG_EVT  */
+  tUWA_DM_API_CORE_GET_CONFIG getconfig;  /* UWA_DM_API_GET_CORE_CONFIG_EVT  */
+  tUWA_DM_API_SESSION_INIT sessionInit;   /* UWA_DM_API_SESSION_INIT         */
+  tUWA_DM_API_SESSION_DEINIT sessionDeInit; /* UWA_DM_API_SESSION_DEINIT */
+  tUWA_DM_API_GET_SESSION_COUNT
+      sGet_session_cnt; /* UWA_DM_API_SESSION_GET_COUNT_EVT*/
+  tUWA_DM_API_GET_APP_CONFIG
+      sApp_get_config; /* UWA_DM_API_GET_CORE_CONFIG_EVT       */
+  tUWA_DM_API_SET_APP_CONFIG
+      sApp_set_config; /* UWA_DM_API_SET_CORE_CONFIG_EVT       */
+  tUWA_DM_API_RANGING_START rang_start; /* UWA_DM_API_START_RANGE_EVT        */
+  tUWA_DM_API_RANGING_STOP rang_stop;   /* UWA_DM_API_STOP_RANGE_EVT         */
+  tUWA_DM_API_SEND_RAW send_raw;        /* UWA_DM_API_SEND_RAW_EVT         */
+  tUWA_DM_API_GET_RANGING_COUNT
+      sGet_rang_count; /* UWA_DM_API_GET_RANGE_COUNT_EVT         */
+  tUWA_DM_API_GET_SESSION_STATUS
+      sGet_session_status; /* UWA_DM_API_GET_SESSION_STATUS_EVT         */
+  tUWA_DM_API_CORE_GET_DEVICE_CAPABILITY
+      get_device_capability; /* UWA_DM_API_CORE_GET_DEVICE_CAPABILITY_EVT  */
+  tUWA_DM_API_TEST_UWB_LOOPBACK
+      sUwb_loopback; /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT  */
+  tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST
+      sMulticast_list; /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
+  tUWA_DM_API_SEND_BLINK_DATA
+      sSend_blink_data; /* UWA_DM_API_SEND_BLINK_DATA_EVT */
+                        /*  data types for all UWB RF TEST events */
+  tUWA_DM_API_TEST_GET_CONFIG
+      sTest_get_config; /* UWA_DM_API_TEST_GET_CONFIG_EVT       */
+  tUWA_DM_API_TEST_SET_CONFIG
+      sTest_set_config; /* UWA_DM_API_TEST_SET_CONFIG_EVT       */
+  tUWA_DM_API_TEST_PERIODIC_TX
+      sPeriodic_tx; /* UWA_DM_API_TEST_PERIODIC_TX_EVT            */
+  tUWA_DM_API_TEST_PER_RX sPer_rx; /* UWA_DM_API_TEST_PER_RX_EVT            */
+  tUWA_DM_API_TEST_RX sTest_rx;    /*UWA_DM_API_TEST_RX_EVT*/
+  tUWA_DM_API_TEST_STOP_SESSION
+      sTest_stop_session; /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
 } tUWA_DM_MSG;
 
 typedef struct {
   uint32_t flags; /* UWA_DM flags (see definitions for UWA_DM_FLAGS_*)    */
-  tUWA_DM_CBACK* p_dm_cback; /* UWA DM callback */
+  tUWA_DM_CBACK* p_dm_cback;           /* UWA DM callback */
   tUWA_DM_TEST_CBACK* p_dm_test_cback; /* UWA DM callback for RF test events */
   TIMER_LIST_ENT tle;
 } tUWA_DM_CB;

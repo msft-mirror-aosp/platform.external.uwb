@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <malloc.h>
 #include <pthread.h> /* must be 1st header defined  */
+
 #include "uci_log.h"
 #include "uwb_gki_int.h"
 
@@ -38,7 +39,7 @@
 #endif
 
 /* Define the structure that holds the GKI variables
-*/
+ */
 tGKI_CB gki_cb;
 
 #define NANOSEC_PER_MILLISEC (1000000)
@@ -59,7 +60,7 @@ static pthread_cond_t   gki_timer_update_cond;
 typedef struct {
   uint8_t task_id;         /* GKI task id */
   TASKPTR task_entry;      /* Task entry function*/
-  uint32_t params;        /* Extra params to pass to task entry function */
+  uint32_t params;         /* Extra params to pass to task entry function */
   pthread_cond_t* pCond;   /* for android*/
   pthread_mutex_t* pMutex; /* for android*/
 } gki_pthread_info_t;
@@ -86,8 +87,7 @@ void* phUwb_gki_task_entry(void* params) {
   /* Call the actual thread entry point */
   (p_pthread_info->task_entry)(p_pthread_info->params);
 
-  UCI_TRACE_E("gki_task task_id=%i terminating",
-                             p_pthread_info->task_id);
+  UCI_TRACE_E("gki_task task_id=%i terminating", p_pthread_info->task_id);
   gki_cb.os.thread_id[p_pthread_info->task_id] = 0;
 
   return NULL;
@@ -152,9 +152,10 @@ void phUwb_GKI_init(void) {
 **                  of the function prototype.
 **
 *******************************************************************************/
-uint8_t phUwb_GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskname,
-                        uint16_t* stack, uint16_t stacksize, void* pCondVar,
-                        void* pMutex) {
+uint8_t phUwb_GKI_create_task(TASKPTR task_entry, uint8_t task_id,
+                              int8_t* taskname, uint16_t* stack,
+                              uint16_t stacksize, void* pCondVar,
+                              void* pMutex) {
   struct sched_param param;
   int policy, ret = 0;
   pthread_condattr_t attr;
@@ -187,8 +188,8 @@ uint8_t phUwb_GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskn
 #if (FALSE == GKI_PTHREAD_JOINABLE)
   pthread_attr_setdetachstate(&attr1, PTHREAD_CREATE_DETACHED);
 
-  UCI_TRACE_I(
-      "GKI creating task %i, pCond/pMutex=%p/%p", task_id, pCondVar, pMutex);
+  UCI_TRACE_I("GKI creating task %i, pCond/pMutex=%p/%p", task_id, pCondVar,
+              pMutex);
 #else
   UCI_TRACE_I("GKI creating JOINABLE task %i", task_id);
 #endif
@@ -203,8 +204,8 @@ uint8_t phUwb_GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskn
   gki_pthread_info[task_id].pCond = (pthread_cond_t*)pCondVar;
   gki_pthread_info[task_id].pMutex = (pthread_mutex_t*)pMutex;
 
-  ret = pthread_create(&gki_cb.os.thread_id[task_id], &attr1, phUwb_gki_task_entry,
-                       &gki_pthread_info[task_id]);
+  ret = pthread_create(&gki_cb.os.thread_id[task_id], &attr1,
+                       phUwb_gki_task_entry, &gki_pthread_info[task_id]);
 
   if (ret != 0) {
     UCI_TRACE_I("pthread_create failed(%d), %s!", ret, taskname);
@@ -220,9 +221,8 @@ uint8_t phUwb_GKI_create_task(TASKPTR task_entry, uint8_t task_id, int8_t* taskn
     pthread_setschedparam(gki_cb.os.thread_id[task_id], policy, &param);
   }
 
-  UCI_TRACE_I(
-      "Leaving GKI_create_task %p %d %lx %s %p %d", task_entry, task_id,
-      gki_cb.os.thread_id[task_id], taskname, stack, stacksize);
+  UCI_TRACE_I("Leaving GKI_create_task %p %d %lx %s %p %d", task_entry, task_id,
+              gki_cb.os.thread_id[task_id], taskname, stack, stacksize);
 
   return (GKI_SUCCESS);
 }
@@ -283,9 +283,9 @@ void phUwb_GKI_shutdown(void) {
 
   /* Destroy mutex and condition variable objects */
   pthread_mutex_destroy(&gki_cb.os.GKI_mutex);
-/*    pthread_mutex_destroy(&GKI_sched_mutex); */
-/*    pthread_mutex_destroy(&thread_delay_mutex);
- pthread_cond_destroy (&thread_delay_cond); */
+  /*    pthread_mutex_destroy(&GKI_sched_mutex); */
+  /*    pthread_mutex_destroy(&thread_delay_mutex);
+   pthread_cond_destroy (&thread_delay_cond); */
 
   if (gki_cb.os.gki_timer_wake_lock_on) {
     UCI_TRACE_I("GKI_shutdown :  release_wake_lock(brcm_btld)");
@@ -368,7 +368,8 @@ void phUwb_GKI_run(__attribute__((unused)) void* p_task_id) {
   /* register start stop function which disable timer loop in GKI_run() when no
    * timers are
    * in any GKI/BTA/BTU this should save power when BTLD is idle! */
-  phUwb_GKI_timer_queue_register_callback(phUwb_gki_system_tick_start_stop_cback);
+  phUwb_GKI_timer_queue_register_callback(
+      phUwb_gki_system_tick_start_stop_cback);
   UCI_TRACE_I("Start/Stop GKI_timer_update_registered!");
 #endif
   UCI_TRACE_I("GKI_run, run_cond(%p)=%d ", p_run_cond, *p_run_cond);
@@ -405,7 +406,7 @@ void phUwb_GKI_run(__attribute__((unused)) void* p_task_id) {
       pthread_cond_wait(&gki_cb.os.gki_timer_cond, &gki_cb.os.gki_timer_mutex);
       pthread_mutex_unlock(&gki_cb.os.gki_timer_mutex);
     }
-/* potentially we need to adjust os gki_cb.com.OSTicks */
+    /* potentially we need to adjust os gki_cb.com.OSTicks */
 
 #ifdef GKI_TICK_TIMER_DEBUG
     UCI_TRACE_I(">>> RESTARTED run_cond: %d", *p_run_cond);
@@ -439,8 +440,8 @@ uint16_t phUwb_GKI_wait(uint16_t flag, uint32_t timeout) {
 
   rtask = phUwb_GKI_get_taskid();
   if (rtask >= GKI_MAX_TASKS) {
-    UCI_TRACE_E("%s() Exiting thread; rtask %d >= %d", __func__,
-                               rtask, GKI_MAX_TASKS);
+    UCI_TRACE_E("%s() Exiting thread; rtask %d >= %d", __func__, rtask,
+                GKI_MAX_TASKS);
     return EVENT_MASK(GKI_SHUTDOWN_EVT);
   }
 
@@ -448,7 +449,7 @@ uint16_t phUwb_GKI_wait(uint16_t flag, uint32_t timeout) {
   if (p_pthread_info->pCond != NULL && p_pthread_info->pMutex != NULL) {
     int ret;
     UCI_TRACE_I("GKI_wait task=%i, pCond/pMutex = %p/%p", rtask,
-                        p_pthread_info->pCond, p_pthread_info->pMutex);
+                p_pthread_info->pCond, p_pthread_info->pMutex);
     ret = pthread_mutex_lock(p_pthread_info->pMutex);
     ret = pthread_cond_signal(p_pthread_info->pCond);
     ret = pthread_mutex_unlock(p_pthread_info->pMutex);
@@ -476,11 +477,12 @@ uint16_t phUwb_GKI_wait(uint16_t flag, uint32_t timeout) {
         abstime.tv_sec += sec;
       }
 
-      int waitResult = pthread_cond_timedwait(&gki_cb.os.thread_evt_cond[rtask],
-                             &gki_cb.os.thread_evt_mutex[rtask], &abstime);
+      int waitResult =
+          pthread_cond_timedwait(&gki_cb.os.thread_evt_cond[rtask],
+                                 &gki_cb.os.thread_evt_mutex[rtask], &abstime);
       if ((waitResult != 0) && (waitResult != ETIMEDOUT))
         UCI_TRACE_E("phUwb_GKI_wait::wait: fail timed wait; error=0x%X",
-                               waitResult);
+                    waitResult);
 
     } else {
       pthread_cond_wait(&gki_cb.os.thread_evt_cond[rtask],
@@ -509,8 +511,7 @@ uint16_t phUwb_GKI_wait(uint16_t flag, uint32_t timeout) {
       /* unlock thread_evt_mutex as pthread_cond_wait() does auto lock when cond
        * is met */
       pthread_mutex_unlock(&gki_cb.os.thread_evt_mutex[rtask]);
-      UCI_TRACE_E("GKI TASK_DEAD received. exit thread %d...",
-                                 rtask);
+      UCI_TRACE_E("GKI TASK_DEAD received. exit thread %d...", rtask);
 
       gki_cb.os.thread_id[rtask] = 0;
       return (EVENT_MASK(GKI_SHUTDOWN_EVT));
@@ -669,9 +670,8 @@ void phUwb_GKI_exception(uint16_t code, std::string msg) {
   UCI_TRACE_E("Task State Table");
 
   for (task_id = 0; task_id < GKI_MAX_TASKS; task_id++) {
-    UCI_TRACE_E("TASK ID [%d] task name [%s] state [%d]",
-                               task_id, gki_cb.com.OSTName[task_id],
-                               gki_cb.com.OSRdyTbl[task_id]);
+    UCI_TRACE_E("TASK ID [%d] task name [%s] state [%d]", task_id,
+                gki_cb.com.OSTName[task_id], gki_cb.com.OSRdyTbl[task_id]);
   }
 
   UCI_TRACE_E("%d %s", code, msg.c_str());

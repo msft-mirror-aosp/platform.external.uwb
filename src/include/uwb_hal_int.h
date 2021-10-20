@@ -25,8 +25,8 @@
 #ifndef UWB_HAL_INT_H
 #define UWB_HAL_INT_H
 
-#include "uwb_gki.h"
 #include "uci_defs.h"
+#include "uwb_gki.h"
 #include "uwb_hal_api.h"
 
 enum {
@@ -50,7 +50,5 @@ typedef void(uwb_stack_callback_t)(uwb_event_t event,
  * can use to pass incoming data to the stack.
  */
 typedef void(uwb_stack_data_callback_t)(uint16_t data_len, uint8_t* p_data);
-
-
 
 #endif /* UWB_HAL_INT_H */

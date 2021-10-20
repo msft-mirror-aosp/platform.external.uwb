@@ -15,12 +15,13 @@
  * limitations under the License.
  */
 #include "config.h"
-#include "uwb_config.h"
 
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/parseint.h>
 #include <android-base/strings.h>
+
+#include "uwb_config.h"
 
 using namespace ::std;
 using namespace ::android::base;

@@ -17,33 +17,36 @@
  *
  ******************************************************************************/
 
-#include <cutils/properties.h>
-#include <algorithm>
-#include <pthread.h>
+#include "UwbAdaptation.h"
+
+#include <aidl/android/hardware/uwb/BnUwb.h>
+#include <aidl/android/hardware/uwb/BnUwbClientCallback.h>
+#include <aidl/android/hardware/uwb/IUwb.h>
+#include <aidl/android/hardware/uwb/IUwbChip.h>
 #include <android-base/logging.h>
 #include <android/binder_ibinder.h>
 #include <android/binder_manager.h>
-#include <binder/IServiceManager.h>
-#include <binder/IMemory.h>
-#include <binder/MemoryDealer.h>
-#include <aidl/android/hardware/uwb/BnUwb.h>
 #include <android/binder_process.h>
-#include <aidl/android/hardware/uwb/IUwb.h>
-#include <aidl/android/hardware/uwb/BnUwbClientCallback.h>
-#include "UwbAdaptation.h"
+#include <binder/IMemory.h>
+#include <binder/IServiceManager.h>
+#include <binder/MemoryDealer.h>
+#include <cutils/properties.h>
+#include <pthread.h>
 
+#include <algorithm>
+
+#include "uci_log.h"
 #include "uwa_api.h"
+#include "uwb_config.h"
+#include "uwb_hal_int.h"
 #include "uwb_int.h"
 #include "uwb_target.h"
-#include "uwb_hal_int.h"
-#include "uwb_config.h"
-#include "uci_log.h"
 
 using IUwbV1_0 = aidl::android::hardware::uwb::IUwb;
 using IUwbChipV1_0 = aidl::android::hardware::uwb::IUwbChip;
 using UwbStatus = aidl::android::hardware::uwb::UwbStatus;
-using aidl::android::hardware::uwb::IUwbClientCallback;
 using aidl::android::hardware::uwb::BnUwbClientCallback;
+using aidl::android::hardware::uwb::IUwbClientCallback;
 
 std::string UWB_HAL_SERVICE_NAME = "android.hardware.uwb.IUwb/default";
 extern bool uwb_debug_enabled;
@@ -95,7 +98,8 @@ std::shared_ptr<IUwbChipV1_0> getHalService() {
 
 }  // namespace
 
-class UwbClientCallback : public aidl::android::hardware::uwb::BnUwbClientCallback {
+class UwbClientCallback
+    : public aidl::android::hardware::uwb::BnUwbClientCallback {
  public:
   UwbClientCallback(tHAL_UWB_CBACK* eventCallback,
                     tHAL_UWB_DATA_CBACK dataCallback) {
@@ -111,11 +115,10 @@ class UwbClientCallback : public aidl::android::hardware::uwb::BnUwbClientCallba
     return ::ndk::ScopedAStatus::ok();
   };
 
-  ::ndk::ScopedAStatus onUciMessage(
-    const std::vector<uint8_t>& data) override {
+  ::ndk::ScopedAStatus onUciMessage(const std::vector<uint8_t>& data) override {
     std::vector<uint8_t> copy = data;
-      mDataCallback(copy.size(), &copy[0]);
-   return ::ndk::ScopedAStatus::ok();
+    mDataCallback(copy.size(), &copy[0]);
+    return ::ndk::ScopedAStatus::ok();
   };
 
  private:
@@ -180,12 +183,12 @@ void UwbAdaptation::Initialize() {
   initializeGlobalDebugEnabledFlag();
   phUwb_GKI_init();
   phUwb_GKI_enable();
-  phUwb_GKI_create_task((TASKPTR)UWBA_TASK, BTU_TASK, (int8_t*)"UWBA_TASK", 0, 0,
-                  (pthread_cond_t*)NULL, NULL);
+  phUwb_GKI_create_task((TASKPTR)UWBA_TASK, BTU_TASK, (int8_t*)"UWBA_TASK", 0,
+                        0, (pthread_cond_t*)NULL, NULL);
   {
     AutoThreadMutex guard(mCondVar);
-    phUwb_GKI_create_task((TASKPTR)Thread, MMI_TASK, (int8_t*)"UWBA_THREAD", 0, 0,
-                    (pthread_cond_t*)NULL, NULL);
+    phUwb_GKI_create_task((TASKPTR)Thread, MMI_TASK, (int8_t*)"UWBA_THREAD", 0,
+                          0, (pthread_cond_t*)NULL, NULL);
     mCondVar.wait();
   }
 
@@ -213,7 +216,7 @@ void UwbAdaptation::Finalize(bool graceExit) {
   phUwb_GKI_shutdown();
 
   memset(&mHalEntryFuncs, 0, sizeof(mHalEntryFuncs));
-  if(graceExit) {
+  if (graceExit) {
     UwbConfig::clear();
   }
 
@@ -267,8 +270,9 @@ uint32_t UwbAdaptation::Thread(__attribute__((unused)) uint32_t arg) {
   {
     ThreadCondVar CondVar;
     AutoThreadMutex guard(CondVar);
-    phUwb_GKI_create_task((TASKPTR)uwb_task, UWB_TASK, (int8_t*)"UWB_TASK", 0, 0,
-                    (pthread_cond_t*)CondVar, (pthread_mutex_t*)CondVar);
+    phUwb_GKI_create_task((TASKPTR)uwb_task, UWB_TASK, (int8_t*)"UWB_TASK", 0,
+                          0, (pthread_cond_t*)CondVar,
+                          (pthread_mutex_t*)CondVar);
     CondVar.wait();
   }
 
@@ -309,12 +313,11 @@ void UwbAdaptation::InitializeHalDeviceContext() {
   mHalEntryFuncs.write = HalWrite;
   mHalEntryFuncs.CoreInitialization = CoreInitialization;
   mHal = getHalService();
-  if(mHal == nullptr) {
+  if (mHal == nullptr) {
     UCI_TRACE_I("%s: Failed to retrieve the UWB HAL!", func);
   } else {
-    UCI_TRACE_I("%s: IUwb::getService() returned %p (%s)", func,
-                            mHal.get(),
-                            (mHal->isRemote() ? "remote" : "local"));
+    UCI_TRACE_I("%s: IUwb::getService() returned %p (%s)", func, mHal.get(),
+                (mHal->isRemote() ? "remote" : "local"));
   }
 }
 
@@ -334,7 +337,8 @@ void UwbAdaptation::HalOpen(tHAL_UWB_CBACK* p_hal_cback,
   UCI_TRACE_I("%s", func);
   ndk::ScopedAStatus status;
   std::shared_ptr<IUwbClientCallback> mCallback;
-  mCallback = ndk::SharedRefBase::make<UwbClientCallback>(p_hal_cback, p_data_cback);
+  mCallback =
+      ndk::SharedRefBase::make<UwbClientCallback>(p_hal_cback, p_data_cback);
 
   if (mHal != nullptr) {
     status = mHal->open(mCallback);
@@ -356,8 +360,7 @@ void UwbAdaptation::HalClose() {
   UNUSED(func);
   ndk::ScopedAStatus status;
   UCI_TRACE_I("%s HalClose Enter", func);
-  if(mHal != nullptr)
-    status = mHal->close();
+  if (mHal != nullptr) status = mHal->close();
 }
 
 /*******************************************************************************
@@ -375,34 +378,34 @@ void UwbAdaptation::HalWrite(__attribute__((unused)) uint16_t data_len,
   UNUSED(func);
   UCI_TRACE_I("%s: Enter", func);
   std::vector<uint8_t> data;
-  if(p_data == NULL){
+  if (p_data == NULL) {
     UCI_TRACE_E("p_data is null");
     return;
   }
   int ret;
   copy(&p_data[0], &p_data[data_len], back_inserter(data));
-  if(mHal != nullptr) {
+  if (mHal != nullptr) {
     mHal->sendUciMessage(data, &ret);
   } else {
     UCI_TRACE_E("mHal is NULL");
   }
 }
 
- /*******************************************************************************
- **
- ** Function:    UwbAdaptation::CoreInitialization
- **
- ** Description: Performs UWB CoreInitialization.
- **
- ** Returns:     UwbStatus::OK on success and UwbStatus::FAILED on error.
- **
- *******************************************************************************/
+/*******************************************************************************
+**
+** Function:    UwbAdaptation::CoreInitialization
+**
+** Description: Performs UWB CoreInitialization.
+**
+** Returns:     UwbStatus::OK on success and UwbStatus::FAILED on error.
+**
+*******************************************************************************/
 tUWB_STATUS UwbAdaptation::CoreInitialization() {
   const char* func = "UwbAdaptation::CoreInitialization";
   UNUSED(func);
   UCI_TRACE_I("%s: enter", func);
   if (mHal != nullptr) {
-    if(!mHal->coreInit().isOk()) return UWB_STATUS_FAILED;
+    if (!mHal->coreInit().isOk()) return UWB_STATUS_FAILED;
   } else {
     UCI_TRACE_E("mHal is NULL");
     return UWB_STATUS_FAILED;

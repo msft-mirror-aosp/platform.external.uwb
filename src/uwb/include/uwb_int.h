@@ -19,10 +19,10 @@
 #ifndef UWB_INT_H_
 #define UWB_INT_H_
 
-#include "uwb_target.h"
-#include "uwb_gki.h"
 #include "uci_defs.h"
 #include "uwb_api.h"
+#include "uwb_gki.h"
+#include "uwb_target.h"
 
 /****************************************************************************
 ** UWB_TASK definitions
@@ -42,7 +42,7 @@ enum {
   UWB_STATE_NONE,         /* not start up yet                         */
   UWB_STATE_W4_HAL_OPEN,  /* waiting for HAL_UWB_OPEN_CPLT_EVT   */
   UWB_STATE_IDLE,         /* normal operation( device is in idle state) */
-  UWB_STATE_ACTIVE,      /* UWB device is in active                    */
+  UWB_STATE_ACTIVE,       /* UWB device is in active                    */
   UWB_STATE_W4_HAL_CLOSE, /* waiting for HAL_UWB_CLOSE_CPLT_EVT  */
   UWB_STATE_CLOSING
 };
@@ -87,10 +87,10 @@ typedef struct {
   uint16_t uci_wait_rsp_tout; /* UCI command timeout (in ms) */
   uint16_t retry_rsp_timeout; /* UCI command timeout during retry */
 
-  uint8_t uci_cmd_window; /* Number of commands the controller can accecpt
-                             without waiting for response */
-  bool    is_resp_pending; /* response is pending from UWBS */
-  bool    is_recovery_in_progress; /* recovery in progresss  */
+  uint8_t uci_cmd_window;       /* Number of commands the controller can accecpt
+                                   without waiting for response */
+  bool is_resp_pending;         /* response is pending from UWBS */
+  bool is_recovery_in_progress; /* recovery in progresss  */
 
   tHAL_UWB_ENTRY* p_hal;
   uint8_t rawCmdCbflag;
@@ -99,7 +99,7 @@ typedef struct {
   uint16_t cmd_retry_count;
   UWB_HDR* pLast_cmd_buf;
 
-  bool IsConformaceTestEnabled;   /* MCTT mode indicator */
+  bool IsConformaceTestEnabled; /* MCTT mode indicator */
 } tUWB_CB;
 
 /*****************************************************************************
@@ -127,10 +127,12 @@ extern void uwb_ucif_uwb_recovery(void);
 
 extern bool uwb_proc_core_rsp(uint8_t op_code, uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_get_device_info_rsp(uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_proc_get_device_capability_rsp(uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_proc_get_device_capability_rsp(uint8_t* p_buf,
+                                                    uint16_t len);
 extern void uwb_ucif_proc_core_set_config_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_core_get_config_rsp(uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_proc_core_device_reset_rsp_status(uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_proc_core_device_reset_rsp_status(uint8_t* p_buf,
+                                                       uint16_t len);
 extern void uwb_ucif_proc_core_device_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_core_generic_error_ntf(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_conformance_ntf(uint8_t* p_buf, uint16_t len);
@@ -138,17 +140,23 @@ extern void uwb_ucif_proc_app_get_config_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_app_set_config_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_ranging_data(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_send_blink_data_ntf(uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_range_management_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_get_range_count_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_session_management_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_range_management_status(tUWB_RESPONSE_EVT event,
+                                             uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_get_range_count_status(tUWB_RESPONSE_EVT event,
+                                            uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_session_management_status(tUWB_RESPONSE_EVT event,
+                                               uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_session_status(uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_proc_multicast_list_update_ntf(uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_proc_multicast_list_update_ntf(uint8_t* p_buf,
+                                                    uint16_t len);
 
 /* APIs for handling UWB RF test command responses and notifications */
-extern void uwb_ucif_test_management_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_test_management_status(tUWB_RESPONSE_EVT event,
+                                            uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_test_get_config_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_test_set_config_status(uint8_t* p_buf, uint16_t len);
-extern void uwb_ucif_proc_rf_test_data(tUWB_RESPONSE_EVT event, uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_proc_rf_test_data(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
+                                       uint16_t len);
 
 /* From uwb_task.c */
 extern uint32_t uwb_task(uint32_t param);
