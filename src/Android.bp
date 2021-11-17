@@ -65,7 +65,7 @@ cc_library_static {
 filegroup {
     name: "libuwb_uci_rust_srcs",
     srcs: [
-        "rust/adaptation/src/lib.rs",
+        "rust/lib.rs",
     ],
 }
 
@@ -78,10 +78,12 @@ rust_library {
     ],
     rustlibs: [
         "android.hardware.uwb-V1-rust",
-        "liblazy_static",
+        "libanyhow",
         "libbinder_rs",
         "libbinder_ndk_sys",
         "liblog_rust",
+        "liblogger",
+        "libtokio",
     ],
     shared_libs: [
         "libbase",
@@ -102,10 +104,13 @@ rust_test {
     test_suites: ["general-tests"],
     auto_gen_config: true,
     rustlibs:[
-        "libuwb_uci_rust",
         "android.hardware.uwb-V1-rust",
+        "libanyhow",
         "liblog_rust",
-        ],
+        "liblogger",
+        "libtokio",
+        "libuwb_uci_rust",
+    ],
 }
 
 rust_test {
@@ -123,7 +128,7 @@ rust_test {
         "libbytes",
         "libnum_traits",
         "libthiserror",
-        ],
+    ],
 }
 
 genrule {
