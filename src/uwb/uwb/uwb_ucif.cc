@@ -348,6 +348,9 @@ bool uwb_ucif_process_event(UWB_HDR* p_msg) {
           case UCI_GID_RANGE_MANAGE: /* 0010b UCI Range group */
             uci_proc_rang_management_rsp(oid, pp, payload_length);
             break;
+          case UCI_GID_ANDROID: /* 1110b UCI vendor Android group */
+            uci_proc_android_rsp(oid, pp, payload_length);
+            break;
           case UCI_GID_TEST: /* 1101b test group */
             uci_proc_test_management_rsp(oid, pp, payload_length);
             break;
@@ -963,6 +966,36 @@ void uwb_ucif_proc_send_blink_data_ntf(uint8_t* p_buf, uint16_t len) {
   uwb_response.sSend_blink_data_ntf = blink_data_tx_ntf;
 
   (*uwb_cb.p_resp_cback)(UWB_BLINK_DATA_TX_NTF_REVT, &uwb_response);
+}
+
+/*******************************************************************************
+ **
+ ** Function         uwb_ucif_proc_android_set_country_code_status
+ **
+ ** Description      This function is called to set country code status
+ **                  notification
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uwb_ucif_proc_android_set_country_code_status(uint8_t* p_buf,
+                                                   uint16_t len) {
+  tUWB_RESPONSE uwb_response;
+  if (len == 0) {
+    UCI_TRACE_E("%s: len is zero", __func__);
+    return;
+  }
+  uint8_t status = *p_buf;
+
+  UCI_TRACE_I("uwb_ucif_proc_android_set_country_code_status country code status = %x", status);
+  uwb_response.sSet_country_code_status.status = status;
+  uwb_cb.device_state = status;
+
+  (*uwb_cb.p_resp_cback)(UWB_SET_COUNTRY_CODE_REVT, &uwb_response);
+  if (status == UWBS_STATUS_ERROR) {
+    uwb_stop_quick_timer(&uwb_cb.uci_wait_rsp_timer);
+    uwb_ucif_uwb_recovery();
+  }
 }
 
 /*******************************************************************************

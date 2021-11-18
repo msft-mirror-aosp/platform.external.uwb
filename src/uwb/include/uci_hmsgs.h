@@ -43,6 +43,7 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
                                           uint8_t noOfControlees,
                                           uint16_t* shortAddressList,
                                           uint32_t* subSessionIdList);
+uint8_t uci_snd_set_country_code_cmd(uint8_t* country_code);
 uint8_t uci_snd_app_get_config_cmd(uint32_t session_id, uint8_t num_ids,
                                    uint8_t length, uint8_t* param_ids);
 uint8_t uci_snd_app_set_config_cmd(uint32_t session_id, uint8_t num_ids,
@@ -75,6 +76,7 @@ extern void uci_proc_rang_management_rsp(uint8_t op_code, uint8_t* p_buf,
                                          uint16_t len);
 extern void uci_proc_rang_management_ntf(uint8_t op_code, uint8_t* p_buf,
                                          uint16_t len);
+extern void uci_proc_android_rsp(uint8_t op_code, uint8_t* p_buf, uint16_t len);
 extern void uci_proc_test_management_ntf(uint8_t op_code, uint8_t* p_buf,
                                          uint16_t len);
 extern void uci_proc_test_management_rsp(uint8_t op_code, uint8_t* p_buf,

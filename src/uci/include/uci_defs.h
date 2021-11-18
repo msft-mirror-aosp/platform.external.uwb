@@ -73,6 +73,7 @@
 #define UCI_GID_CORE 0x00           /* 0000b UCI Core group */
 #define UCI_GID_SESSION_MANAGE 0x01 /* 0001b Session Config commands */
 #define UCI_GID_RANGE_MANAGE 0x02   /* 0010b Range Management group */
+#define UCI_GID_ANDROID 0x0E        /* 1110b Android vendor group */
 #define UCI_GID_TEST 0x0D           /* 1101b RF Test Gropup */
 
 /* 0100b - 1100b RFU */
@@ -161,6 +162,14 @@
 #define UCI_MSG_RANGE_START_CMD_SIZE 0x04
 #define UCI_MSG_RANGE_STOP_CMD_SIZE 0x04
 #define UCI_MSG_RANGE_GET_COUNT_CMD_SIZE 0x04
+
+/**********************************************
+ * UCI Android Vendor Group-E: Opcodes and size of commands
+ **********************************************/
+#define UCI_MSG_ANDROID_GET_POWER_STATS 0x00
+#define UCI_MSG_ANDROID_SET_COUNTRY_CODE 0x01
+
+#define UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE COUNTRY_CODE_ARRAY_LEN
 
 /**********************************************
  * UCI Parameter IDs : Device Configurations
@@ -334,6 +343,7 @@
   12  // max number of responders for contention based raning
 #define MAX_NUM_CONTROLLEES \
   8  // max bumber of controlees for  time schedules rangng ( multicast)
+#define COUNTRY_CODE_ARRAY_LEN 2
 
 /* device status */
 typedef enum {

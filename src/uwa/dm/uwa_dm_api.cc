@@ -599,6 +599,35 @@ extern tUWA_STATUS UWA_ControllerMulticastListUpdate(
 
 /*******************************************************************************
 **
+** Function         UWA_ControllerSetCountryCode
+**
+** Description      This function is called to set country code.
+**                  The result is reported with an
+**                  UWA_DM_SET_COUNTRY_CODE_RSP_EVT
+**                  in the tUWA_DM_CBACK callback.
+**
+** Returns          UWA_STATUS_OK if command is successfully initiated
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+extern tUWA_STATUS UWA_ControllerSetCountryCode(uint8_t* countryCodeArray) {
+  tUWA_DM_API_SET_COUNTRY_CODE * p_msg;
+  p_msg = (tUWA_DM_API_SET_COUNTRY_CODE *)phUwb_GKI_getbuf(
+      sizeof(tUWA_DM_API_SET_COUNTRY_CODE));
+
+  if (p_msg != NULL) {
+    p_msg->hdr.event = UWA_DM_API_SET_COUNTRY_CODE_EVT;
+    if (countryCodeArray != NULL) {
+      memcpy(p_msg->country_code, countryCodeArray, COUNTRY_CODE_ARRAY_LEN);
+    }
+    uwa_sys_sendmsg(p_msg);
+    return UWA_STATUS_OK;
+  }
+  return UWA_STATUS_FAILED;
+}
+
+/*******************************************************************************
+**
 ** Function         UWA_SendBlinkData
 **
 ** Description      This function is called to send Blink Data Tx.
