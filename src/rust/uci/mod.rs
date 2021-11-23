@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+mod uci_hmsgs;
+mod uci_hrcv;
+mod uci_packets;
+
 use anyhow::{bail, Result};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
