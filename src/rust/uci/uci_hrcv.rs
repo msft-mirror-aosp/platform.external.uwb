@@ -15,16 +15,16 @@
  */
 
 use crate::uci::uci_packets::{
-    GetCapsInfoRspBuilder, GetCapsInfoRspPacket, GetDeviceInfoRspBuilder, GetDeviceInfoRspPacket,
-    OpCode, StatusCode, UciControlMessageChild, UciControlMessagePacket, TLV,
+    CoreOpCode, CoreResponseChild, CoreResponsePacket, GetCapsInfoRspBuilder, GetCapsInfoRspPacket,
+    GetDeviceInfoRspBuilder, GetDeviceInfoRspPacket, StatusCode, UciCommandPacket, TLV,
 };
 
-fn uwb_ucif_process_event(evt: UciControlMessagePacket) {
+fn uwb_ucif_process_event(evt: CoreResponsePacket) {
     match evt.specialize() {
-        UciControlMessageChild::GetDeviceInfoRsp(evt) => {
+        CoreResponseChild::GetDeviceInfoRsp(evt) => {
             get_device_info_rsp(evt);
         }
-        UciControlMessageChild::GetCapsInfoRsp(evt) => {
+        CoreResponseChild::GetCapsInfoRsp(evt) => {
             get_caps_info_rsp(evt);
         }
         _ => {}
