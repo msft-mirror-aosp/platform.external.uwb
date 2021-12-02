@@ -15,9 +15,9 @@
  */
 
 use crate::uci::uci_packets::{
-    DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket,
-    OpCode, SetConfigCmdBuilder, SetConfigRspBuilder, SetConfigRspPara, StatusCode,
-    UciControlMessagePacket, TLV,
+    CoreOpCode, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
+    GetDeviceInfoCmdPacket, ResetConfig, SetConfigCmdBuilder, SetConfigRspBuilder,
+    SetConfigRspPara, StatusCode, UciCommandPacket, TLV,
 };
 
 fn uci_ucif_send_cmd() -> StatusCode {
@@ -37,8 +37,8 @@ fn set_config_cmd(tlvs: Vec<TLV>) -> SetConfigCmdBuilder {
     SetConfigCmdBuilder { tlvs }
 }
 
-fn build_device_reset_cmd() -> DeviceResetCmdBuilder {
-    DeviceResetCmdBuilder {}
+fn build_device_reset_cmd(reset_config: ResetConfig) -> DeviceResetCmdBuilder {
+    DeviceResetCmdBuilder { reset_config }
 }
 
 fn build_set_config_rsp(status: StatusCode, para: Vec<SetConfigRspPara>) -> SetConfigRspBuilder {
