@@ -55,6 +55,7 @@ enum {
   UWA_DM_API_GET_SESSION_STATUS_EVT,
   UWA_DM_API_CORE_GET_DEVICE_CAPABILITY_EVT,
   UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT,
+  UWA_DM_API_SET_COUNTRY_CODE_EVT,
   UWA_DM_API_SEND_BLINK_DATA_EVT,
   /*    UWB RF Test API events   */
   UWA_DM_API_TEST_SET_CONFIG_EVT,
@@ -191,6 +192,12 @@ typedef struct {
   uint32_t subsession_id_list[MAX_NUM_CONTROLLEES];
 } tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST;
 
+/* data type for UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
+typedef struct {
+  UWB_HDR hdr;
+  uint8_t country_code[COUNTRY_CODE_ARRAY_LEN];
+} tUWA_DM_API_SET_COUNTRY_CODE;
+
 /* data type for UWA_DM_API_DM_API_SEND_BLINK_DATA_EVT */
 typedef struct {
   UWB_HDR hdr;
@@ -281,6 +288,8 @@ typedef union {
       sUwb_loopback; /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT  */
   tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST
       sMulticast_list; /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
+  tUWA_DM_API_SET_COUNTRY_CODE
+      sCountryCode; /* UWA_DM_API_SET_COUNTRY_CODE_EVT */
   tUWA_DM_API_SEND_BLINK_DATA
       sSend_blink_data; /* UWA_DM_API_SEND_BLINK_DATA_EVT */
                         /*  data types for all UWB RF TEST events */
@@ -330,6 +339,7 @@ bool uwa_dm_act_get_range_count(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_get_session_status(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_get_device_capability(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_multicast_list_update(tUWA_DM_MSG* p_data);
+bool uwa_dm_act_set_country_code(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_send_blink_data(tUWA_DM_MSG* p_data);
 
 /* Action function prototypes for all RF test functionality */

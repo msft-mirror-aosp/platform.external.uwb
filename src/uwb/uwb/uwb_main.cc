@@ -713,6 +713,25 @@ tUWB_STATUS UWB_MulticastListUpdate(uint32_t session_id, uint8_t action,
 
 /*******************************************************************************
 **
+** Function       UWB_SetCountryCode
+**
+** Description    This function is called to send the country code set
+**                command.
+**                The response from UWBS is reported with an
+**                UWB_SESSION_SET_COUNTRY_CODE_REVT
+**                in the tUWB_RESPONSE_CBACK callback.
+**
+** Parameters     country_code - ISO Country code
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_SetCountryCode(uint8_t* countryCode) {
+  return uci_snd_set_country_code_cmd(countryCode);
+}
+
+/*******************************************************************************
+**
 ** Function       UWB_CoreGetDeviceCapability
 **
 ** Description    This function is called to send the Core Get Capability.

@@ -139,7 +139,8 @@ enum {
                                                  List ntf   */
   UWB_BLINK_DATA_TX_REVT,     /* 30 Blink Data Tx resp                  */
   UWB_BLINK_DATA_TX_NTF_REVT, /* 31 Blink Data Tx ntf                   */
-  UWB_CONFORMANCE_TEST_DATA   /* 32 Conformance test data ntf           */
+  UWB_CONFORMANCE_TEST_DATA,  /* 32 Conformance test data ntf           */
+  UWB_SET_COUNTRY_CODE_REVT,  /* 33 Set country code resp */
 
 };
 typedef uint16_t tUWB_RESPONSE_EVT;
@@ -336,6 +337,10 @@ typedef struct {
   uint8_t repetition_count_status; /* repetition count status */
 } tUWB_SEND_BLINK_DATA_NTF_REVT;
 
+typedef struct {
+  tUWB_STATUS status; /* The event status.                */
+} tUWB_SET_COUNTRY_CODE_REVT;
+
 typedef union {
   tUWB_STATUS status; /* The event status. */
   tUWB_ENABLE_REVT enable;
@@ -354,6 +359,7 @@ typedef union {
   tUWB_GET_RANGE_COUNT_REVT sGet_range_cnt;
   tUWB_CORE_GET_DEVICE_CAPABILITY_REVT sGet_device_capability;
   tUWB_SESSION_UPDATE_MULTICAST_LIST_NTF_REVT sMulticast_list_ntf;
+  tUWB_SET_COUNTRY_CODE_REVT sSet_country_code_status;
   tUWB_SEND_BLINK_DATA_NTF_REVT sSend_blink_data_ntf;
   tUWB_CONFORMANCE_TEST_DATA sConformance_test_data;
 } tUWB_RESPONSE;
@@ -714,6 +720,23 @@ extern tUWB_STATUS UWB_MulticastListUpdate(uint32_t session_id, uint8_t action,
                                            uint8_t noOfControlees,
                                            uint16_t* shortAddressList,
                                            uint32_t* subSessionIdList);
+
+/*******************************************************************************
+**
+** Function       UWB_SetCountryCode
+**
+** Description    This function is called to send the country code set
+**                command.
+**                The response from UWBS is reported with an
+**                UWB_SESSION_SET_COUNTRY_CODE_REVT
+**                in the tUWB_RESPONSE_CBACK callback.
+**
+** Parameters     country_code - ISO Country code
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_SetCountryCode(uint8_t* countryCode);
 
 /*******************************************************************************
 **
