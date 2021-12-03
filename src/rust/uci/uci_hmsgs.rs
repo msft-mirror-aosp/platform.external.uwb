@@ -15,9 +15,9 @@
  */
 
 use crate::uci::uci_packets::{
-    CoreOpCode, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoCmdPacket, ResetConfig, SetConfigCmdBuilder, SetConfigRspBuilder,
-    SetConfigRspPara, StatusCode, UciCommandPacket, TLV,
+    CoreOpCode, DeviceConfigStatus, DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder,
+    GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket, ResetConfig, SetConfigCmdBuilder,
+    SetConfigRspBuilder, StatusCode, UciCommandPacket,
 };
 
 fn uci_ucif_send_cmd() -> StatusCode {
@@ -33,7 +33,7 @@ fn build_caps_info_cmd() -> GetCapsInfoCmdBuilder {
     GetCapsInfoCmdBuilder {}
 }
 
-fn set_config_cmd(tlvs: Vec<TLV>) -> SetConfigCmdBuilder {
+fn set_config_cmd(tlvs: Vec<DeviceConfigTLV>) -> SetConfigCmdBuilder {
     SetConfigCmdBuilder { tlvs }
 }
 
@@ -41,8 +41,11 @@ fn build_device_reset_cmd(reset_config: ResetConfig) -> DeviceResetCmdBuilder {
     DeviceResetCmdBuilder { reset_config }
 }
 
-fn build_set_config_rsp(status: StatusCode, para: Vec<SetConfigRspPara>) -> SetConfigRspBuilder {
-    SetConfigRspBuilder { status, para }
+fn build_set_config_rsp(
+    status: StatusCode,
+    cfg_status: Vec<DeviceConfigStatus>,
+) -> SetConfigRspBuilder {
+    SetConfigRspBuilder { status, cfg_status }
 }
 
 fn uwb_ucif_check_cmd_queue(p_message: GetDeviceInfoCmdBuilder) -> StatusCode {
