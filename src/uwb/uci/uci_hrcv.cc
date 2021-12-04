@@ -256,6 +256,28 @@ void uci_proc_rang_management_ntf(uint8_t op_code, uint8_t* p_buf,
 
 /*******************************************************************************
  **
+ ** Function         uci_proc_android_rsp
+ **
+ ** Description      Process UCI responses in the vendor Android group
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uci_proc_android_rsp(uint8_t op_code, uint8_t* p_buf, uint16_t len) {
+  switch (op_code) {
+    case UCI_MSG_ANDROID_GET_POWER_STATS:
+      break;
+    case UCI_MSG_ANDROID_SET_COUNTRY_CODE:
+      uwb_ucif_proc_android_set_country_code_status(p_buf, len);
+      break;
+    default:
+    UCI_TRACE_E("%s: unknown opcode:0x%x", __func__, op_code);
+      break;
+  }
+}
+
+/*******************************************************************************
+ **
  ** Function         uci_proc_raw_cmd_rsp
  **
  ** Description      Process RAW CMD responses
