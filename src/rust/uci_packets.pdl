@@ -11,6 +11,7 @@ enum GroupId : 4 {
     RANGING_SESSION_CONTROL = 0x02,
     DATA_CONTROL = 0x03,
     TEST = 0x0d,
+    ANDROID = 0x0e,
 }
 
 enum CoreOpCode : 6 {
@@ -45,6 +46,12 @@ enum RangeOpCode : 6 {
 enum AppDataOpCode : 6 {
     APP_DATA_TX = 0x00,
     APP_DATA_RX = 0x01,
+}
+
+// Android vendor commands
+enum AndroidOpCode : 6 {
+    ANDROID_GET_POWER_STATS = 0x0, // TODO: Add packet for this.
+    ANDROID_SET_COUNTRY_CODE = 0x1,
 }
 
 enum StatusCode : 8 {
@@ -87,12 +94,12 @@ enum ResetConfig : 8 {
     UWBS_RESET = 0x00,
 }
 
-enum DeviceCfgId : 8 {
+enum DeviceConfigId : 8 {
     DEVICE_STATE = 0x00,
     LOW_POWER_MODE = 0x01,
 }
 
-enum AppCfgId : 8 {
+enum AppConfigId : 8 {
     DEVICE_TYPE = 0x00,
     RANGING_ROUND_USAGE = 0x01,
     STS_CONFIG = 0x02,
@@ -139,6 +146,12 @@ enum AppCfgId : 8 {
     BPRF_PHR_DATA_RATE = 0x31,
     MAX_NUMBER_OF_MEASUREMENTS = 0x32,
     STS_LENGTH = 0x35,
+
+    // CCC specific
+    CCC_RANGING_PROTOCOL_VER = 0xA3,
+    CCC_UWB_CONFIG_ID = 0xA4,
+    CCC_PULSESHAPE_COMBO = 0xA5,
+    CCC_URSK_TTL = 0xA6,
 }
 
 enum DeviceState : 8 {
@@ -176,6 +189,12 @@ enum MulticastUpdateStatusCode : 8 {
 enum MacAddressIndicator : 8 {
     SHORT_ADDRESS = 0x00,
     EXTENDED_ADDRESS = 0x01,
+}
+
+enum SessionType: 8 {
+    FIRA_RANGING_SESSION = 0x00,
+    FIRA_DATA_TRANSFER = 0x01,
+    CCC = 0xA0,
 }
 
 packet UciCommand {
@@ -273,6 +292,30 @@ packet RangingNotification : UciNotification (packet_boundary_flag = COMPLETE, g
     _payload_,
 }
 
+packet AndroidCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+    _reserved_: 2,
+    android_opcode: AndroidOpCode,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet AndroidResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+    _reserved_: 2,
+    android_opcode: AndroidOpCode,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet AndroidNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+    _reserved_: 2,
+    android_opcode: AndroidOpCode,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
 packet GetDeviceInfoCmd : CoreCommand (core_opcode = CORE_DEVICE_INFO) {
 }
 
@@ -317,24 +360,30 @@ test GetCapsInfoRsp {
     "\x02\x0c\x00\x05\x00\x01\x00\x01\x01",
 }
 
+struct DeviceConfigTLV {
+    cfg_id: DeviceConfigId,
+    _count_(v): 8,
+    v: 8[],
+}
+
 packet SetConfigCmd : CoreCommand (core_opcode = CORE_SET_CONFIG) {
     _count_(tlvs): 8,
-    tlvs: TLV[],
+    tlvs: DeviceConfigTLV[],
 }
 
 test SetConfigCmd {
     "\x01\x10\x00\x03\x01\x01\x00",
 }
 
-struct SetConfigRspPara {
-    cfg_id: DeviceCfgId,
+struct DeviceConfigStatus {
+    cfg_id: DeviceConfigId,
     status: StatusCode,
 }
 
 packet SetConfigRsp : CoreResponse (core_opcode = CORE_SET_CONFIG) {
     status: StatusCode,
-    _count_(para): 8,
-    para: SetConfigRspPara[],
+    _count_(cfg_status): 8,
+    cfg_status: DeviceConfigStatus[],
 }
 
 test SetConfigRsp {
@@ -342,8 +391,8 @@ test SetConfigRsp {
 }
 
 packet GetConfigCmd : CoreCommand (core_opcode = CORE_GET_CONFIG) {
-    _count_(para): 8,
-    para: 8[],
+    _count_(cfg_id): 8,
+    cfg_id: 8[], // DeviceConfigId (Infra does not allow array of enums)
 }
 
 test GetConfigCmd {
@@ -353,7 +402,7 @@ test GetConfigCmd {
 packet GetConfigRsp : CoreResponse (core_opcode = CORE_GET_CONFIG) {
     status: StatusCode,
     _count_(tlvs): 8,
-    tlvs: TLV[]
+    tlvs: DeviceConfigTLV[]
 }
 
 test GetConfigRsp {
@@ -394,11 +443,11 @@ test GenericError {
 
 packet SessionInitCmd : SessionCommand (session_opcode = SESSION_INIT) {
     session_id: 32,
-    session_type: 8,
+    session_type: SessionType,
 }
 
 test SessionInitCmd {
-    "\x11\x00\x00\x05\x01\x02\x03\x04\x05",
+    "\x11\x00\x00\x05\x01\x02\x03\x04\x01",
 }
 
 packet SessionInitRsp : SessionResponse (session_opcode = SESSION_INIT) {
@@ -435,25 +484,31 @@ test SessionStatusNtf {
     "\x13\x08\x00\x06\x01\x02\x03\x04\x02\x21",
 }
 
+struct AppConfigTlv {
+    cfg_id: AppConfigId,
+    _count_(v): 8,
+    v: 8[],
+}
+
 packet SessionSetAppConfigCmd : SessionCommand (session_opcode = SESSION_SET_APP_CONFIG) {
     session_id: 32,
     _count_(tlvs): 8,
-    tlvs: TLV[]
+    tlvs: AppConfigTlv[]
 }
 
 test SessionSetAppConfigCmd {
     "\x11\x0c\x00\x05\x01\x02\x03\x04\x00",
 }
 
-struct AppConfigPara {
-    cfg_id: AppCfgId,
+struct AppConfigStatus {
+    cfg_id: AppConfigId,
     status: StatusCode,
 }
 
 packet SessionSetAppConfigRsp : SessionResponse (session_opcode = SESSION_SET_APP_CONFIG) {
     status: StatusCode,
-    _count_(para): 8,
-    para: AppConfigPara[],
+    _count_(cfg_status): 8,
+    cfg_status: AppConfigStatus[],
 }
 
 test SessionSetAppConfigRsp {
@@ -462,8 +517,8 @@ test SessionSetAppConfigRsp {
 
 packet SessionGetAppConfigCmd : SessionCommand (session_opcode = SESSION_GET_APP_CONFIG) {
     session_id: 32,
-    _count_(app_config): 8,
-    app_config: 8[],
+    _count_(app_cfg): 8,
+    app_cfg: 8[], // AppConfigId (Infra does not allow array of enums)
 }
 
 test SessionGetAppConfigCmd {
@@ -473,7 +528,7 @@ test SessionGetAppConfigCmd {
 packet SessionGetAppConfigRsp : SessionResponse (session_opcode = SESSION_GET_APP_CONFIG) {
     status: StatusCode,
     _count_(tlvs): 8,
-    tlvs: TLV[],
+    tlvs: AppConfigTlv[],
 }
 
 test SessionGetAppConfigRsp {
@@ -666,4 +721,21 @@ packet SessionUpdateControllerMulticastListNtf : SessionNotification (session_op
 
 test SessionUpdateControllerMulticastListNtf {
     "\x13\x1c\x00\x06\x00\x01\x02\x03\x04\x00",
+}
+
+packet AndroidSetCountryCodeCmd: AndroidCommand (android_opcode = ANDROID_SET_COUNTRY_CODE) {
+    country_code : 8[2],
+}
+
+// Set country code to US.
+test AndroidSetCountryCodeCmd {
+    "\xe1\x04\x00\x02\x55\x53",
+}
+
+packet AndroidSetCountryCodeRsp : AndroidResponse (android_opcode = ANDROID_SET_COUNTRY_CODE) {
+    status: StatusCode,
+}
+
+test AndroidSetCountryCodeRsp {
+    "\xe2\x04\x00\x01\x00",
 }

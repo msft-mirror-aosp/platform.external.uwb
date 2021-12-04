@@ -536,6 +536,36 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
 
 /*******************************************************************************
 **
+** Function         uci_snd_set_country_code_cmd
+**
+** Description      compose and send SET_COUNTRY_CODE_CMD command
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_snd_set_country_code_cmd(uint8_t *country_code) {
+  UWB_HDR* p;
+  uint8_t* pp;
+  p = UCI_GET_CMD_BUF(UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
+  if (p == NULL) return (UCI_STATUS_FAILED);
+
+  p->event = BT_EVT_TO_UWB_UCI;
+  p->len = UCI_MSG_HDR_SIZE + UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE;
+  p->offset = UCI_MSG_OFFSET_SIZE;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_ANDROID);
+  UCI_MSG_BLD_HDR1(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE);
+  UINT8_TO_STREAM(pp, 0x00);
+  UINT8_TO_STREAM(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
+  ARRAY8_TO_STREAM(pp, country_code);
+  uwb_ucif_send_cmd(p);
+
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
 ** Function         uci_snd_blink_data_cmd
 **
 ** Description      compose and send BLINK_DATA_TX_CMD command

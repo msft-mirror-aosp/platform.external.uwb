@@ -61,8 +61,8 @@ const tUWA_DM_ACTION uwa_dm_action[] = {
     uwa_dm_act_get_session_status,    /* UWA_DM_API_GET_SESSION_STATUS_EVT   */
     uwa_dm_act_get_device_capability, /* UWA_DM_API_CORE_GET_DEVICE_CAPABILITY_EVT
                                        */
-    uwa_dm_act_multicast_list_update, /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT
-                                       */
+    uwa_dm_act_multicast_list_update, /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
+    uwa_dm_act_set_country_code,      /* UWA_DM_API_SET_COUNTRY_CODE_EVT */
     uwa_dm_act_send_blink_data,       /* UWA_DM_API_SEND_BLINK_DATA_EVT */
     /*  local API events for RF test functionality */
     uwa_dm_act_test_set_config,   /* UWA_DM_API_TEST_SET_CONFIG_EVT  */

@@ -149,6 +149,8 @@ extern void uwb_ucif_session_management_status(tUWB_RESPONSE_EVT event,
 extern void uwb_ucif_proc_session_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_multicast_list_update_ntf(uint8_t* p_buf,
                                                     uint16_t len);
+void uwb_ucif_proc_android_set_country_code_status(uint8_t* p_buf,
+                                                   uint16_t len);
 
 /* APIs for handling UWB RF test command responses and notifications */
 extern void uwb_ucif_test_management_status(tUWB_RESPONSE_EVT event,

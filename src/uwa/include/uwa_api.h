@@ -144,6 +144,7 @@ enum {
   UWA_DM_SEND_BLINK_DATA_RSP_EVT,        /* Blink Data Tx event*/
   UWA_DM_SEND_BLINK_DATA_NTF_EVT,        /* Blink Data Tx ntf event*/
   UWA_DM_CONFORMANCE_NTF_EVT,            /* Conformance Test Ntf Event */
+  UWA_DM_SET_COUNTRY_CODE_RSP_EVT,       /* Country code update resp event */
 };
 
 /* UWA_DM callback events for UWB RF events */
@@ -673,6 +674,21 @@ extern tUWA_STATUS UWA_GetCoreGetDeviceCapability(void);
 extern tUWA_STATUS UWA_ControllerMulticastListUpdate(
     uint32_t session_id, uint8_t action, uint8_t noOfControlees,
     uint16_t* shortAddressList, uint32_t* subSessionIdList);
+
+/*******************************************************************************
+**
+** Function         UWA_ControllerSetCountryCode
+**
+** Description      This function is called to set country code.
+**                  The result is reported with an
+**                  UWA_DM_SET_COUNTRY_CODE_RSP_EVT
+**                  in the tUWA_DM_CBACK callback.
+**
+** Returns          UWA_STATUS_OK if command is successfully initiated
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+extern tUWA_STATUS UWA_ControllerSetCountryCode(uint8_t* countryCodeArray);
 
 /*******************************************************************************
 **

@@ -348,6 +348,15 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
                               &dm_cback_data);
     } break;
 
+    case UWB_SET_COUNTRY_CODE_REVT: /* set country code response*/
+      if (p_data->status != UWB_STATUS_OK) {
+        UCI_TRACE_E(" Set country code request failed");
+      }
+      dm_cback_data.status = p_data->status;
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_SET_COUNTRY_CODE_RSP_EVT,
+                              &dm_cback_data);
+      break;
+
     case UWB_BLINK_DATA_TX_REVT: /* blink data send response */
       if (p_data->status != UWB_STATUS_OK) {
         UCI_TRACE_E(" Blink data tx request is failed");
@@ -994,6 +1003,31 @@ bool uwa_dm_act_multicast_list_update(tUWA_DM_MSG* p_data) {
 
 /*******************************************************************************
 **
+** Function         uwa_dm_act_set_country_code
+**
+** Description      send country code set command.
+**
+** Returns          FALSE (message buffer is NOT freed by caller)
+**
+*******************************************************************************/
+bool uwa_dm_act_set_country_code(tUWA_DM_MSG* p_data) {
+  tUWB_STATUS status;
+  if (p_data == NULL) {
+    UCI_TRACE_E("uwa_dm_act_set_country_code(): p_data is NULL)");
+  } else {
+    status = UWB_SetCountryCode(p_data->sCountryCode.country_code);
+    if (UWB_STATUS_OK == status) {
+      UCI_TRACE_I("uwa_dm_act_set_country_code(): success ,status=0x%X",
+                  status);
+    } else {
+      UCI_TRACE_E("uwa_dm_set_country_code(): failed ,status=0x%X", status);
+    }
+  }
+  return true;
+}
+
+/*******************************************************************************
+**
 ** Function         uwa_dm_act_send_blink_data
 **
 ** Description      send blink data tx command
@@ -1285,6 +1319,9 @@ std::string uwa_dm_uwb_revt_2_str(tUWB_RESPONSE_EVT event) {
 
     case UWB_SESSION_UPDATE_MULTICAST_LIST_NTF_REVT:
       return "UWB_SESSION_UPDATE_MULTICAST_LIST_NTF_REVT";
+
+    case UWB_SET_COUNTRY_CODE_REVT:
+      return "UWB_SET_COUNTRY_CODE_REVT";
 
     case UWB_BLINK_DATA_TX_REVT:
       return "UWB_BLINK_DATA_TX_REVT";
