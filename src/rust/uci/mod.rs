@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-mod uci_hmsgs;
-mod uci_hrcv;
+pub mod state_machine;
+pub mod uci_hmsgs;
+pub mod uci_hrcv;
 
 use anyhow::{bail, Result};
 use tokio::runtime::{Builder, Runtime};
