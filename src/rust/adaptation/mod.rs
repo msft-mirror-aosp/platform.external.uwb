@@ -74,7 +74,7 @@ fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
 }
 
 #[derive(Debug)]
-enum UwbErr {
+pub enum UwbErr {
     Failed,
     ErrTransport,
     ErrCmdTimeout,
@@ -96,7 +96,7 @@ impl UwbErr {
 }
 
 #[derive(Clone, Copy, Default)]
-struct THalUwbEntry {
+pub struct THalUwbEntry {
     open: Option<THalApiOpen>,
     close: Option<THalApiClose>,
     send_uci_message: Option<THalApiWrite>,
@@ -110,15 +110,24 @@ pub struct UwbAdaptation {
 }
 
 impl UwbAdaptation {
-    fn initialize(&mut self) {
+    pub fn new(
+        m_hal_entry_funcs: THalUwbEntry,
+        m_hal: Option<Strong<dyn IUwbChip>>,
+    ) -> UwbAdaptation {
+        UwbAdaptation { m_hal_entry_funcs: m_hal_entry_funcs, m_hal: m_hal }
+    }
+
+    pub fn initialize(&mut self) {
         self.initialize_hal_device_context();
     }
 
-    fn get_hal_entry_funcs(&self) -> THalUwbEntry {
+    pub fn finalize(&mut self, exit_status: bool) {}
+
+    pub fn get_hal_entry_funcs(&self) -> THalUwbEntry {
         self.m_hal_entry_funcs
     }
 
-    fn core_initialization(&self) -> Result<(), UwbErr> {
+    pub fn core_initialization(&self) -> Result<(), UwbErr> {
         if let Some(hal) = &self.m_hal {
             return hal.coreInit().map_err(|_| UwbErr::Failed);
         }
