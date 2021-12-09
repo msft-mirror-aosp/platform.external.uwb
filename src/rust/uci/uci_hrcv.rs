@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::uci::uci_packets::{
+use uwb_uci_packets::{
     CoreOpCode, CoreResponseChild, CoreResponsePacket, GetCapsInfoRspBuilder, GetCapsInfoRspPacket,
     GetDeviceInfoRspBuilder, GetDeviceInfoRspPacket, StatusCode, UciCommandPacket, TLV,
 };
