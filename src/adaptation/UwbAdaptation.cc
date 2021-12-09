@@ -312,6 +312,7 @@ void UwbAdaptation::InitializeHalDeviceContext() {
   mHalEntryFuncs.close = HalClose;
   mHalEntryFuncs.write = HalWrite;
   mHalEntryFuncs.CoreInitialization = CoreInitialization;
+  mHalEntryFuncs.SessionInitialization = SessionInitialization;
   mHal = getHalService();
   if (mHal == nullptr) {
     UCI_TRACE_I("%s: Failed to retrieve the UWB HAL!", func);
@@ -406,6 +407,28 @@ tUWB_STATUS UwbAdaptation::CoreInitialization() {
   UCI_TRACE_I("%s: enter", func);
   if (mHal != nullptr) {
     if (!mHal->coreInit().isOk()) return UWB_STATUS_FAILED;
+  } else {
+    UCI_TRACE_E("mHal is NULL");
+    return UWB_STATUS_FAILED;
+  }
+  return UWB_STATUS_OK;
+}
+
+/*******************************************************************************
+**
+** Function:    UwbAdaptation::SessionInitialization
+**
+** Description: Performs UWB SessionInitialization.
+**
+** Returns:     UwbStatus::OK on success and UwbStatus::FAILED on error.
+**
+*******************************************************************************/
+tUWB_STATUS UwbAdaptation::SessionInitialization(int sessionId) {
+  const char* func = "UwbAdaptation::SessionInitialization";
+  UNUSED(func);
+  UCI_TRACE_I("%s: enter", func);
+  if (mHal != nullptr) {
+    if (!mHal->sessionInit(sessionId).isOk()) return UWB_STATUS_FAILED;
   } else {
     UCI_TRACE_E("mHal is NULL");
     return UWB_STATUS_FAILED;
