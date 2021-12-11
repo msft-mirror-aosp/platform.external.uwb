@@ -72,6 +72,7 @@ class UwbAdaptation {
   static UwbAdaptation& GetInstance();
   tHAL_UWB_ENTRY* GetHalEntryFuncs();
   static tUWB_STATUS CoreInitialization();
+  static tUWB_STATUS SessionInitialization(int sessionId);
 
  private:
   UwbAdaptation();
