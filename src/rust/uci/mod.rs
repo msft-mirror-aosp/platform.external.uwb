@@ -27,9 +27,8 @@ use tokio::{select, task};
 
 // Commands sent from JNI.
 #[derive(Debug)]
-enum JNICommand {
-    A,
-    B,
+pub enum JNICommand {
+    UwaDmApiEnable,
     Exit,
 }
 
@@ -81,8 +80,7 @@ impl Driver {
         select! {
             Some(cmd) = self.cmd_receiver.recv() => {
                 match cmd {
-                    JNICommand::A => log::error!("JNICommand::A"),
-                    JNICommand::B => log::error!("JNICommand::B"),
+                    JNICommand::UwaDmApiEnable => log::info!("JNICommand::UwaDmApiEnable"),
                     JNICommand::Exit => bail!("Exit received"),
                 }
             }
@@ -98,7 +96,7 @@ impl Driver {
 }
 
 // Controller for sending tasks for the native thread to handle.
-struct Dispatcher {
+pub struct Dispatcher {
     cmd_sender: mpsc::UnboundedSender<JNICommand>,
     rsp_sender: mpsc::UnboundedSender<HALResponse>,
     join_handle: task::JoinHandle<Result<()>>,
@@ -106,7 +104,7 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
-    fn new() -> Result<Dispatcher> {
+    pub fn new() -> Result<Dispatcher> {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel::<JNICommand>();
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
         // We create a new thread here both to avoid reusing the Java service thread and because
@@ -117,7 +115,7 @@ impl Dispatcher {
         Ok(Dispatcher { cmd_sender, rsp_sender, join_handle, runtime })
     }
 
-    fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
+    pub fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
         self.cmd_sender.send(cmd)?;
         Ok(())
     }
@@ -145,9 +143,8 @@ mod tests {
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
         );
         let mut dispatcher = Dispatcher::new()?;
-        dispatcher.send_jni_command(JNICommand::A)?;
         dispatcher.send_hal_response(HALResponse::A)?;
-        dispatcher.send_jni_command(JNICommand::B)?;
+        dispatcher.send_jni_command(JNICommand::UwaDmApiEnable)?;
         dispatcher.exit()?;
         assert!(dispatcher.send_hal_response(HALResponse::B).is_err());
         Ok(())
