@@ -14,12 +14,69 @@
  * limitations under the License.
  */
 
+use log::{info, warn};
 use uwb_uci_packets::{
-    CoreOpCode, CoreResponseChild, CoreResponsePacket, GetCapsInfoRspBuilder, GetCapsInfoRspPacket,
-    GetDeviceInfoRspBuilder, GetDeviceInfoRspPacket, StatusCode, UciCommandPacket, TLV,
+    AndroidNotificationBuilder, CoreNotificationBuilder, CoreNotificationChild,
+    CoreNotificationPacket, CoreOpCode, CoreResponseChild, CoreResponsePacket,
+    DeviceResetRspBuilder, DeviceStatusNtfBuilder, GenericErrorBuilder, GenericErrorPacket,
+    GetCapsInfoRspBuilder, GetCapsInfoRspPacket, GetConfigRspBuilder, GetDeviceInfoRspBuilder,
+    GetDeviceInfoRspPacket, RangeDataNtfBuilder, RangeStartRspBuilder, RangeStartRspPacket,
+    RangingNotificationBuilder, RangingResponseChild, RangingResponsePacket, SessionInitRspBuilder,
+    SessionInitRspPacket, SessionNotificationBuilder, SessionResponseChild, SessionResponsePacket,
+    SessionStatusNtfBuilder, SessionUpdateControllerMulticastListNtfBuilder, SetConfigRspBuilder,
+    StatusCode, UciCommandPacket, UciNotificationChild, UciNotificationPacket, UciResponseChild,
+    UciResponsePacket, TLV,
 };
 
-fn uwb_ucif_process_event(evt: CoreResponsePacket) {
+pub enum UciResponse {
+    GetDeviceInfoRsp(GetDeviceInfoRspBuilder),
+    GetCapsInfoRsp(GetCapsInfoRspBuilder),
+    SetConfigRsp(SetConfigRspBuilder),
+    GetConfigRsp(GetConfigRspBuilder),
+    DeviceResetRsp(DeviceResetRspBuilder),
+    SessionInitRsp(SessionInitRspBuilder),
+    RangeStartRsp(RangeStartRspBuilder),
+    //TODO add all after deciding whether we can use same enum for session cmd respones
+}
+
+pub enum UciNotification {
+    GenericError(GenericErrorBuilder),
+    DeviceStatusNtf(DeviceStatusNtfBuilder),
+    SessionStatusNtf(SessionStatusNtfBuilder),
+    SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfBuilder),
+    RangeDataNtf(RangeDataNtfBuilder),
+    AndroidNotification(AndroidNotificationBuilder),
+}
+
+pub fn uci_response(evt: UciResponsePacket) {
+    match evt.specialize() {
+        UciResponseChild::CoreResponse(evt) => {
+            core_response(evt);
+        }
+        UciResponseChild::SessionResponse(evt) => {
+            session_response(evt);
+        }
+        UciResponseChild::RangingResponse(evt) => {
+            ranging_response(evt);
+        }
+        _ => {
+            warn!("UciResponsePacket: {:?} not supported", evt);
+        }
+    }
+}
+
+pub fn uci_notification(evt: UciNotificationPacket) {
+    match evt.specialize() {
+        UciNotificationChild::CoreNotification(evt) => {
+            core_notification(evt);
+        }
+        _ => {
+            warn!("UciNotificationPacket: {:?} not supported", evt);
+        }
+    }
+}
+
+fn core_response(evt: CoreResponsePacket) {
     match evt.specialize() {
         CoreResponseChild::GetDeviceInfoRsp(evt) => {
             get_device_info_rsp(evt);
@@ -27,7 +84,42 @@ fn uwb_ucif_process_event(evt: CoreResponsePacket) {
         CoreResponseChild::GetCapsInfoRsp(evt) => {
             get_caps_info_rsp(evt);
         }
-        _ => {}
+        _ => {
+            warn!("CoreResponsePacket: {:?} not supported", evt);
+        }
+    }
+}
+
+fn session_response(evt: SessionResponsePacket) {
+    match evt.specialize() {
+        SessionResponseChild::SessionInitRsp(evt) => {
+            session_init_rsp(evt);
+        }
+        _ => {
+            warn!("SessionResponsePacket: {:?} not supported", evt);
+        }
+    }
+}
+
+fn ranging_response(evt: RangingResponsePacket) {
+    match evt.specialize() {
+        RangingResponseChild::RangeStartRsp(evt) => {
+            range_start_rsp(evt);
+        }
+        _ => {
+            warn!("RangingResponsePacket: {:?} not supported", evt);
+        }
+    }
+}
+
+fn core_notification(evt: CoreNotificationPacket) {
+    match evt.specialize() {
+        CoreNotificationChild::GenericError(evt) => {
+            generic_error(evt);
+        }
+        _ => {
+            warn!("CoreNotificationPacket: {:?} not supported", evt);
+        }
     }
 }
 
@@ -40,13 +132,34 @@ fn get_device_info_rsp(evt: GetDeviceInfoRspPacket) {
         uci_test_version: evt.get_uci_test_version(),
         vendor_spec_info: evt.get_vendor_spec_info().to_vec(),
     };
-    //callback(UWB_GET_DEVICE_INFO_REVT, evt_data)
-    //TODO : callback through JNI.
+    uci_response_cb(UciResponse::GetDeviceInfoRsp(evt_data));
 }
 
 fn get_caps_info_rsp(evt: GetCapsInfoRspPacket) {
     let evt_data =
         GetCapsInfoRspBuilder { status: evt.get_status(), tlvs: evt.get_tlvs().to_vec() };
-    //callback(UWB_CORE_GET_DEVICE_CAPABILITY_REVT, evt_data)
-    //TODO : callback through JNI.
+    uci_response_cb(UciResponse::GetCapsInfoRsp(evt_data));
+}
+
+fn session_init_rsp(evt: SessionInitRspPacket) {
+    let evt_data = SessionInitRspBuilder { status: evt.get_status() };
+    uci_response_cb(UciResponse::SessionInitRsp(evt_data));
+}
+
+fn range_start_rsp(evt: RangeStartRspPacket) {
+    let evt_data = RangeStartRspBuilder { status: evt.get_status() };
+    uci_response_cb(UciResponse::RangeStartRsp(evt_data));
+}
+
+fn generic_error(evt: GenericErrorPacket) {
+    let evt_data = GenericErrorBuilder { status: evt.get_status() };
+    uci_notification_cb(UciNotification::GenericError(evt_data));
+}
+
+fn uci_response_cb(resp_data: UciResponse) {
+    //Call JNI side of things
+}
+
+fn uci_notification_cb(notification_data: UciNotification) {
+    //Call JNI side of things
 }
