@@ -152,6 +152,21 @@ enum AppConfigId : 8 {
     CCC_UWB_CONFIG_ID = 0xA4,
     CCC_PULSESHAPE_COMBO = 0xA5,
     CCC_URSK_TTL = 0xA6,
+
+    // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
+    NB_OF_RANGE_MEASUREMENTS = 0xE3,
+    NB_OF_AZIMUTH_MEASUREMENTS = 0xE4,
+    NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
+}
+
+// AOA result request type.
+// Values set for AOA_RESULT_REQ config ID.
+enum AoaResultReqType : 8 {
+    AOA_DISABLE = 0x0,
+    AOA_ENABLE = 0x01,
+    AOA_ENABLE_AZIMUTH = 0x02,
+    AOA_ENABLE_ELEVATION = 0x03,
+    AOA_ENABLE_INTERLEAVED = 0xF0,
 }
 
 enum DeviceState : 8 {
