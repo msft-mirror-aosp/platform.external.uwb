@@ -15,4 +15,4 @@
  */
 
 pub mod adaptation;
-mod uci;
+pub mod uci;
