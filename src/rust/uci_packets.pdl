@@ -213,119 +213,119 @@ enum SessionType: 8 {
 }
 
 packet UciCommand {
-    _fixed_ = 1 : 3, // message type field
-    packet_boundary_flag: PacketBoundaryFlag,
     group_id: GroupId,
+    packet_boundary_flag: PacketBoundaryFlag,
+    _fixed_ = 1 : 3, // message type field
     _payload_,
 }
 
 packet UciResponse {
-    _fixed_ = 2 : 3, // message type field
-    packet_boundary_flag: PacketBoundaryFlag,
     group_id: GroupId,
+    packet_boundary_flag: PacketBoundaryFlag,
+    _fixed_ = 2 : 3, // message type field
     _payload_,
 }
 
 packet UciNotification {
-    _fixed_ = 3 : 3, // message type field
-    packet_boundary_flag: PacketBoundaryFlag,
     group_id: GroupId,
+    packet_boundary_flag: PacketBoundaryFlag,
+    _fixed_ = 3 : 3, // message type field
     _payload_,
 }
 
 // TODO(b/202760099): Handle fragmentation of packets if the size exceed max allowed.
 
 packet CoreCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = CORE) {
-    _reserved_: 2,
     core_opcode: CoreOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet CoreResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = CORE) {
-    _reserved_: 2,
     core_opcode: CoreOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet CoreNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = CORE) {
-    _reserved_: 2,
     core_opcode: CoreOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet SessionCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
-    _reserved_: 2,
     session_opcode: SessionOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet SessionResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
-    _reserved_: 2,
     session_opcode: SessionOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet SessionNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
-    _reserved_: 2,
     session_opcode: SessionOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet RangingCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
-    _reserved_: 2,
     ranging_opcode: RangeOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet RangingResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
-    _reserved_: 2,
     ranging_opcode: RangeOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet RangingNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
-    _reserved_: 2,
     ranging_opcode: RangeOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet AndroidCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
-    _reserved_: 2,
     android_opcode: AndroidOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet AndroidResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
-    _reserved_: 2,
     android_opcode: AndroidOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
 }
 
 packet AndroidNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
-    _reserved_: 2,
     android_opcode: AndroidOpCode,
+    _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
     _payload_,
@@ -335,7 +335,7 @@ packet GetDeviceInfoCmd : CoreCommand (core_opcode = CORE_DEVICE_INFO) {
 }
 
 test GetDeviceInfoCmd {
-    "\x01\x08\x00\x00",
+    "\x20\x02\x00\x00",
 }
 
 packet GetDeviceInfoRsp : CoreResponse (core_opcode = CORE_DEVICE_INFO) {
@@ -349,14 +349,14 @@ packet GetDeviceInfoRsp : CoreResponse (core_opcode = CORE_DEVICE_INFO) {
 }
 
 test GetDeviceInfoRsp {
-    "\x02\x08\x00\x0b\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
+    "\x40\x02\x00\x0b\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
 }
 
 packet GetCapsInfoCmd : CoreCommand (core_opcode = CORE_GET_CAPS_INFO) {
 }
 
 test GetCapsInfoCmd {
-    "\x01\x0c\x00\x00",
+    "\x20\x03\x00\x00",
 }
 
 struct TLV {
@@ -372,7 +372,7 @@ packet GetCapsInfoRsp : CoreResponse (core_opcode = CORE_GET_CAPS_INFO) {
 }
 
 test GetCapsInfoRsp {
-    "\x02\x0c\x00\x05\x00\x01\x00\x01\x01",
+    "\x40\x03\x00\x05\x00\x01\x00\x01\x01",
 }
 
 struct DeviceConfigTLV {
@@ -387,7 +387,7 @@ packet SetConfigCmd : CoreCommand (core_opcode = CORE_SET_CONFIG) {
 }
 
 test SetConfigCmd {
-    "\x01\x10\x00\x03\x01\x01\x00",
+    "\x20\x04\x00\x03\x01\x01\x00",
 }
 
 struct DeviceConfigStatus {
@@ -402,7 +402,7 @@ packet SetConfigRsp : CoreResponse (core_opcode = CORE_SET_CONFIG) {
 }
 
 test SetConfigRsp {
-    "\x02\x10\x00\x04\x01\x01\x01\x01",
+    "\x40\x04\x00\x04\x01\x01\x01\x01",
 }
 
 packet GetConfigCmd : CoreCommand (core_opcode = CORE_GET_CONFIG) {
@@ -411,7 +411,7 @@ packet GetConfigCmd : CoreCommand (core_opcode = CORE_GET_CONFIG) {
 }
 
 test GetConfigCmd {
-    "\x01\x14\x00\x02\x01\x01",
+    "\x20\x05\x00\x02\x01\x01",
 }
 
 packet GetConfigRsp : CoreResponse (core_opcode = CORE_GET_CONFIG) {
@@ -421,7 +421,7 @@ packet GetConfigRsp : CoreResponse (core_opcode = CORE_GET_CONFIG) {
 }
 
 test GetConfigRsp {
-    "\x02\x14\x00\x05\x01\x01\x00\x01\x01",
+    "\x40\x05\x00\x05\x01\x01\x00\x01\x01",
 }
 
 packet DeviceStatusNtf : CoreNotification (core_opcode = CORE_DEVICE_STATUS_NTF) {
@@ -429,7 +429,7 @@ packet DeviceStatusNtf : CoreNotification (core_opcode = CORE_DEVICE_STATUS_NTF)
 }
 
 test DeviceStatusNtf {
-    "\x03\x04\x00\x01\x01",
+    "\x60\x01\x00\x01\x01",
 }
 
 packet DeviceResetCmd : CoreCommand (core_opcode = CORE_DEVICE_RESET) {
@@ -437,7 +437,7 @@ packet DeviceResetCmd : CoreCommand (core_opcode = CORE_DEVICE_RESET) {
 }
 
 test DeviceResetCmd {
-    "\x01\x00\x00\x01\x00",
+    "\x20\x00\x00\x01\x00",
 }
 
 packet DeviceResetRsp : CoreResponse (core_opcode = CORE_DEVICE_RESET) {
@@ -445,7 +445,7 @@ packet DeviceResetRsp : CoreResponse (core_opcode = CORE_DEVICE_RESET) {
 }
 
 test DeviceResetRsp {
-    "\x02\x00\x00\x01\x00",
+    "\x40\x00\x00\x01\x00",
 }
 
 packet GenericError : CoreNotification (core_opcode = CORE_GENERIC_ERROR_NTF) {
@@ -453,7 +453,7 @@ packet GenericError : CoreNotification (core_opcode = CORE_GENERIC_ERROR_NTF) {
 }
 
 test GenericError {
-    "\x03\x1c\x00\x01\x01",
+    "\x60\x07\x00\x01\x01",
 }
 
 packet SessionInitCmd : SessionCommand (session_opcode = SESSION_INIT) {
@@ -462,7 +462,7 @@ packet SessionInitCmd : SessionCommand (session_opcode = SESSION_INIT) {
 }
 
 test SessionInitCmd {
-    "\x11\x00\x00\x05\x01\x02\x03\x04\x01",
+    "\x22\x00\x00\x05\x01\x02\x03\x04\x01",
 }
 
 packet SessionInitRsp : SessionResponse (session_opcode = SESSION_INIT) {
@@ -470,7 +470,7 @@ packet SessionInitRsp : SessionResponse (session_opcode = SESSION_INIT) {
 }
 
 test SessionInitRsp {
-    "\x12\x00\x00\x01\x11",
+    "\x41\x00\x00\x01\x11",
 }
 
 packet SessionDeinitCmd : SessionCommand (session_opcode = SESSION_DEINIT) {
@@ -478,7 +478,7 @@ packet SessionDeinitCmd : SessionCommand (session_opcode = SESSION_DEINIT) {
 }
 
 test SessionDeinitCmd {
-    "\x11\x04\x00\x04\x01\x02\x03\x04",
+    "\x21\x01\x00\x04\x01\x02\x03\x04",
 }
 
 packet SessionDeinitRsp : SessionResponse (session_opcode = SESSION_DEINIT) {
@@ -486,7 +486,7 @@ packet SessionDeinitRsp : SessionResponse (session_opcode = SESSION_DEINIT) {
 }
 
 test SessionDeinitRsp {
-    "\x12\x04\x00\x01\x00",
+    "\x41\x01\x00\x01\x00",
 }
 
 packet SessionStatusNtf : SessionNotification (session_opcode = SESSION_STATUS_NTF) {
@@ -496,7 +496,7 @@ packet SessionStatusNtf : SessionNotification (session_opcode = SESSION_STATUS_N
 }
 
 test SessionStatusNtf {
-    "\x13\x08\x00\x06\x01\x02\x03\x04\x02\x21",
+    "\x61\x02\x00\x06\x01\x02\x03\x04\x02\x21",
 }
 
 struct AppConfigTlv {
@@ -512,7 +512,7 @@ packet SessionSetAppConfigCmd : SessionCommand (session_opcode = SESSION_SET_APP
 }
 
 test SessionSetAppConfigCmd {
-    "\x11\x0c\x00\x05\x01\x02\x03\x04\x00",
+    "\x21\x03\x00\x05\x01\x02\x03\x04\x00",
 }
 
 struct AppConfigStatus {
@@ -527,7 +527,7 @@ packet SessionSetAppConfigRsp : SessionResponse (session_opcode = SESSION_SET_AP
 }
 
 test SessionSetAppConfigRsp {
-    "\x12\x0c\x00\x04\x01\x01\x01\x00",
+    "\x41\x03\x00\x04\x01\x01\x01\x00",
 }
 
 packet SessionGetAppConfigCmd : SessionCommand (session_opcode = SESSION_GET_APP_CONFIG) {
@@ -537,7 +537,7 @@ packet SessionGetAppConfigCmd : SessionCommand (session_opcode = SESSION_GET_APP
 }
 
 test SessionGetAppConfigCmd {
-    "\x11\x10\x00\x05\x01\x02\x03\x04\x00",
+    "\x21\x04\x00\x05\x01\x02\x03\x04\x00",
 }
 
 packet SessionGetAppConfigRsp : SessionResponse (session_opcode = SESSION_GET_APP_CONFIG) {
@@ -547,7 +547,7 @@ packet SessionGetAppConfigRsp : SessionResponse (session_opcode = SESSION_GET_AP
 }
 
 test SessionGetAppConfigRsp {
-    "\x12\x10\x00\x02\x01\x00",
+    "\x41\x04\x00\x02\x01\x00",
 }
 
 packet SessionGetStateCmd : SessionCommand (session_opcode = SESSION_GET_STATE) {
@@ -555,7 +555,7 @@ packet SessionGetStateCmd : SessionCommand (session_opcode = SESSION_GET_STATE) 
 }
 
 test SessionGetStateCmd {
-    "\x11\x18\x00\x04\x00\x01\x02\x03",
+    "\x21\x06\x00\x04\x00\x01\x02\x03",
 }
 
 packet SessionGetStateRsp : SessionResponse (session_opcode = SESSION_GET_STATE) {
@@ -564,7 +564,7 @@ packet SessionGetStateRsp : SessionResponse (session_opcode = SESSION_GET_STATE)
 }
 
 test SessionGetStateRsp {
-    "\x12\x18\x00\x02\x00\x01",
+    "\x41\x06\x00\x02\x00\x01",
 }
 
 packet RangeStartCmd : RangingCommand (ranging_opcode = RANGE_START) {
@@ -572,7 +572,7 @@ packet RangeStartCmd : RangingCommand (ranging_opcode = RANGE_START) {
 }
 
 test RangeStartCmd {
-    "\x21\x00\x00\x04\x00\x01\x02\x03",
+    "\x22\x00\x00\x04\x00\x01\x02\x03",
 }
 
 packet RangeStartRsp : RangingResponse (ranging_opcode = RANGE_START) {
@@ -580,7 +580,7 @@ packet RangeStartRsp : RangingResponse (ranging_opcode = RANGE_START) {
 }
 
 test RangeStartRsp {
-    "\x22\x00\x00\x01\x00",
+    "\x42\x00\x00\x01\x00",
 }
 
 struct ShortAddressTwoWayRangingMeasurement {
@@ -635,7 +635,7 @@ packet ShortMACRangeDataNtf : RangeDataNtf (mac_address_indicator = SHORT_ADDRES
 }
 
 test ShortMACRangeDataNtf {
-    "\x23\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ExtendedMACRangeDataNtf : RangeDataNtf (mac_address_indicator = EXTENDED_ADDRESS) {
@@ -644,7 +644,7 @@ packet ExtendedMACRangeDataNtf : RangeDataNtf (mac_address_indicator = EXTENDED_
 }
 
 test ExtendedMACRangeDataNtf {
-    "\x23\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 
@@ -653,7 +653,7 @@ packet RangeStopCmd : RangingCommand (ranging_opcode = RANGE_STOP) {
 }
 
 test RangeStopCmd {
-    "\x21\x04\x00\x04\x00\x02\x03\x04",
+    "\x22\x01\x00\x04\x00\x02\x03\x04",
 }
 
 packet RangeStopRsp : RangingResponse (ranging_opcode = RANGE_STOP) {
@@ -661,7 +661,7 @@ packet RangeStopRsp : RangingResponse (ranging_opcode = RANGE_STOP) {
 }
 
 test RangeStopRsp {
-    "\x22\x04\x00\x01\x00",
+    "\x42\x01\x00\x01\x00",
 }
 
 packet RangeGetRangingCountCmd : RangingCommand (ranging_opcode = RANGE_GET_RANGING_COUNT) {
@@ -669,7 +669,7 @@ packet RangeGetRangingCountCmd : RangingCommand (ranging_opcode = RANGE_GET_RANG
 }
 
 test RangeGetRangingCountCmd {
-    "\x21\x0c\x00\x04\x00\x02\x03\x04",
+    "\x22\x03\x00\x04\x00\x02\x03\x04",
 }
 
 packet RangeGetRangingCountRsp : RangingResponse (ranging_opcode = RANGE_GET_RANGING_COUNT) {
@@ -678,14 +678,14 @@ packet RangeGetRangingCountRsp : RangingResponse (ranging_opcode = RANGE_GET_RAN
 }
 
 test RangeGetRangingCountRsp {
-    "\x22\x0c\x00\x05\x00\x02\x03\x04\x05",
+    "\x42\x03\x00\x05\x00\x02\x03\x04\x05",
 }
 
 packet SessionGetCountCmd : SessionCommand (session_opcode = SESSION_GET_COUNT) {
 }
 
 test SessionGetCountCmd {
-    "\x11\x14\x00\x00",
+    "\x21\x05\x00\x00",
 }
 
 packet SessionGetCountRsp : SessionResponse (session_opcode = SESSION_GET_COUNT) {
@@ -694,7 +694,7 @@ packet SessionGetCountRsp : SessionResponse (session_opcode = SESSION_GET_COUNT)
 }
 
 test SessionGetCountRsp {
-    "\x12\x14\x00\x02\x00\x01",
+    "\x41\x05\x00\x02\x00\x01",
 }
 
 struct Controlee {
@@ -710,7 +710,7 @@ packet SessionUpdateControllerMulticastListCmd : SessionCommand (session_opcode 
 }
 
 test SessionUpdateControllerMulticastListCmd {
-    "\x11\x1c\x00\x06\x00\x01\x02\x03\x04\x00",
+    "\x21\x07\x00\x06\x00\x01\x02\x03\x04\x00",
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionResponse (session_opcode = SESSION_UPDATE_CONTROLLER_MULTICAST_LIST) {
@@ -718,7 +718,7 @@ packet SessionUpdateControllerMulticastListRsp : SessionResponse (session_opcode
 }
 
 test SessionUpdateControllerMulticastListRsp {
-    "\x12\x1c\x00\x01\x00",
+    "\x41\x07\x00\x01\x00",
 }
 
 struct ControleeStatus {
@@ -735,7 +735,7 @@ packet SessionUpdateControllerMulticastListNtf : SessionNotification (session_op
 }
 
 test SessionUpdateControllerMulticastListNtf {
-    "\x13\x1c\x00\x06\x00\x01\x02\x03\x04\x00",
+    "\x61\x07\x00\x06\x00\x01\x02\x03\x04\x00",
 }
 
 packet AndroidSetCountryCodeCmd: AndroidCommand (android_opcode = ANDROID_SET_COUNTRY_CODE) {
@@ -744,7 +744,7 @@ packet AndroidSetCountryCodeCmd: AndroidCommand (android_opcode = ANDROID_SET_CO
 
 // Set country code to US.
 test AndroidSetCountryCodeCmd {
-    "\xe1\x04\x00\x02\x55\x53",
+    "\x2e\x01\x00\x02\x55\x53",
 }
 
 packet AndroidSetCountryCodeRsp : AndroidResponse (android_opcode = ANDROID_SET_COUNTRY_CODE) {
@@ -752,5 +752,5 @@ packet AndroidSetCountryCodeRsp : AndroidResponse (android_opcode = ANDROID_SET_
 }
 
 test AndroidSetCountryCodeRsp {
-    "\xe2\x04\x00\x01\x00",
+    "\x4e\x01\x00\x01\x00",
 }
