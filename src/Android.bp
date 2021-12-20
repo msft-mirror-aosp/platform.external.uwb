@@ -78,6 +78,7 @@ rust_library {
         "libanyhow",
         "libbinder_ndk_sys",
         "libbinder_rs",
+        "libjni",
         "liblazy_static",
         "liblog_rust",
         "liblogger",
@@ -103,6 +104,7 @@ rust_test {
     rustlibs:[
         "android.hardware.uwb-V1-rust",
         "libanyhow",
+        "libjni",
         "liblazy_static",
         "liblog_rust",
         "liblogger",
