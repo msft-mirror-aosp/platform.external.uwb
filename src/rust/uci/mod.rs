@@ -28,7 +28,24 @@ use tokio::{select, task};
 // Commands sent from JNI.
 #[derive(Debug)]
 pub enum JNICommand {
-    UwaDmApiEnable,
+    UwaEnable,
+    UwaDisable(bool),
+    UwaSessionInit(u32, u8),
+    UwaSessionDeinit(u32),
+    UwaSessionGetCount,
+    UwaStartRange(u32),
+    UwaStopRange(u32),
+    UwaGetSessionState(u32),
+    UwaSessionUpdateMulticastList {
+        session_id: u32,
+        action: u8,
+        no_of_controlee: u8,
+        address_list: Vec<u8>,
+        sub_session_id_list: Vec<i32>,
+    },
+    UwaSetCountryCode {
+        code: Vec<u8>,
+    },
     Exit,
 }
 
@@ -80,7 +97,16 @@ impl Driver {
         select! {
             Some(cmd) = self.cmd_receiver.recv() => {
                 match cmd {
-                    JNICommand::UwaDmApiEnable => log::info!("JNICommand::UwaDmApiEnable"),
+                    JNICommand::UwaEnable => log::info!("{:?}", cmd),
+                    JNICommand::UwaDisable(graceful) => log::info!("{:?}", cmd),
+                    JNICommand::UwaSessionInit(session_id, session_type) => log::info!("{:?}", cmd),
+                    JNICommand::UwaSessionDeinit(session_id) => log::info!("{:?}", cmd),
+                    JNICommand::UwaSessionGetCount => log::info!("{:?}", cmd),
+                    JNICommand::UwaStartRange(session_id) => log::info!("{:?}", cmd),
+                    JNICommand::UwaStopRange(session_id) => log::info!("{:?}", cmd),
+                    JNICommand::UwaGetSessionState(session_id) => log::info!("{:?}", cmd),
+                    JNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} => log::info!("{:?}", cmd),
+                    JNICommand::UwaSetCountryCode{ref code} => log::info!("{:?}", cmd),
                     JNICommand::Exit => bail!("Exit received"),
                 }
             }
@@ -144,7 +170,7 @@ mod tests {
         );
         let mut dispatcher = Dispatcher::new()?;
         dispatcher.send_hal_response(HALResponse::A)?;
-        dispatcher.send_jni_command(JNICommand::UwaDmApiEnable)?;
+        dispatcher.send_jni_command(JNICommand::UwaEnable)?;
         dispatcher.exit()?;
         assert!(dispatcher.send_hal_response(HALResponse::B).is_err());
         Ok(())
