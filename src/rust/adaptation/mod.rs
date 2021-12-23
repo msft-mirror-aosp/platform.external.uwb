@@ -1,6 +1,7 @@
 //! Definition of UwbClientCallback
 
 use crate::error::UwbErr;
+use crate::uci::HALResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     IUwb::{BnUwb, IUwb},
     IUwbChip::{BnUwbChip, IUwbChip},
@@ -13,6 +14,7 @@ use android_hardware_uwb::binder::{
 };
 use log::{info, warn};
 use std::result::Result;
+use tokio::sync::mpsc;
 
 type THalUwbEventCback = fn(event: UwbEvent, status: UwbStatus);
 type THalUwbUciMsgCback = fn(p_data: &[u8]);
@@ -25,28 +27,25 @@ type THalApiSessionInit = fn(&UwbAdaptation, session_id: i32) -> Result<(), UwbE
 type THalApiGetSupportedAndroidUciVersion = fn(&UwbAdaptation) -> Result<(i32), UwbErr>;
 type THalApiGetSupportedAndroidCapabilities = fn(&UwbAdaptation) -> Result<(i64), UwbErr>;
 
-#[derive(Clone, Copy)]
 pub struct UwbClientCallback {
-    pub event_cb: THalUwbEventCback,
-    pub uci_message_cb: THalUwbUciMsgCback,
+    rsp_sender: mpsc::UnboundedSender<HALResponse>,
 }
 
 impl UwbClientCallback {
-    fn new(event_cb: THalUwbEventCback, uci_message_cb: THalUwbUciMsgCback) -> Self {
-        UwbClientCallback { event_cb, uci_message_cb }
+    fn new(rsp_sender: mpsc::UnboundedSender<HALResponse>) -> Self {
+        UwbClientCallback { rsp_sender }
     }
 }
 
 impl Interface for UwbClientCallback {}
 
 impl IUwbClientCallback for UwbClientCallback {
-    fn onHalEvent(&self, event: UwbEvent, event_status: UwbStatus) -> BinderResult<()> {
-        (self.event_cb)(event, event_status);
+    fn onHalEvent(&self, _event: UwbEvent, _event_status: UwbStatus) -> BinderResult<()> {
+        // TODO: Implement
         Ok(())
     }
 
-    fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
-        (self.uci_message_cb)(data);
+    fn onUciMessage(&self, _data: &[u8]) -> BinderResult<()> {
         Ok(())
     }
 }
@@ -113,7 +112,8 @@ impl UwbAdaptation {
     }
 
     fn initialize_hal_device_context(&mut self) {
-        self.m_hal_entry_funcs.open = Some(UwbAdaptation::hal_open);
+        // TODO: I would guess we can remove this whole table and the associate typedefs.
+        //self.m_hal_entry_funcs.open = Some(UwbAdaptation::hal_open);
         self.m_hal_entry_funcs.close = Some(UwbAdaptation::hal_close);
         self.m_hal_entry_funcs.send_uci_message = Some(UwbAdaptation::send_uci_message);
         self.m_hal_entry_funcs.core_initialization = Some(UwbAdaptation::core_initialization);
@@ -128,9 +128,9 @@ impl UwbAdaptation {
         }
     }
 
-    fn hal_open(&self, hal_cback: THalUwbEventCback, data_cback: THalUwbUciMsgCback) {
+    fn hal_open(&self, rsp_sender: mpsc::UnboundedSender<HALResponse>) {
         let m_cback = BnUwbClientCallback::new_binder(
-            UwbClientCallback { event_cb: hal_cback, uci_message_cb: data_cback },
+            UwbClientCallback { rsp_sender },
             BinderFeatures::default(),
         );
         if let Some(hal) = &self.m_hal {
@@ -186,44 +186,25 @@ impl UwbAdaptation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
     fn test_onHalEvent() {
-        static EVENT_CALLED: AtomicBool = AtomicBool::new(false);
-        fn t_hal_uwb_event_cback_tmpl(event: UwbEvent, status: UwbStatus) {
-            EVENT_CALLED.store(true, Ordering::Relaxed);
-        }
-        fn t_hal_uwb_uci_msg_cback_tmpl(p_data: &[u8]) {
-            EVENT_CALLED.store(true, Ordering::Relaxed);
-        }
         let uwb_event_test = UwbEvent(0);
         let uwb_status_test = UwbStatus(1);
-        let t_hal_uwb_event_cback_test: THalUwbEventCback = t_hal_uwb_event_cback_tmpl;
-        let t_hal_uwb_uci_msg_cback_test: THalUwbUciMsgCback = t_hal_uwb_uci_msg_cback_tmpl;
-        let uwb_client_callback_test =
-            UwbClientCallback::new(t_hal_uwb_event_cback_test, t_hal_uwb_uci_msg_cback_test);
+        let (rsp_sender, _) = mpsc::unbounded_channel::<HALResponse>();
+        let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
         let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test);
-        assert!(EVENT_CALLED.load(Ordering::Relaxed));
         assert_eq!(result, Ok(()));
     }
 
     #[test]
     fn test_onUciMessage() {
-        static MSG_CALLED: AtomicBool = AtomicBool::new(false);
-        fn t_hal_uwb_event_cback_tmpl(event: UwbEvent, status: UwbStatus) {
-            MSG_CALLED.store(true, Ordering::Relaxed);
-        }
-        fn t_hal_uwb_uci_msg_cback_tmpl(p_data: &[u8]) {
-            MSG_CALLED.store(true, Ordering::Relaxed);
-        }
         let data = [1, 2, 3, 4];
-        let t_hal_uwb_event_cback_test: THalUwbEventCback = t_hal_uwb_event_cback_tmpl;
-        let t_hal_uwb_uci_msg_cback_test: THalUwbUciMsgCback = t_hal_uwb_uci_msg_cback_tmpl;
-        let uwb_client_callback_test =
-            UwbClientCallback::new(t_hal_uwb_event_cback_test, t_hal_uwb_uci_msg_cback_test);
+        let (rsp_sender, _) = mpsc::unbounded_channel::<HALResponse>();
+        let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
         let result = uwb_client_callback_test.onUciMessage(&data);
-        assert!(MSG_CALLED.load(Ordering::Relaxed));
+        // TODO: Once we implement the callback, we can send a real response packet and check the
+        // receiver.
         assert_eq!(result, Ok(()));
     }
 }
