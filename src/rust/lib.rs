@@ -15,4 +15,5 @@
  */
 
 pub mod adaptation;
+pub mod event_manager;
 pub mod uci;
