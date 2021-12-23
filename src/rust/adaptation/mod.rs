@@ -16,17 +16,6 @@ use log::{info, warn};
 use std::result::Result;
 use tokio::sync::mpsc;
 
-type THalUwbEventCback = fn(event: UwbEvent, status: UwbStatus);
-type THalUwbUciMsgCback = fn(p_data: &[u8]);
-type THalApiOpen =
-    fn(&UwbAdaptation, event_cback: THalUwbEventCback, msg_cback: THalUwbUciMsgCback);
-type THalApiClose = fn(&UwbAdaptation);
-type THalApiWrite = fn(&UwbAdaptation, data: &[u8]);
-type THalApiCoreInit = fn(&UwbAdaptation) -> Result<(), UwbErr>;
-type THalApiSessionInit = fn(&UwbAdaptation, session_id: i32) -> Result<(), UwbErr>;
-type THalApiGetSupportedAndroidUciVersion = fn(&UwbAdaptation) -> Result<(i32), UwbErr>;
-type THalApiGetSupportedAndroidCapabilities = fn(&UwbAdaptation) -> Result<(i64), UwbErr>;
-
 pub struct UwbClientCallback {
     rsp_sender: mpsc::UnboundedSender<HALResponse>,
 }
@@ -76,29 +65,14 @@ fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
     Some(i_uwb_chip)
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct THalUwbEntry {
-    open: Option<THalApiOpen>,
-    close: Option<THalApiClose>,
-    send_uci_message: Option<THalApiWrite>,
-    core_initialization: Option<THalApiCoreInit>,
-    session_initialization: Option<THalApiSessionInit>,
-    get_supported_android_uci_version: Option<THalApiGetSupportedAndroidUciVersion>,
-    get_supported_android_capabilities: Option<THalApiGetSupportedAndroidCapabilities>,
-}
-
 #[derive(Clone)]
 pub struct UwbAdaptation {
-    m_hal_entry_funcs: THalUwbEntry,
-    m_hal: Option<Strong<dyn IUwbChip>>,
+    hal: Option<Strong<dyn IUwbChip>>,
 }
 
 impl UwbAdaptation {
-    pub fn new(
-        m_hal_entry_funcs: THalUwbEntry,
-        m_hal: Option<Strong<dyn IUwbChip>>,
-    ) -> UwbAdaptation {
-        UwbAdaptation { m_hal_entry_funcs: m_hal_entry_funcs, m_hal: m_hal }
+    pub fn new(hal: Option<Strong<dyn IUwbChip>>) -> UwbAdaptation {
+        UwbAdaptation { hal }
     }
 
     pub fn initialize(&mut self) {
@@ -107,23 +81,11 @@ impl UwbAdaptation {
 
     pub fn finalize(&mut self, exit_status: bool) {}
 
-    pub fn get_hal_entry_funcs(&self) -> THalUwbEntry {
-        self.m_hal_entry_funcs
-    }
-
     fn initialize_hal_device_context(&mut self) {
-        // TODO: I would guess we can remove this whole table and the associate typedefs.
-        //self.m_hal_entry_funcs.open = Some(UwbAdaptation::hal_open);
-        self.m_hal_entry_funcs.close = Some(UwbAdaptation::hal_close);
-        self.m_hal_entry_funcs.send_uci_message = Some(UwbAdaptation::send_uci_message);
-        self.m_hal_entry_funcs.core_initialization = Some(UwbAdaptation::core_initialization);
-        self.m_hal_entry_funcs.session_initialization = Some(UwbAdaptation::session_initialization);
-        self.m_hal_entry_funcs.get_supported_android_uci_version =
-            Some(UwbAdaptation::get_supported_android_uci_version);
-        self.m_hal_entry_funcs.get_supported_android_capabilities =
-            Some(UwbAdaptation::get_supported_android_capabilities);
-        self.m_hal = get_hal_service();
-        if (self.m_hal.is_none()) {
+        // TODO: If we can initialize this in new(), we can properly error if it fails and remove
+        // the checks in the functions below.
+        self.hal = get_hal_service();
+        if (self.hal.is_none()) {
             info!("Failed to retrieve the UWB HAL!");
         }
     }
@@ -133,7 +95,7 @@ impl UwbAdaptation {
             UwbClientCallback { rsp_sender },
             BinderFeatures::default(),
         );
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             hal.open(&m_cback);
         } else {
             warn!("Failed to open HAL");
@@ -141,41 +103,41 @@ impl UwbAdaptation {
     }
 
     fn hal_close(&self) {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             hal.close();
         }
     }
 
     pub fn core_initialization(&self) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             return Ok(hal.coreInit()?);
         }
         Err(UwbErr::failed())
     }
 
     fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             return Ok(hal.sessionInit(session_id)?);
         }
         Err(UwbErr::failed())
     }
 
     fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             return Ok(hal.getSupportedAndroidUciVersion()?);
         }
         Err(UwbErr::failed())
     }
 
     fn get_supported_android_capabilities(&self) -> Result<i64, UwbErr> {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             return Ok(hal.getSupportedAndroidCapabilities()?);
         }
         Err(UwbErr::failed())
     }
 
     fn send_uci_message(&self, data: &[u8]) {
-        if let Some(hal) = &self.m_hal {
+        if let Some(hal) = &self.hal {
             hal.sendUciMessage(data);
         } else {
             warn!("Failed to send uci message");
