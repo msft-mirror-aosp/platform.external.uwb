@@ -1,6 +1,7 @@
 //! Definition of UwbClientCallback
 
 use crate::error::UwbErr;
+use crate::uci::uci_hrcv;
 use crate::uci::HALResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     IUwb::{BnUwb, IUwb},
@@ -12,7 +13,7 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
 use android_hardware_uwb::binder::{
     self, BinderFeatures, Interface, Result as BinderResult, Strong,
 };
-use log::{info, warn};
+use log::{error, info, warn};
 use std::result::Result;
 use tokio::sync::mpsc;
 
@@ -34,7 +35,16 @@ impl IUwbClientCallback for UwbClientCallback {
         Ok(())
     }
 
-    fn onUciMessage(&self, _data: &[u8]) -> BinderResult<()> {
+    fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
+        let packet = uci_hrcv::uci_response(data);
+        match packet {
+            Ok(response) => {
+                if let Err(e) = self.rsp_sender.send(HALResponse::Uci(response)) {
+                    error!("Error sending uci response: {:?}", e);
+                }
+            }
+            Err(e) => error!("Error parsing uci response: {:?}", data),
+        }
         Ok(())
     }
 }
@@ -159,14 +169,34 @@ mod tests {
         assert_eq!(result, Ok(()));
     }
 
-    #[test]
-    fn test_onUciMessage() {
-        let data = [1, 2, 3, 4];
-        let (rsp_sender, _) = mpsc::unbounded_channel::<HALResponse>();
+    #[tokio::test]
+    async fn test_onUciMessage_good() {
+        let data = [
+            0x40, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
+            0x0a,
+        ];
+        let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
         let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
         let result = uwb_client_callback_test.onUciMessage(&data);
-        // TODO: Once we implement the callback, we can send a real response packet and check the
-        // receiver.
         assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HALResponse::Uci(uci_hrcv::UciResponse::GetDeviceInfoRsp(_)))
+        ));
+    }
+
+    #[test]
+    fn test_onUciMessage_bad() {
+        let data = [
+            0x41, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
+            0x0a,
+        ];
+        let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
+        let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
+        let result = uwb_client_callback_test.onUciMessage(&data);
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.try_recv();
+        assert!(response.is_err());
     }
 }

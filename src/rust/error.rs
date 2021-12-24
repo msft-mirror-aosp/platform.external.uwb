@@ -31,6 +31,10 @@ pub enum UwbErr {
     SendJNICommand(#[from] mpsc::error::SendError<crate::uci::JNICommand>),
     #[error("SendError for HALResponse: {0}")]
     SendHALResponse(#[from] mpsc::error::SendError<crate::uci::HALResponse>),
+    #[error("Could not parse: {0}")]
+    Parse(#[from] uwb_uci_packets::Error),
+    #[error("Could not specialize: {0:?}")]
+    Specialize(Vec<u8>),
     #[error("Exit")]
     Exit,
     #[error("Unknown error")]
