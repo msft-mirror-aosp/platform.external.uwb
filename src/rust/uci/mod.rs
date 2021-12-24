@@ -18,10 +18,12 @@ pub mod state_machine;
 pub mod uci_hmsgs;
 pub mod uci_hrcv;
 
-use anyhow::{bail, Result};
+use crate::error::UwbErr;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::mpsc;
 use tokio::{select, task};
+
+pub type Result<T> = std::result::Result<T, UwbErr>;
 
 // TODO: Use real values for these enums.
 
@@ -51,7 +53,7 @@ pub enum JNICommand {
 
 // Responses from the HAL.
 #[derive(Debug)]
-enum HALResponse {
+pub enum HALResponse {
     A,
     B,
 }
@@ -107,7 +109,7 @@ impl Driver {
                     JNICommand::UwaGetSessionState(session_id) => log::info!("{:?}", cmd),
                     JNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} => log::info!("{:?}", cmd),
                     JNICommand::UwaSetCountryCode{ref code} => log::info!("{:?}", cmd),
-                    JNICommand::Exit => bail!("Exit received"),
+                    JNICommand::Exit => return Err(UwbErr::Exit),
                 }
             }
             Some(rsp) = self.rsp_receiver.recv() => {
