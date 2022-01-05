@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
+use crate::error::UwbErr;
 use log::{info, warn};
 use uwb_uci_packets::{
     AndroidNotificationBuilder, CoreNotificationBuilder, CoreNotificationChild,
     CoreNotificationPacket, CoreOpCode, CoreResponseChild, CoreResponsePacket,
     DeviceResetRspBuilder, DeviceStatusNtfBuilder, GenericErrorBuilder, GenericErrorPacket,
     GetCapsInfoRspBuilder, GetCapsInfoRspPacket, GetConfigRspBuilder, GetDeviceInfoRspBuilder,
-    GetDeviceInfoRspPacket, RangeDataNtfBuilder, RangeStartRspBuilder, RangeStartRspPacket,
+    GetDeviceInfoRspPacket, Packet, RangeDataNtfBuilder, RangeStartRspBuilder, RangeStartRspPacket,
     RangingNotificationBuilder, RangingResponseChild, RangingResponsePacket, SessionInitRspBuilder,
     SessionInitRspPacket, SessionNotificationBuilder, SessionResponseChild, SessionResponsePacket,
     SessionStatusNtfBuilder, SessionUpdateControllerMulticastListNtfBuilder, SetConfigRspBuilder,
@@ -28,6 +29,7 @@ use uwb_uci_packets::{
     UciResponsePacket, TLV,
 };
 
+#[derive(Debug)]
 pub enum UciResponse {
     GetDeviceInfoRsp(GetDeviceInfoRspBuilder),
     GetCapsInfoRsp(GetCapsInfoRspBuilder),
@@ -48,82 +50,53 @@ pub enum UciNotification {
     AndroidNotification(AndroidNotificationBuilder),
 }
 
-pub fn uci_response(evt: UciResponsePacket) {
+pub fn uci_response(bytes: &[u8]) -> Result<UciResponse, UwbErr> {
+    let evt = UciResponsePacket::parse(bytes)?;
     match evt.specialize() {
-        UciResponseChild::CoreResponse(evt) => {
-            core_response(evt);
-        }
-        UciResponseChild::SessionResponse(evt) => {
-            session_response(evt);
-        }
-        UciResponseChild::RangingResponse(evt) => {
-            ranging_response(evt);
-        }
-        _ => {
-            warn!("UciResponsePacket: {:?} not supported", evt);
-        }
+        UciResponseChild::CoreResponse(evt) => core_response(evt),
+        UciResponseChild::SessionResponse(evt) => session_response(evt),
+        UciResponseChild::RangingResponse(evt) => ranging_response(evt),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-pub fn uci_notification(evt: UciNotificationPacket) {
+pub fn uci_notification(evt: UciNotificationPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        UciNotificationChild::CoreNotification(evt) => {
-            core_notification(evt);
-        }
-        _ => {
-            warn!("UciNotificationPacket: {:?} not supported", evt);
-        }
+        UciNotificationChild::CoreNotification(evt) => core_notification(evt),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-fn core_response(evt: CoreResponsePacket) {
+fn core_response(evt: CoreResponsePacket) -> Result<UciResponse, UwbErr> {
     match evt.specialize() {
-        CoreResponseChild::GetDeviceInfoRsp(evt) => {
-            get_device_info_rsp(evt);
-        }
-        CoreResponseChild::GetCapsInfoRsp(evt) => {
-            get_caps_info_rsp(evt);
-        }
-        _ => {
-            warn!("CoreResponsePacket: {:?} not supported", evt);
-        }
+        CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(get_device_info_rsp(evt)),
+        CoreResponseChild::GetCapsInfoRsp(evt) => Ok(get_caps_info_rsp(evt)),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-fn session_response(evt: SessionResponsePacket) {
+fn session_response(evt: SessionResponsePacket) -> Result<UciResponse, UwbErr> {
     match evt.specialize() {
-        SessionResponseChild::SessionInitRsp(evt) => {
-            session_init_rsp(evt);
-        }
-        _ => {
-            warn!("SessionResponsePacket: {:?} not supported", evt);
-        }
+        SessionResponseChild::SessionInitRsp(evt) => Ok(session_init_rsp(evt)),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-fn ranging_response(evt: RangingResponsePacket) {
+fn ranging_response(evt: RangingResponsePacket) -> Result<UciResponse, UwbErr> {
     match evt.specialize() {
-        RangingResponseChild::RangeStartRsp(evt) => {
-            range_start_rsp(evt);
-        }
-        _ => {
-            warn!("RangingResponsePacket: {:?} not supported", evt);
-        }
+        RangingResponseChild::RangeStartRsp(evt) => Ok(range_start_rsp(evt)),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-fn core_notification(evt: CoreNotificationPacket) {
+fn core_notification(evt: CoreNotificationPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        CoreNotificationChild::GenericError(evt) => {
-            generic_error(evt);
-        }
-        _ => {
-            warn!("CoreNotificationPacket: {:?} not supported", evt);
-        }
+        CoreNotificationChild::GenericError(evt) => Ok(generic_error(evt)),
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
-fn get_device_info_rsp(evt: GetDeviceInfoRspPacket) {
+fn get_device_info_rsp(evt: GetDeviceInfoRspPacket) -> UciResponse {
     let evt_data = GetDeviceInfoRspBuilder {
         status: evt.get_status(),
         uci_version: evt.get_uci_version(),
@@ -132,34 +105,26 @@ fn get_device_info_rsp(evt: GetDeviceInfoRspPacket) {
         uci_test_version: evt.get_uci_test_version(),
         vendor_spec_info: evt.get_vendor_spec_info().to_vec(),
     };
-    uci_response_cb(UciResponse::GetDeviceInfoRsp(evt_data));
+    UciResponse::GetDeviceInfoRsp(evt_data)
 }
 
-fn get_caps_info_rsp(evt: GetCapsInfoRspPacket) {
+fn get_caps_info_rsp(evt: GetCapsInfoRspPacket) -> UciResponse {
     let evt_data =
         GetCapsInfoRspBuilder { status: evt.get_status(), tlvs: evt.get_tlvs().to_vec() };
-    uci_response_cb(UciResponse::GetCapsInfoRsp(evt_data));
+    UciResponse::GetCapsInfoRsp(evt_data)
 }
 
-fn session_init_rsp(evt: SessionInitRspPacket) {
+fn session_init_rsp(evt: SessionInitRspPacket) -> UciResponse {
     let evt_data = SessionInitRspBuilder { status: evt.get_status() };
-    uci_response_cb(UciResponse::SessionInitRsp(evt_data));
+    UciResponse::SessionInitRsp(evt_data)
 }
 
-fn range_start_rsp(evt: RangeStartRspPacket) {
+fn range_start_rsp(evt: RangeStartRspPacket) -> UciResponse {
     let evt_data = RangeStartRspBuilder { status: evt.get_status() };
-    uci_response_cb(UciResponse::RangeStartRsp(evt_data));
+    UciResponse::RangeStartRsp(evt_data)
 }
 
-fn generic_error(evt: GenericErrorPacket) {
+fn generic_error(evt: GenericErrorPacket) -> UciNotification {
     let evt_data = GenericErrorBuilder { status: evt.get_status() };
-    uci_notification_cb(UciNotification::GenericError(evt_data));
-}
-
-fn uci_response_cb(resp_data: UciResponse) {
-    //Call JNI side of things
-}
-
-fn uci_notification_cb(notification_data: UciNotification) {
-    //Call JNI side of things
+    UciNotification::GenericError(evt_data)
 }
