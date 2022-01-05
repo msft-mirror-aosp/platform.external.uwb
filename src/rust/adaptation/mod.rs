@@ -78,11 +78,15 @@ fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
 #[derive(Clone)]
 pub struct UwbAdaptation {
     hal: Option<Strong<dyn IUwbChip>>,
+    rsp_sender: mpsc::UnboundedSender<HALResponse>,
 }
 
 impl UwbAdaptation {
-    pub fn new(hal: Option<Strong<dyn IUwbChip>>) -> UwbAdaptation {
-        UwbAdaptation { hal }
+    pub fn new(
+        hal: Option<Strong<dyn IUwbChip>>,
+        rsp_sender: mpsc::UnboundedSender<HALResponse>,
+    ) -> UwbAdaptation {
+        UwbAdaptation { hal, rsp_sender }
     }
 
     pub fn initialize(&mut self) {
@@ -100,9 +104,9 @@ impl UwbAdaptation {
         }
     }
 
-    fn hal_open(&self, rsp_sender: mpsc::UnboundedSender<HALResponse>) {
+    pub fn hal_open(&self) {
         let m_cback = BnUwbClientCallback::new_binder(
-            UwbClientCallback { rsp_sender },
+            UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
             BinderFeatures::default(),
         );
         if let Some(hal) = &self.hal {
@@ -146,7 +150,7 @@ impl UwbAdaptation {
         Err(UwbErr::failed())
     }
 
-    fn send_uci_message(&self, data: &[u8]) {
+    pub fn send_uci_message(&self, data: &[u8]) {
         if let Some(hal) = &self.hal {
             hal.sendUciMessage(data);
         } else {
