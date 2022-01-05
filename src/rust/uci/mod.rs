@@ -54,6 +54,8 @@ pub enum JNICommand {
 // Responses from the HAL.
 #[derive(Debug)]
 pub enum HALResponse {
+    // TODO: Can we combine HALResponse and UciResponse and "inline" this?
+    Uci(uci_hrcv::UciResponse),
     A,
     B,
 }
@@ -116,6 +118,7 @@ impl Driver {
                 match rsp {
                     HALResponse::A => log::error!("HALResponse::A"),
                     HALResponse::B => log::error!("HALResponse::B"),
+                    HALResponse::Uci(_) => log::info!("{:?}", rsp),
                 }
             }
         }
