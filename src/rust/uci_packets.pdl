@@ -50,7 +50,7 @@ enum AppDataOpCode : 6 {
 
 // Android vendor commands
 enum AndroidOpCode : 6 {
-    ANDROID_GET_POWER_STATS = 0x0, // TODO: Add packet for this.
+    ANDROID_GET_POWER_STATS = 0x0,
     ANDROID_SET_COUNTRY_CODE = 0x1,
 }
 
@@ -753,4 +753,37 @@ packet AndroidSetCountryCodeRsp : AndroidResponse (android_opcode = ANDROID_SET_
 
 test AndroidSetCountryCodeRsp {
     "\x4e\x01\x00\x01\x00",
+}
+
+packet AndroidGetPowerStatsCmd: AndroidCommand (android_opcode = ANDROID_GET_POWER_STATS) {
+}
+
+test AndroidGetPowerStatsCmd {
+    "\x2e\x00\x00\x00",
+}
+
+struct PowerStats {
+    tx_time: 32,
+    tx_wake_count: 32,
+    rx_time: 32,
+    rx_wake_count: 32,
+}
+
+struct UwbPowerStats {
+    status: StatusCode,
+    idle_time: 32,
+    sleep_time: 32,
+    ranging_stats: PowerStats,
+    data_stats: PowerStats,
+}
+
+packet AndroidGetPowerStatsRsp : AndroidResponse (android_opcode = ANDROID_GET_POWER_STATS) {
+    stats: UwbPowerStats,
+}
+
+test AndroidGetPowerStatsRsp {
+    "\x4e\x00\x00\x29\x00",
+    "\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
