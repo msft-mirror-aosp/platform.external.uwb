@@ -25,6 +25,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::{select, task};
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
+pub type UciResponseHandle = oneshot::Sender<UciResponse>;
 
 // TODO: Use real values for these enums.
 
@@ -76,19 +77,15 @@ enum HALCommand {
 
 struct Driver {
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
-    blocking_cmd_receiver:
-        mpsc::UnboundedReceiver<(BlockingJNICommand, oneshot::Sender<UciResponse>)>,
+    blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
-    response_channel: Option<oneshot::Sender<UciResponse>>,
+    response_channel: Option<UciResponseHandle>,
 }
 
 // Creates a future that handles messages from JNI and the HAL.
 async fn drive(
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
-    blocking_cmd_receiver: mpsc::UnboundedReceiver<(
-        BlockingJNICommand,
-        oneshot::Sender<UciResponse>,
-    )>,
+    blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
 ) -> Result<()> {
     Driver::new(cmd_receiver, blocking_cmd_receiver, rsp_receiver).drive().await
@@ -97,10 +94,7 @@ async fn drive(
 impl Driver {
     fn new(
         cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
-        blocking_cmd_receiver: mpsc::UnboundedReceiver<(
-            BlockingJNICommand,
-            oneshot::Sender<UciResponse>,
-        )>,
+        blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
         rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
     ) -> Self {
         Self { cmd_receiver, blocking_cmd_receiver, rsp_receiver, response_channel: None }
@@ -142,7 +136,7 @@ impl Driver {
                 match cmd {
                     BlockingJNICommand::GetDeviceInfo => {
                         log::info!("BlockingJNICommand::GetDeviceInfo");
-                        self.response_channel.take().unwrap().send(UciResponse::Fake);
+                        self.response_channel.take().expect("response_channel is not set").send(UciResponse::Fake);
                     }
                 }
             }
@@ -161,7 +155,7 @@ impl Driver {
 // Controller for sending tasks for the native thread to handle.
 pub struct Dispatcher {
     cmd_sender: mpsc::UnboundedSender<JNICommand>,
-    blocking_cmd_sender: mpsc::UnboundedSender<(BlockingJNICommand, oneshot::Sender<UciResponse>)>,
+    blocking_cmd_sender: mpsc::UnboundedSender<(BlockingJNICommand, UciResponseHandle)>,
     rsp_sender: mpsc::UnboundedSender<HALResponse>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
@@ -171,7 +165,7 @@ impl Dispatcher {
     pub fn new() -> Result<Dispatcher> {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel::<JNICommand>();
         let (blocking_cmd_sender, blocking_cmd_receiver) =
-            mpsc::unbounded_channel::<(BlockingJNICommand, oneshot::Sender<UciResponse>)>();
+            mpsc::unbounded_channel::<(BlockingJNICommand, UciResponseHandle)>();
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
