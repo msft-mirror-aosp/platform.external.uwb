@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
+use crate::uci::uci_hrcv::UciResponse;
+use crate::uci::{BlockingJNICommand, HALResponse, JNICommand};
 use android_hardware_uwb::aidl::android::hardware::uwb::UwbStatus::UwbStatus;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, thiserror::Error)]
 pub enum UwbErr {
@@ -28,9 +30,15 @@ pub enum UwbErr {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("SendError for JNICommand: {0}")]
-    SendJNICommand(#[from] mpsc::error::SendError<crate::uci::JNICommand>),
+    SendJNICommand(#[from] mpsc::error::SendError<JNICommand>),
+    #[error("SendError for BlockingJNICommand: {0}")]
+    SendBlockingJNICommand(
+        #[from] mpsc::error::SendError<(BlockingJNICommand, oneshot::Sender<UciResponse>)>,
+    ),
     #[error("SendError for HALResponse: {0}")]
-    SendHALResponse(#[from] mpsc::error::SendError<crate::uci::HALResponse>),
+    SendHALResponse(#[from] mpsc::error::SendError<HALResponse>),
+    #[error("RecvError: {0}")]
+    RecvError(#[from] oneshot::error::RecvError),
     #[error("Could not parse: {0}")]
     Parse(#[from] uwb_uci_packets::Error),
     #[error("Could not specialize: {0:?}")]
