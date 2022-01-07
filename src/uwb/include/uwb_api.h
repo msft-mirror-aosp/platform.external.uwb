@@ -545,6 +545,17 @@ extern tUWB_STATUS UWB_SessionInit(uint32_t session_id, uint8_t sessionType);
 
 /*******************************************************************************
 **
+** Function         UWB_HalSessionInit
+**
+** Description      This function is called to send session init command to
+**                  HAL.
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+extern tUWB_STATUS UWB_HalSessionInit(uint32_t session_id);
+
+/*******************************************************************************
+**
 ** Function         UWB_SessionDeInit
 **
 ** Description      This function is called to send session DeInit command to

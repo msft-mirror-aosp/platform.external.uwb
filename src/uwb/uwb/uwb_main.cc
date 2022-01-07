@@ -530,10 +530,22 @@ tUWB_STATUS UWB_GetCoreConfig(uint8_t num_ids, uint8_t* p_param_ids) {
 **
 *******************************************************************************/
 tUWB_STATUS UWB_SessionInit(uint32_t session_id, uint8_t session_type) {
-  // Trigger session initialization HAL API.
-  uwb_cb.p_hal->SessionInitialization(session_id);
   return uci_snd_session_init_cmd(session_id, session_type);
 }
+
+/*******************************************************************************
+**
+** Function         UWB_HalSessionInit
+**
+** Description      This function is called to send session init command to
+**                  HAL.
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_HalSessionInit(uint32_t session_id) {
+  return uwb_cb.p_hal->SessionInitialization(session_id);
+}
+
 /*******************************************************************************
 **
 ** Function         UWB_SessionDeInit

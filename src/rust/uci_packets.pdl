@@ -622,28 +622,28 @@ packet RangeDataNtf : RangingNotification (ranging_opcode = RANGE_START) {
     session_id: 32,
     _reserved_: 8,
     current_ranging_interval: 32,
-    ranging_mesurement_type: 8,
+    ranging_measurement_type: 8,
     _reserved_: 8,
     mac_address_indicator: MacAddressIndicator,
     _reserved_: 64,
     _payload_,
 }
 
-packet ShortMACRangeDataNtf : RangeDataNtf (mac_address_indicator = SHORT_ADDRESS) {
+packet ShortMacRangeDataNtf : RangeDataNtf (mac_address_indicator = SHORT_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ShortAddressTwoWayRangingMeasurement[],
 }
 
-test ShortMACRangeDataNtf {
+test ShortMacRangeDataNtf {
     "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-packet ExtendedMACRangeDataNtf : RangeDataNtf (mac_address_indicator = EXTENDED_ADDRESS) {
+packet ExtendedMacRangeDataNtf : RangeDataNtf (mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ExtendedAddressTwoWayRangingMeasurement[],
 }
 
-test ExtendedMACRangeDataNtf {
+test ExtendedMacRangeDataNtf {
     "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
