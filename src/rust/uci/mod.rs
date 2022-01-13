@@ -20,6 +20,7 @@ pub mod uci_hrcv;
 
 use crate::adaptation::UwbAdaptation;
 use crate::error::UwbErr;
+use crate::event_manager::EventManager;
 use crate::uci::uci_hrcv::UciResponse;
 use log::{error, info};
 use tokio::runtime::{Builder, Runtime};
@@ -67,19 +68,12 @@ pub enum BlockingJNICommand {
 pub enum HALResponse {
     // TODO: Can we combine HALResponse and UciResponse and "inline" this?
     Uci(uci_hrcv::UciResponse),
-    A,
-    B,
-}
-
-// Commands we send to the HAL.
-#[derive(Debug)]
-enum HALCommand {
-    A,
-    B,
+    Ntf(uci_hrcv::UciNotification),
 }
 
 struct Driver {
     adaptation: UwbAdaptation,
+    event_manager: EventManager,
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
@@ -89,22 +83,27 @@ struct Driver {
 // Creates a future that handles messages from JNI and the HAL.
 async fn drive(
     adaptation: UwbAdaptation,
+    event_manager: EventManager,
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
 ) -> Result<()> {
-    Driver::new(adaptation, cmd_receiver, blocking_cmd_receiver, rsp_receiver).drive().await
+    Driver::new(adaptation, event_manager, cmd_receiver, blocking_cmd_receiver, rsp_receiver)
+        .drive()
+        .await
 }
 
 impl Driver {
     fn new(
         adaptation: UwbAdaptation,
+        event_manager: EventManager,
         cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
         blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
         rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
     ) -> Self {
         Self {
             adaptation,
+            event_manager,
             cmd_receiver,
             blocking_cmd_receiver,
             rsp_receiver,
@@ -161,11 +160,23 @@ impl Driver {
             }
             Some(rsp) = self.rsp_receiver.recv() => {
                 match rsp {
-                    HALResponse::A => log::error!("HALResponse::A"),
-                    HALResponse::B => log::error!("HALResponse::B"),
                     HALResponse::Uci(response) => {
                         self.response_channel.take().expect("the response channel does not exist").send(response);
                     },
+                    HALResponse::Ntf(response) => {
+                        match response {
+                            uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
+                                self.event_manager.device_status_notification_received(response);
+                            },
+                            uci_hrcv::UciNotification::GenericError(response) => {
+                                self.event_manager.core_generic_error_notification_received(response);
+                            },
+                            uci_hrcv::UciNotification::SessionStatusNtf(response) => {
+                                self.event_manager.session_status_notification_received(response);
+                            },
+                            _ => log::warn!("Notification type not handled yet {:?}", response),
+                        }
+                    }
                 }
             }
         }
@@ -182,7 +193,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new() -> Result<Dispatcher> {
+    pub fn new(event_manager: EventManager) -> Result<Dispatcher> {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel::<JNICommand>();
         let (blocking_cmd_sender, blocking_cmd_receiver) =
@@ -193,8 +204,13 @@ impl Dispatcher {
         // binder threads will call into this.
         let runtime =
             Builder::new_multi_thread().worker_threads(1).thread_name("uwb-uci-handler").build()?;
-        let join_handle =
-            runtime.spawn(drive(adaptation, cmd_receiver, blocking_cmd_receiver, rsp_receiver));
+        let join_handle = runtime.spawn(drive(
+            adaptation,
+            event_manager,
+            cmd_receiver,
+            blocking_cmd_receiver,
+            rsp_receiver,
+        ));
         Ok(Dispatcher { cmd_sender, blocking_cmd_sender, join_handle, runtime })
     }
 
@@ -228,9 +244,21 @@ mod tests {
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
         );
-        let mut dispatcher = Dispatcher::new()?;
-        dispatcher.send_jni_command(JNICommand::UwaEnable)?;
-        dispatcher.exit()?;
+        // TODO : Consider below ways to write the unit test
+        // 1
+        // Create test-only methods on EventManager that allow you to construct one without Java
+        // (and to have dummy/tracked effects when callbacks get called).
+        //
+        // 2 and recommended way
+        // Take the signature of EventManager and make it a trait, which would allow you to impl that
+        // trait again on a test-only mock type
+
+        //let mut dispatcher = Dispatcher::new()?;
+        //dispatcher.send_hal_response(HALResponse::A)?;
+        //dispatcher.send_jni_command(JNICommand::UwaEnable)?;
+        //dispatcher.block_on_jni_command(BlockingJNICommand::GetDeviceInfo)?;
+        //dispatcher.exit()?;
+        //assert!(dispatcher.send_hal_response(HALResponse::B).is_err());
         Ok(())
     }
 }

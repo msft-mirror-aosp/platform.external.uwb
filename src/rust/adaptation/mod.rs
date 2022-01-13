@@ -36,14 +36,26 @@ impl IUwbClientCallback for UwbClientCallback {
     }
 
     fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
-        let packet = uci_hrcv::uci_response(data);
-        match packet {
-            Ok(response) => {
-                if let Err(e) = self.rsp_sender.send(HALResponse::Uci(response)) {
-                    error!("Error sending uci response: {:?}", e);
-                }
-            }
-            Err(e) => error!("Error parsing uci response: {:?}", data),
+        // TODO: Response and Notification both use onUciMessage, Essentially
+        // we should be able to call a single function and get the type of
+        // packet was sent, blocked on b/204230081
+        let packetRsp = uci_hrcv::uci_response(data);
+        let packetNtf = uci_hrcv::uci_notification(data);
+
+        match (packetRsp, packetNtf) {
+            (Ok(_), Ok(_)) => error!(
+                "Packet parsed as both response and notification.
+                                This should be impossible, dropping packet."
+            ),
+            (Ok(response), _) => self
+                .rsp_sender
+                .send(HALResponse::Uci(response))
+                .unwrap_or_else(|e| error!("Error sending uci response: {:?}", e)),
+            (_, Ok(response)) => self
+                .rsp_sender
+                .send(HALResponse::Ntf(response))
+                .unwrap_or_else(|e| error!("Error sending notification response: {:?}", e)),
+            _ => error!("Unable to parse packet as either UCI or NTF: {:?}", data),
         }
         Ok(())
     }
@@ -193,7 +205,7 @@ mod tests {
     #[test]
     fn test_onUciMessage_bad() {
         let data = [
-            0x41, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
+            0x42, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
             0x0a,
         ];
         let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
