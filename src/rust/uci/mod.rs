@@ -37,7 +37,6 @@ pub type UciResponseHandle = oneshot::Sender<UciResponse>;
 pub enum JNICommand {
     UwaEnable,
     UwaDisable(bool),
-    UwaSessionInit(u32, u8),
     UwaSessionDeinit(u32),
     UwaSessionGetCount,
     UwaStartRange(u32),
@@ -60,6 +59,7 @@ pub enum JNICommand {
 #[derive(Debug)]
 pub enum BlockingJNICommand {
     GetDeviceInfo,
+    UwaSessionInit(u32, u8),
 }
 
 // Responses from the HAL.
@@ -132,7 +132,6 @@ impl Driver {
                         self.adaptation.core_initialization()?;
                     },
                     JNICommand::UwaDisable(graceful) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionInit(session_id, session_type) => log::info!("{:?}", cmd),
                     JNICommand::UwaSessionDeinit(session_id) => log::info!("{:?}", cmd),
                     JNICommand::UwaSessionGetCount => log::info!("{:?}", cmd),
                     JNICommand::UwaStartRange(session_id) => log::info!("{:?}", cmd),
@@ -151,6 +150,11 @@ impl Driver {
                     BlockingJNICommand::GetDeviceInfo => {
                         log::info!("BlockingJNICommand::GetDeviceInfo");
                         let bytes = uci_hmsgs::build_device_info_cmd().build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaSessionInit(session_id, session_type) => {
+                        log::info!("{:?}", cmd);
+                        let bytes = uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec();
                         self.adaptation.send_uci_message(&bytes);
                     }
                 }

@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
+use num_traits::cast::FromPrimitive;
 use uwb_uci_packets::{
     CoreOpCode, DeviceConfigStatus, DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder,
-    GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket, ResetConfig, SetConfigCmdBuilder,
-    SetConfigRspBuilder, StatusCode, UciCommandPacket,
+    GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket, ResetConfig, SessionInitCmdBuilder,
+    SessionType, SetConfigCmdBuilder, SetConfigRspBuilder, StatusCode, UciCommandPacket,
 };
 
 fn uci_ucif_send_cmd() -> StatusCode {
@@ -27,6 +28,13 @@ fn uci_ucif_send_cmd() -> StatusCode {
 
 pub fn build_device_info_cmd() -> GetDeviceInfoCmdBuilder {
     GetDeviceInfoCmdBuilder {}
+}
+
+pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
+    SessionInitCmdBuilder {
+        session_id,
+        session_type: SessionType::from_u8(session_type).expect("invalid session type"),
+    }
 }
 
 fn build_caps_info_cmd() -> GetCapsInfoCmdBuilder {
