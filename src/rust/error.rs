@@ -43,6 +43,8 @@ pub enum UwbErr {
     Parse(#[from] uwb_uci_packets::Error),
     #[error("Could not specialize: {0:?}")]
     Specialize(Vec<u8>),
+    #[error("The dispatcher does not exist")]
+    NoneDispatcher,
     #[error("Exit")]
     Exit,
     #[error("Unknown error")]
