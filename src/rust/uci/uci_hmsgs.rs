@@ -25,7 +25,7 @@ fn uci_ucif_send_cmd() -> StatusCode {
     StatusCode::UciStatusOk
 }
 
-fn build_device_info_cmd() -> GetDeviceInfoCmdBuilder {
+pub fn build_device_info_cmd() -> GetDeviceInfoCmdBuilder {
     GetDeviceInfoCmdBuilder {}
 }
 

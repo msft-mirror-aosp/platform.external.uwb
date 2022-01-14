@@ -20,8 +20,6 @@ use uwb_uci_packets::*;
 
 #[derive(Debug)]
 pub enum UciResponse {
-    // TODO: Remove this once we have real data we can use.
-    Fake,
     GetDeviceInfoRsp(GetDeviceInfoRspBuilder),
     GetCapsInfoRsp(GetCapsInfoRspBuilder),
     SetConfigRsp(SetConfigRspBuilder),
