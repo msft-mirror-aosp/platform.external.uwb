@@ -14,11 +14,16 @@
  * limitations under the License.
  */
 
+use crate::uci::uci_hrcv::UciNotification;
 use jni::errors::Result;
 use jni::objects::{GlobalRef, JObject, JValue};
 use jni::{AttachGuard, JNIEnv, JavaVM};
 use log::error;
+use num_traits::ToPrimitive;
 use std::convert::TryInto;
+use uwb_uci_packets::{
+    DeviceStatusNtfPacket, GenericErrorPacket, SessionStatusNtfPacket, ShortMacRangeDataNtfPacket,
+};
 
 // TODO: Reconsider the best way to cache the JNIEnv.  We currently attach and detach for every
 // call, which the documentation warns could be expensive.  We could attach the thread permanently,
@@ -44,23 +49,25 @@ impl EventManager {
         Ok(EventManager { jvm, obj })
     }
 
-    pub fn device_status_notification_received(&self, state: u8) -> Result<()> {
+    pub fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+        let state = data.get_device_state().to_u8().expect("Failed converting device_state to u8");
         let env = self.jvm.attach_current_thread()?;
         let result = env.call_method(
             self.obj.as_obj(),
             "onDeviceStatusNotificationReceived",
             "(I)V",
-            &[JValue::Int(state.try_into().expect("Could not convert state"))],
+            &[JValue::Int(state.try_into().expect("Could not convert device_state"))],
         );
         self.cleanup_and_return(env, result)
     }
 
-    pub fn session_status_notification_received(
-        &self,
-        session_id: u32,
-        state: u8,
-        reason_code: u8,
-    ) -> Result<()> {
+    pub fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
+        let session_id =
+            data.get_session_id().to_u32().expect("Failed converting session_id to u32");
+        let state =
+            data.get_session_state().to_u8().expect("Failed converting session_state to u8");
+        let reason_code =
+            data.get_reason_code().to_u8().expect("Failed coverting reason_code to u32");
         let env = self.jvm.attach_current_thread()?;
         let result = env.call_method(
             self.obj.as_obj(),
@@ -68,20 +75,21 @@ impl EventManager {
             "(JII)V",
             &[
                 JValue::Long(session_id.try_into().expect("Could not convert session_id")),
-                JValue::Int(state.try_into().expect("Could not convert state")),
+                JValue::Int(state.try_into().expect("Could not convert session_state")),
                 JValue::Int(reason_code.try_into().expect("Could not convert reason_code")),
             ],
         );
         self.cleanup_and_return(env, result)
     }
 
-    pub fn core_generic_error_notification_received(&self, state: u8) -> Result<()> {
+    pub fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+        let status = data.get_status().to_u8().expect("Failed converting status to u8");
         let env = self.jvm.attach_current_thread()?;
         let result = env.call_method(
             self.obj.as_obj(),
             "onCoreGenericErrorNotificationReceived",
             "(I)V",
-            &[JValue::Int(state.try_into().expect("Could not convert state"))],
+            &[JValue::Int(status.try_into().expect("Could not convert status"))],
         );
         self.cleanup_and_return(env, result)
     }
