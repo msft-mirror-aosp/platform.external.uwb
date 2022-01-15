@@ -39,13 +39,14 @@ pub enum UciResponse {
     AndroidGetPowerStatsRsp(AndroidGetPowerStatsRspBuilder),
 }
 
+#[derive(Debug)]
 pub enum UciNotification {
-    GenericError(GenericErrorBuilder),
-    DeviceStatusNtf(DeviceStatusNtfBuilder),
-    SessionStatusNtf(SessionStatusNtfBuilder),
-    SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfBuilder),
-    ShortMacRangeDataNtf(ShortMacRangeDataNtfBuilder),
-    ExtendedMacRangeDataNtf(ExtendedMacRangeDataNtfBuilder),
+    GenericError(GenericErrorPacket),
+    DeviceStatusNtf(DeviceStatusNtfPacket),
+    SessionStatusNtf(SessionStatusNtfPacket),
+    SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfPacket),
+    ShortMacRangeDataNtf(ShortMacRangeDataNtfPacket),
+    ExtendedMacRangeDataNtf(ExtendedMacRangeDataNtfPacket),
 }
 
 pub fn uci_response(bytes: &[u8]) -> Result<UciResponse, UwbErr> {
@@ -116,17 +117,19 @@ fn android_response(evt: AndroidResponsePacket) -> Result<UciResponse, UwbErr> {
 
 fn core_notification(evt: CoreNotificationPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        CoreNotificationChild::DeviceStatusNtf(evt) => Ok(device_status_ntf(evt)),
-        CoreNotificationChild::GenericError(evt) => Ok(generic_error(evt)),
+        CoreNotificationChild::DeviceStatusNtf(evt) => Ok(UciNotification::DeviceStatusNtf(evt)),
+        CoreNotificationChild::GenericError(evt) => Ok(UciNotification::GenericError(evt)),
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
 
 fn session_notification(evt: SessionNotificationPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        SessionNotificationChild::SessionStatusNtf(evt) => Ok(session_status_ntf(evt)),
+        SessionNotificationChild::SessionStatusNtf(evt) => {
+            Ok(UciNotification::SessionStatusNtf(evt))
+        }
         SessionNotificationChild::SessionUpdateControllerMulticastListNtf(evt) => {
-            Ok(session_update_controller_multicast_list_ntf(evt))
+            Ok(UciNotification::SessionUpdateControllerMulticastListNtf(evt))
         }
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
@@ -246,62 +249,14 @@ fn android_get_power_start_rsp(evt: AndroidGetPowerStatsRspPacket) -> UciRespons
     UciResponse::AndroidGetPowerStatsRsp(evt_data)
 }
 
-fn generic_error(evt: GenericErrorPacket) -> UciNotification {
-    let evt_data = GenericErrorBuilder { status: evt.get_status() };
-    UciNotification::GenericError(evt_data)
-}
-
-fn device_status_ntf(evt: DeviceStatusNtfPacket) -> UciNotification {
-    let evt_data = DeviceStatusNtfBuilder { device_state: evt.get_device_state() };
-    UciNotification::DeviceStatusNtf(evt_data)
-}
-
-fn session_status_ntf(evt: SessionStatusNtfPacket) -> UciNotification {
-    let evt_data = SessionStatusNtfBuilder {
-        session_id: evt.get_session_id(),
-        session_state: evt.get_session_state(),
-        reason_code: evt.get_reason_code(),
-    };
-    UciNotification::SessionStatusNtf(evt_data)
-}
-
-fn session_update_controller_multicast_list_ntf(
-    evt: SessionUpdateControllerMulticastListNtfPacket,
-) -> UciNotification {
-    let evt_data = SessionUpdateControllerMulticastListNtfBuilder {
-        session_id: evt.get_session_id(),
-        remaining_multicast_list_size: evt.get_remaining_multicast_list_size(),
-        controlee_status: evt.get_controlee_status().to_vec(),
-    };
-    UciNotification::SessionUpdateControllerMulticastListNtf(evt_data)
-}
-
 fn range_data_ntf(evt: RangeDataNtfPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        RangeDataNtfChild::ShortMacRangeDataNtf(evt) => Ok(short_mac_range_data_ntf(evt)),
-        RangeDataNtfChild::ExtendedMacRangeDataNtf(evt) => Ok(extended_mac_range_data_ntf(evt)),
+        RangeDataNtfChild::ShortMacRangeDataNtf(evt) => {
+            Ok(UciNotification::ShortMacRangeDataNtf(evt))
+        }
+        RangeDataNtfChild::ExtendedMacRangeDataNtf(evt) => {
+            Ok(UciNotification::ExtendedMacRangeDataNtf(evt))
+        }
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
-}
-
-fn short_mac_range_data_ntf(evt: ShortMacRangeDataNtfPacket) -> UciNotification {
-    let evt_data = ShortMacRangeDataNtfBuilder {
-        sequence_number: evt.get_sequence_number(),
-        session_id: evt.get_session_id(),
-        current_ranging_interval: evt.get_current_ranging_interval(),
-        ranging_measurement_type: evt.get_ranging_measurement_type(),
-        two_way_ranging_measurements: evt.get_two_way_ranging_measurements().to_vec(),
-    };
-    UciNotification::ShortMacRangeDataNtf(evt_data)
-}
-
-fn extended_mac_range_data_ntf(evt: ExtendedMacRangeDataNtfPacket) -> UciNotification {
-    let evt_data = ExtendedMacRangeDataNtfBuilder {
-        sequence_number: evt.get_sequence_number(),
-        session_id: evt.get_session_id(),
-        current_ranging_interval: evt.get_current_ranging_interval(),
-        ranging_measurement_type: evt.get_ranging_measurement_type(),
-        two_way_ranging_measurements: evt.get_two_way_ranging_measurements().to_vec(),
-    };
-    UciNotification::ExtendedMacRangeDataNtf(evt_data)
 }

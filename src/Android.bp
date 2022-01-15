@@ -82,6 +82,7 @@ rust_library {
         "liblazy_static",
         "liblog_rust",
         "liblogger",
+        "libnum_traits",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
