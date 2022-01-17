@@ -174,6 +174,12 @@ impl Driver {
                             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
                                 self.event_manager.session_status_notification_received(response);
                             },
+                            uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
+                                self.event_manager.short_range_data_notification(response);
+                            },
+                            uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(response) => {
+                                self.event_manager.extended_range_data_notification(response);
+                            },
                             _ => log::warn!("Notification type not handled yet {:?}", response),
                         }
                     }
