@@ -617,36 +617,40 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     _reserved_: 48,
 }
 
+enum RangingMeasurementType : 8 {
+    ONE_WAY = 0x0,
+    TWO_WAY = 0x1,
+}
+
 packet RangeDataNtf : RangingNotification (ranging_opcode = RANGE_START) {
     sequence_number: 32,
     session_id: 32,
-    _reserved_: 8,
+    rcr_indicator: 8,
     current_ranging_interval: 32,
-    ranging_measurement_type: 8,
+    ranging_measurement_type: RangingMeasurementType,
     _reserved_: 8,
     mac_address_indicator: MacAddressIndicator,
     _reserved_: 64,
     _payload_,
 }
 
-packet ShortMacRangeDataNtf : RangeDataNtf (mac_address_indicator = SHORT_ADDRESS) {
+packet ShortMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ShortAddressTwoWayRangingMeasurement[],
 }
 
-test ShortMacRangeDataNtf {
-    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+test ShortMacTwoWayRangeDataNtf {
+    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-packet ExtendedMacRangeDataNtf : RangeDataNtf (mac_address_indicator = EXTENDED_ADDRESS) {
+packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ExtendedAddressTwoWayRangingMeasurement[],
 }
 
-test ExtendedMacRangeDataNtf {
-    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x0b\x0c\x0d\x0e\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+test ExtendedMacTwoWayRangeDataNtf {
+    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
-
 
 packet RangeStopCmd : RangingCommand (ranging_opcode = RANGE_STOP) {
     session_id: 32,
