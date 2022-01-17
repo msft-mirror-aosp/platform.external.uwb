@@ -22,6 +22,9 @@ use crate::adaptation::UwbAdaptation;
 use crate::error::UwbErr;
 use crate::event_manager::EventManager;
 use crate::uci::uci_hrcv::UciResponse;
+use android_hardware_uwb::aidl::android::hardware::uwb::{
+    UwbEvent::UwbEvent, UwbStatus::UwbStatus,
+};
 use log::{error, info};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot};
@@ -65,10 +68,10 @@ pub enum BlockingJNICommand {
 
 // Responses from the HAL.
 #[derive(Debug)]
-pub enum HALResponse {
-    // TODO: Can we combine HALResponse and UciResponse and "inline" this?
-    Uci(uci_hrcv::UciResponse),
-    Ntf(uci_hrcv::UciNotification),
+pub enum HalCallback {
+    Event { event: UwbEvent, event_status: UwbStatus },
+    UciRsp(uci_hrcv::UciResponse),
+    UciNtf(uci_hrcv::UciNotification),
 }
 
 struct Driver {
@@ -76,7 +79,7 @@ struct Driver {
     event_manager: EventManager,
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
-    rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
+    rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     response_channel: Option<UciResponseHandle>,
 }
 
@@ -86,7 +89,7 @@ async fn drive(
     event_manager: EventManager,
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
-    rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
+    rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
     Driver::new(adaptation, event_manager, cmd_receiver, blocking_cmd_receiver, rsp_receiver)
         .drive()
@@ -99,7 +102,7 @@ impl Driver {
         event_manager: EventManager,
         cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
         blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
-        rsp_receiver: mpsc::UnboundedReceiver<HALResponse>,
+        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     ) -> Self {
         Self {
             adaptation,
@@ -160,10 +163,13 @@ impl Driver {
             }
             Some(rsp) = self.rsp_receiver.recv() => {
                 match rsp {
-                    HALResponse::Uci(response) => {
+                    HalCallback::Event{event, event_status} => {
+                        log::info!("Received HAL event: {:?} with status: {:?}", event, event_status);
+                    },
+                    HalCallback::UciRsp(response) => {
                         self.response_channel.take().expect("the response channel does not exist").send(response);
                     },
-                    HALResponse::Ntf(response) => {
+                    HalCallback::UciNtf(response) => {
                         match response {
                             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
                                 self.event_manager.device_status_notification_received(response);
@@ -204,7 +210,7 @@ impl Dispatcher {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel::<JNICommand>();
         let (blocking_cmd_sender, blocking_cmd_receiver) =
             mpsc::unbounded_channel::<(BlockingJNICommand, UciResponseHandle)>();
-        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HALResponse>();
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         let adaptation = UwbAdaptation::new(None, rsp_sender);
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
@@ -260,11 +266,11 @@ mod tests {
         // trait again on a test-only mock type
 
         //let mut dispatcher = Dispatcher::new()?;
-        //dispatcher.send_hal_response(HALResponse::A)?;
+        //dispatcher.send_hal_response(HalCallback::A)?;
         //dispatcher.send_jni_command(JNICommand::UwaEnable)?;
         //dispatcher.block_on_jni_command(BlockingJNICommand::GetDeviceInfo)?;
         //dispatcher.exit()?;
-        //assert!(dispatcher.send_hal_response(HALResponse::B).is_err());
+        //assert!(dispatcher.send_hal_response(HalCallback::B).is_err());
         Ok(())
     }
 }
