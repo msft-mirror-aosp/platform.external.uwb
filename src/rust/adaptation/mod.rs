@@ -143,7 +143,7 @@ impl UwbAdaptation {
         Err(UwbErr::failed())
     }
 
-    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
+    pub fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
         if let Some(hal) = &self.hal {
             return Ok(hal.sessionInit(session_id)?);
         }

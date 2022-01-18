@@ -26,10 +26,11 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
 use log::{error, info};
+use num_traits::ToPrimitive;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot};
 use tokio::{select, task};
-use uwb_uci_packets::Packet;
+use uwb_uci_packets::{Packet, SessionState, SessionStatusNtfPacket};
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
@@ -131,7 +132,8 @@ impl Driver {
                         log::info!("{:?}", cmd);
                         self.adaptation.initialize();
                         self.adaptation.hal_open();
-                        self.adaptation.core_initialization()?;
+                        self.adaptation.core_initialization()
+                            .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
                     },
                     JNICommand::UwaDisable(graceful) => log::info!("{:?}", cmd),
                     JNICommand::UwaSessionDeinit(session_id) => log::info!("{:?}", cmd),
@@ -178,6 +180,7 @@ impl Driver {
                                 self.event_manager.core_generic_error_notification_received(response);
                             },
                             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
+                                self.invoke_hal_session_init_if_necessary(&response);
                                 self.event_manager.session_status_notification_received(response);
                             },
                             uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
@@ -193,6 +196,18 @@ impl Driver {
             }
         }
         Ok(())
+    }
+
+    // Triggers the session init HAL API, if a new session is initialized.
+    fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) -> () {
+        let session_id =
+            response.get_session_id().to_i32().expect("Failed converting session_id to u32");
+        if let SessionState::SessionStateInit = response.get_session_state() {
+            info!("Session {:?} initialized, invoking session init HAL API", session_id);
+            self.adaptation
+                .session_initialization(session_id)
+                .unwrap_or_else(|e| error!("Error invoking session init HAL API : {:?}", e));
+        }
     }
 }
 
