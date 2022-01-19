@@ -45,8 +45,8 @@ pub enum UciNotification {
     DeviceStatusNtf(DeviceStatusNtfPacket),
     SessionStatusNtf(SessionStatusNtfPacket),
     SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfPacket),
-    ShortMacRangeDataNtf(ShortMacRangeDataNtfPacket),
-    ExtendedMacRangeDataNtf(ExtendedMacRangeDataNtfPacket),
+    ShortMacTwoWayRangeDataNtf(ShortMacTwoWayRangeDataNtfPacket),
+    ExtendedMacTwoWayRangeDataNtf(ExtendedMacTwoWayRangeDataNtfPacket),
 }
 
 pub fn uci_response(bytes: &[u8]) -> Result<UciResponse, UwbErr> {
@@ -251,11 +251,11 @@ fn android_get_power_start_rsp(evt: AndroidGetPowerStatsRspPacket) -> UciRespons
 
 fn range_data_ntf(evt: RangeDataNtfPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
-        RangeDataNtfChild::ShortMacRangeDataNtf(evt) => {
-            Ok(UciNotification::ShortMacRangeDataNtf(evt))
+        RangeDataNtfChild::ShortMacTwoWayRangeDataNtf(evt) => {
+            Ok(UciNotification::ShortMacTwoWayRangeDataNtf(evt))
         }
-        RangeDataNtfChild::ExtendedMacRangeDataNtf(evt) => {
-            Ok(UciNotification::ExtendedMacRangeDataNtf(evt))
+        RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
+            Ok(UciNotification::ExtendedMacTwoWayRangeDataNtf(evt))
         }
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
