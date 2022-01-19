@@ -22,7 +22,8 @@ use log::error;
 use num_traits::ToPrimitive;
 use std::convert::TryInto;
 use uwb_uci_packets::{
-    DeviceStatusNtfPacket, GenericErrorPacket, SessionStatusNtfPacket, ShortMacRangeDataNtfPacket,
+    DeviceStatusNtfPacket, GenericErrorPacket, SessionStatusNtfPacket,
+    ShortMacTwoWayRangeDataNtfPacket,
 };
 
 // TODO: Reconsider the best way to cache the JNIEnv.  We currently attach and detach for every
