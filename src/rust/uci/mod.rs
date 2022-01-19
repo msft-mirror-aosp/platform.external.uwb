@@ -186,6 +186,9 @@ impl Driver {
                             uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(response) => {
                                 self.event_manager.extended_range_data_notification(response);
                             },
+                            uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
+                                self.event_manager.session_update_controller_multicast_list_notification(response);
+                            },
                             _ => log::warn!("Notification type not handled yet {:?}", response),
                         }
                     }
