@@ -30,7 +30,11 @@ use num_traits::ToPrimitive;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot};
 use tokio::{select, task};
-use uwb_uci_packets::{Packet, SessionState, SessionStatusNtfPacket};
+use uwb_uci_packets::{
+    GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, Packet, RangeStartCmdBuilder,
+    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetCountCmdBuilder,
+    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
+};
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
@@ -42,6 +46,14 @@ pub type UciResponseHandle = oneshot::Sender<UciResponse>;
 pub enum JNICommand {
     UwaEnable,
     UwaDisable(bool),
+    Exit,
+}
+
+// Commands sent from JNI, which blocks until it gets a response.
+#[derive(Debug)]
+pub enum BlockingJNICommand {
+    GetDeviceInfo,
+    UwaSessionInit(u32, u8),
     UwaSessionDeinit(u32),
     UwaSessionGetCount,
     UwaStartRange(u32),
@@ -57,14 +69,6 @@ pub enum JNICommand {
     UwaSetCountryCode {
         code: Vec<u8>,
     },
-    Exit,
-}
-
-// Commands sent from JNI, which blocks until it gets a response.
-#[derive(Debug)]
-pub enum BlockingJNICommand {
-    GetDeviceInfo,
-    UwaSessionInit(u32, u8),
 }
 
 // Responses from the HAL.
@@ -127,22 +131,17 @@ impl Driver {
         // TODO: Handle messages for real instead of just logging them.
         select! {
             Some(cmd) = self.cmd_receiver.recv() => {
+                log::info!("{:?}", cmd);
                 match cmd {
                     JNICommand::UwaEnable => {
-                        log::info!("{:?}", cmd);
                         self.adaptation.initialize();
                         self.adaptation.hal_open();
                         self.adaptation.core_initialization()
                             .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
                     },
-                    JNICommand::UwaDisable(graceful) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionDeinit(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionGetCount => log::info!("{:?}", cmd),
-                    JNICommand::UwaStartRange(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaStopRange(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaGetSessionState(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} => log::info!("{:?}", cmd),
-                    JNICommand::UwaSetCountryCode{ref code} => log::info!("{:?}", cmd),
+                    JNICommand::UwaDisable(graceful) => {
+                        self.adaptation.hal_close();
+                    },
                     JNICommand::Exit => return Err(UwbErr::Exit),
                 }
             }
@@ -150,17 +149,44 @@ impl Driver {
                 // TODO: If we do something similar to communication to the HAL (using a channel
                 // to hide the asynchrony, we can remove the field and make this straightline code.
                 self.response_channel = Some(tx);
+                log::info!("{:?}", cmd);
                 match cmd {
                     BlockingJNICommand::GetDeviceInfo => {
-                        log::info!("BlockingJNICommand::GetDeviceInfo");
-                        let bytes = uci_hmsgs::build_device_info_cmd().build().to_vec();
+                        let bytes = GetDeviceInfoCmdBuilder {}.build().to_vec();
                         self.adaptation.send_uci_message(&bytes);
                     },
                     BlockingJNICommand::UwaSessionInit(session_id, session_type) => {
-                        log::info!("{:?}", cmd);
                         let bytes = uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec();
                         self.adaptation.send_uci_message(&bytes);
-                    }
+                    },
+                    BlockingJNICommand::UwaSessionDeinit(session_id) => {
+                        let bytes = SessionDeinitCmdBuilder { session_id }.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaSessionGetCount => {
+                        let bytes = SessionGetCountCmdBuilder {}.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaStartRange(session_id) => {
+                        let bytes = RangeStartCmdBuilder { session_id }.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaStopRange(session_id) => {
+                        let bytes = RangeStopCmdBuilder { session_id }.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaGetSessionState(session_id) => {
+                        let bytes = SessionGetStateCmdBuilder { session_id }.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} => {
+                        let bytes = uci_hmsgs::build_multicast_list_update_cmd(session_id, action, no_of_controlee, address_list, sub_session_id_list).build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
+                    BlockingJNICommand::UwaSetCountryCode{ref code} => {
+                        let bytes = uci_hmsgs::build_set_country_code_cmd(code)?.build().to_vec();
+                        self.adaptation.send_uci_message(&bytes);
+                    },
                 }
             }
             Some(rsp) = self.rsp_receiver.recv() => {
@@ -220,6 +246,7 @@ pub struct Dispatcher {
     blocking_cmd_sender: mpsc::UnboundedSender<(BlockingJNICommand, UciResponseHandle)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
+    pub device_info: Option<GetDeviceInfoRspBuilder>,
 }
 
 impl Dispatcher {
@@ -241,7 +268,7 @@ impl Dispatcher {
             blocking_cmd_receiver,
             rsp_receiver,
         ));
-        Ok(Dispatcher { cmd_sender, blocking_cmd_sender, join_handle, runtime })
+        Ok(Dispatcher { cmd_sender, blocking_cmd_sender, join_handle, runtime, device_info: None })
     }
 
     pub fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
@@ -254,7 +281,9 @@ impl Dispatcher {
     pub fn block_on_jni_command(&self, cmd: BlockingJNICommand) -> Result<UciResponse> {
         let (tx, rx) = oneshot::channel();
         self.blocking_cmd_sender.send((cmd, tx))?;
-        Ok(self.runtime.block_on(rx)?)
+        let ret = self.runtime.block_on(rx)?;
+        log::trace!("{:?}", ret);
+        Ok(ret)
     }
 
     fn exit(&mut self) -> Result<()> {

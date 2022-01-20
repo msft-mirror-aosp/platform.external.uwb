@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
+use crate::uci::UwbErr;
 use num_traits::cast::FromPrimitive;
 use uwb_uci_packets::{
-    CoreOpCode, DeviceConfigStatus, DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder,
-    GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket, ResetConfig, SessionInitCmdBuilder,
-    SessionType, SetConfigCmdBuilder, SetConfigRspBuilder, StatusCode, UciCommandPacket,
+    AndroidSetCountryCodeCmdBuilder, Controlee, CoreOpCode, DeviceConfigStatus, DeviceConfigTLV,
+    DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket,
+    ResetConfig, SessionInitCmdBuilder, SessionType,
+    SessionUpdateControllerMulticastListCmdBuilder, SetConfigCmdBuilder, SetConfigRspBuilder,
+    StatusCode, UciCommandPacket,
 };
 
 fn uci_ucif_send_cmd() -> StatusCode {
@@ -26,15 +29,32 @@ fn uci_ucif_send_cmd() -> StatusCode {
     StatusCode::UciStatusOk
 }
 
-pub fn build_device_info_cmd() -> GetDeviceInfoCmdBuilder {
-    GetDeviceInfoCmdBuilder {}
-}
-
 pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
     SessionInitCmdBuilder {
         session_id,
         session_type: SessionType::from_u8(session_type).expect("invalid session type"),
     }
+}
+
+pub fn build_set_country_code_cmd(code: &[u8]) -> Result<AndroidSetCountryCodeCmdBuilder, UwbErr> {
+    Ok(AndroidSetCountryCodeCmdBuilder { country_code: code.try_into()? })
+}
+
+pub fn build_multicast_list_update_cmd(
+    session_id: u32,
+    action: u8,
+    no_of_controlee: u8,
+    address_list: &[u8],
+    sub_session_id_list: &[i32],
+) -> SessionUpdateControllerMulticastListCmdBuilder {
+    let mut controlees = Vec::new();
+    for i in 0..no_of_controlee {
+        controlees.push(Controlee {
+            short_address: address_list[i as usize] as u16,
+            subsession_id: sub_session_id_list[i as usize] as u32,
+        });
+    }
+    SessionUpdateControllerMulticastListCmdBuilder { session_id, action, controlees }
 }
 
 fn build_caps_info_cmd() -> GetCapsInfoCmdBuilder {
