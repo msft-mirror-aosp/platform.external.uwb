@@ -15,7 +15,7 @@
  */
 
 use crate::uci::uci_hrcv::UciResponse;
-use crate::uci::{BlockingJNICommand, HALResponse, JNICommand};
+use crate::uci::{BlockingJNICommand, HalCallback, JNICommand};
 use android_hardware_uwb::aidl::android::hardware::uwb::UwbStatus::UwbStatus;
 use tokio::sync::{mpsc, oneshot};
 
@@ -35,8 +35,8 @@ pub enum UwbErr {
     SendBlockingJNICommand(
         #[from] mpsc::error::SendError<(BlockingJNICommand, oneshot::Sender<UciResponse>)>,
     ),
-    #[error("SendError for HALResponse: {0}")]
-    SendHALResponse(#[from] mpsc::error::SendError<HALResponse>),
+    #[error("SendError for HalCallback: {0}")]
+    SendHalCallback(#[from] mpsc::error::SendError<HalCallback>),
     #[error("RecvError: {0}")]
     RecvError(#[from] oneshot::error::RecvError),
     #[error("Could not parse: {0}")]
