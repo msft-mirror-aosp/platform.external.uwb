@@ -20,7 +20,7 @@ pub mod uci_hrcv;
 
 use crate::adaptation::UwbAdaptation;
 use crate::error::UwbErr;
-use crate::event_manager::EventManager;
+use crate::event_manager::{EventManager, Manager};
 use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
@@ -38,6 +38,9 @@ use uwb_uci_packets::{
     RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetCountCmdBuilder,
     SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode,
 };
+
+#[cfg(test)]
+use crate::event_manager::EventManagerTest;
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
@@ -152,18 +155,18 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
     }
 }
 
-struct Driver {
+struct Driver<T: Manager> {
     adaptation: Arc<UwbAdaptation>,
-    event_manager: EventManager,
+    event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     response_channel: Option<(UciResponseHandle, Retryer)>,
 }
 
 // Creates a future that handles messages from JNI and the HAL.
-async fn drive(
+async fn drive<T: Manager>(
     adaptation: UwbAdaptation,
-    event_manager: EventManager,
+    event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
@@ -173,10 +176,10 @@ async fn drive(
 const MAX_RETRIES: usize = 10;
 const RETRY_DELAY_MS: u64 = 100;
 
-impl Driver {
+impl<T: Manager> Driver<T> {
     fn new(
         adaptation: Arc<UwbAdaptation>,
-        event_manager: EventManager,
+        event_manager: T,
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     ) -> Self {
@@ -380,7 +383,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new(event_manager: EventManager) -> Result<Dispatcher> {
+    pub fn new<T: 'static + Manager + std::marker::Send>(event_manager: T) -> Result<Dispatcher> {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
@@ -430,21 +433,11 @@ mod tests {
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
         );
-        // TODO : Consider below ways to write the unit test
-        // 1
-        // Create test-only methods on EventManager that allow you to construct one without Java
-        // (and to have dummy/tracked effects when callbacks get called).
-        //
-        // 2 and recommended way
-        // Take the signature of EventManager and make it a trait, which would allow you to impl that
-        // trait again on a test-only mock type
 
-        //let mut dispatcher = Dispatcher::new()?;
-        //dispatcher.send_hal_response(HalCallback::A)?;
-        //dispatcher.send_jni_command(JNICommand::Enable)?;
-        //dispatcher.block_on_jni_command(JNICommand::GetDeviceInfo)?;
-        //dispatcher.exit()?;
-        //assert!(dispatcher.send_hal_response(HalCallback::B).is_err());
+        let event_manager = EventManagerTest::new();
+        let mut dispatcher = Dispatcher::new(event_manager)?;
+        dispatcher.send_jni_command(JNICommand::Enable)?;
+        dispatcher.exit()?;
         Ok(())
     }
 }
