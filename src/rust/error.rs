@@ -17,6 +17,7 @@
 use crate::uci::uci_hrcv::UciResponse;
 use crate::uci::{BlockingJNICommand, HalCallback, JNICommand};
 use android_hardware_uwb::aidl::android::hardware::uwb::UwbStatus::UwbStatus;
+use std::array::TryFromSliceError;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +44,8 @@ pub enum UwbErr {
     Parse(#[from] uwb_uci_packets::Error),
     #[error("Could not specialize: {0:?}")]
     Specialize(Vec<u8>),
+    #[error("Could not convert: {0:?}")]
+    ConvertToArray(#[from] TryFromSliceError),
     #[error("The dispatcher does not exist")]
     NoneDispatcher,
     #[error("Exit")]

@@ -27,11 +27,14 @@ use std::vec::Vec;
 use uwb_uci_packets::{
     DeviceStatusNtfPacket, ExtendedAddressTwoWayRangingMeasurement,
     ExtendedMacTwoWayRangeDataNtfPacket, GenericErrorPacket, RangeDataNtfPacket,
-    SessionStatusNtfPacket, ShortAddressTwoWayRangingMeasurement, ShortMacTwoWayRangeDataNtfPacket,
+    SessionStatusNtfPacket, SessionUpdateControllerMulticastListNtfPacket,
+    ShortAddressTwoWayRangingMeasurement, ShortMacTwoWayRangeDataNtfPacket,
 };
 
 const UWB_RANGING_DATA_CLASS: &str = "com/android/uwb/data/UwbRangingData";
 const UWB_TWO_WAY_MEASUREMENT_CLASS: &str = "com/android/uwb/data/UwbTwoWayMeasurement";
+const MULTICAST_LIST_UPDATE_STATUS_CLASS: &str =
+    "com/android/uwb/data/UwbMulticastListUpdateStatus";
 const SHORT_MAC_ADDRESS_LEN: usize = 2;
 const EXTENDED_MAC_ADDRESS_LEN: usize = 8;
 
@@ -530,6 +533,73 @@ impl EventManager {
     ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
         let result = self.handle_extended_range_data_notification(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    pub fn handle_session_update_controller_multicast_list_notification(
+        &self,
+        env: &JNIEnv,
+        data: SessionUpdateControllerMulticastListNtfPacket,
+    ) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let uwb_multicast_update_class =
+            self.find_class(&env, &MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
+
+        let controlee_status = data.get_controlee_status();
+        let count: i32 =
+            controlee_status.len().try_into().expect("Failed to convert controlee status length");
+        let mut mac_address_list: Vec<i32> = Vec::new();
+        let mut subsession_id_list: Vec<i64> = Vec::new();
+        let mut status_list: Vec<i32> = Vec::new();
+
+        for iter in controlee_status {
+            mac_address_list.push(iter.mac_address.into());
+            subsession_id_list.push(iter.subsession_id.into());
+            status_list.push(iter.status.into());
+        }
+
+        let mut mac_address_jintarray = env.new_int_array(count)?;
+        env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref());
+        let mut subession_id_jlongarray = env.new_long_array(count)?;
+        env.set_long_array_region(subession_id_jlongarray, 0, subsession_id_list.as_ref());
+        let mut status_jintarray = env.new_int_array(count)?;
+        env.set_int_array_region(status_jintarray, 0, status_list.as_ref());
+
+        let uwb_multicast_update_object = env.new_object(
+            uwb_multicast_update_class,
+            "(JII[I[J[I)V",
+            &[
+                JValue::Long(
+                    data.get_session_id().try_into().expect("Could not convert session_id"),
+                ),
+                JValue::Int(
+                    data.get_remaining_multicast_list_size()
+                        .try_into()
+                        .expect("Could not convert remaining multicast list size"),
+                ),
+                JValue::Int(count.try_into().expect("Could not convert count")),
+                JValue::Object(JObject::from(mac_address_jintarray)),
+                JValue::Object(JObject::from(subession_id_jlongarray)),
+                JValue::Object(JObject::from(status_jintarray)),
+            ],
+        )?;
+
+        env.call_method(
+            self.obj.as_obj(),
+            "onMulticastListUpdateNotificationReceived",
+            "(Lcom/android/uwb/data/UwbMulticastListUpdateStatus;)V",
+            &[JValue::Object(JObject::from(uwb_multicast_update_object))],
+        )
+        .map(|_| ()) // drop void method return
+    }
+
+    pub fn session_update_controller_multicast_list_notification(
+        &self,
+        data: SessionUpdateControllerMulticastListNtfPacket,
+    ) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_session_update_controller_multicast_list_notification(&env, data);
         self.clear_exception(env);
         result
     }
