@@ -367,8 +367,11 @@ impl Dispatcher {
         let adaptation = UwbAdaptation::new(None, rsp_sender);
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
-        let runtime =
-            Builder::new_multi_thread().worker_threads(1).thread_name("uwb-uci-handler").build()?;
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("uwb-uci-handler")
+            .enable_all()
+            .build()?;
         let join_handle = runtime.spawn(drive(
             adaptation,
             event_manager,
