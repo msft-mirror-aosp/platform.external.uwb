@@ -157,6 +157,7 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
   if (uwb_cb.uwb_state == UWB_STATE_W4_HAL_CLOSE ||
       uwb_cb.uwb_state == UWB_STATE_NONE) {
     UCI_TRACE_E("%s: HAL is not initialized", __func__);
+    phUwb_GKI_freebuf(p_buf);
     return;
   }
 
