@@ -15,13 +15,14 @@
  */
 
 use crate::uci::UwbErr;
+use log::info;
 use num_traits::cast::FromPrimitive;
 use uwb_uci_packets::{
-    AndroidSetCountryCodeCmdBuilder, Controlee, CoreOpCode, DeviceConfigStatus, DeviceConfigTLV,
-    DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoCmdPacket,
-    ResetConfig, SessionInitCmdBuilder, SessionType,
-    SessionUpdateControllerMulticastListCmdBuilder, SetConfigCmdBuilder, SetConfigRspBuilder,
-    StatusCode, UciCommandPacket,
+    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, CoreOpCode, DeviceConfigStatus,
+    DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
+    GetDeviceInfoCmdPacket, ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder,
+    SessionType, SessionUpdateControllerMulticastListCmdBuilder, SetConfigCmdBuilder,
+    SetConfigRspBuilder, StatusCode, UciCommandPacket,
 };
 
 fn uci_ucif_send_cmd() -> StatusCode {
@@ -55,6 +56,21 @@ pub fn build_multicast_list_update_cmd(
         });
     }
     SessionUpdateControllerMulticastListCmdBuilder { session_id, action, controlees }
+}
+
+pub fn build_set_app_config_cmd(
+    session_id: u32,
+    no_of_params: u32,
+    app_config_param_len: u32,
+    mut app_configs: &[u8],
+) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
+    let mut tlvs = Vec::new();
+    for i in 0..no_of_params {
+        let tlv = AppConfigTlv::parse(app_configs)?;
+        app_configs = &app_configs[tlv.v.len() + 2..];
+        tlvs.push(tlv);
+    }
+    Ok(SessionSetAppConfigCmdBuilder { session_id, tlvs })
 }
 
 fn build_caps_info_cmd() -> GetCapsInfoCmdBuilder {
