@@ -130,7 +130,7 @@ impl UwbAdaptation {
         }
     }
 
-    fn hal_close(&self) {
+    pub fn hal_close(&self) {
         if let Some(hal) = &self.hal {
             hal.close();
         }

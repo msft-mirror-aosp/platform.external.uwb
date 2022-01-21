@@ -25,12 +25,18 @@ use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
-use log::{error, info};
+use log::{debug, error, info, warn};
 use num_traits::ToPrimitive;
+use std::future::Future;
+use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
-use uwb_uci_packets::{Packet, SessionState, SessionStatusNtfPacket};
+use uwb_uci_packets::{
+    GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, Packet, RangeStartCmdBuilder,
+    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetCountCmdBuilder,
+    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode,
+};
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
@@ -42,6 +48,14 @@ pub type UciResponseHandle = oneshot::Sender<UciResponse>;
 pub enum JNICommand {
     UwaEnable,
     UwaDisable(bool),
+    Exit,
+}
+
+// Commands sent from JNI, which blocks until it gets a response.
+#[derive(Debug)]
+pub enum BlockingJNICommand {
+    GetDeviceInfo,
+    UwaSessionInit(u32, u8),
     UwaSessionDeinit(u32),
     UwaSessionGetCount,
     UwaStartRange(u32),
@@ -57,14 +71,6 @@ pub enum JNICommand {
     UwaSetCountryCode {
         code: Vec<u8>,
     },
-    Exit,
-}
-
-// Commands sent from JNI, which blocks until it gets a response.
-#[derive(Debug)]
-pub enum BlockingJNICommand {
-    GetDeviceInfo,
-    UwaSessionInit(u32, u8),
 }
 
 // Responses from the HAL.
@@ -75,13 +81,87 @@ pub enum HalCallback {
     UciNtf(uci_hrcv::UciNotification),
 }
 
+#[derive(Clone)]
+struct Retryer {
+    received: Arc<Notify>,
+    failed: Arc<Notify>,
+    retry: Arc<Notify>,
+}
+
+impl Retryer {
+    fn new() -> Self {
+        Self {
+            received: Arc::new(Notify::new()),
+            failed: Arc::new(Notify::new()),
+            retry: Arc::new(Notify::new()),
+        }
+    }
+
+    async fn command_failed(&self) {
+        self.failed.notified().await
+    }
+
+    async fn immediate_retry(&self) {
+        self.retry.notified().await
+    }
+
+    async fn command_serviced(&self) {
+        self.received.notified().await
+    }
+
+    fn received(&self) {
+        self.received.notify_one()
+    }
+
+    fn retry(&self) {
+        self.retry.notify_one()
+    }
+
+    fn failed(&self) {
+        self.failed.notify_one()
+    }
+
+    fn send_with_retry(self, adaptation: Arc<UwbAdaptation>, bytes: Vec<u8>) {
+        tokio::task::spawn(async move {
+            let mut received_response = false;
+            for retry in 0..MAX_RETRIES {
+                // TODO this mut be non-blocking to avoid blocking the runtime if the HAL locks up.
+                // Will address in follow-up CL moving adaptation to be asynchronous.
+                adaptation.send_uci_message(&bytes);
+                select! {
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)) => warn!("UWB chip did not respond within {}ms deadline. Retrying (#{})...", RETRY_DELAY_MS, retry + 1),
+                    _ = self.command_serviced() => {
+                        received_response = true;
+                        break;
+                    }
+                    _ = self.immediate_retry() => debug!("UWB chip requested immediate retry. Retrying (#{})...", retry + 1),
+                }
+            }
+            if !received_response {
+                error!("After {} retries, no response from UWB chip", MAX_RETRIES);
+                adaptation.core_initialization();
+                self.failed();
+            }
+        });
+    }
+}
+
+//TODO pull in libfutures instead of open-coding this
+async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
+    if let Some(f) = mf {
+        Some(f.await)
+    } else {
+        None
+    }
+}
+
 struct Driver {
-    adaptation: UwbAdaptation,
+    adaptation: Arc<UwbAdaptation>,
     event_manager: EventManager,
     cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
-    response_channel: Option<UciResponseHandle>,
+    response_channel: Option<(UciResponseHandle, Retryer)>,
 }
 
 // Creates a future that handles messages from JNI and the HAL.
@@ -92,14 +172,23 @@ async fn drive(
     blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
-    Driver::new(adaptation, event_manager, cmd_receiver, blocking_cmd_receiver, rsp_receiver)
-        .drive()
-        .await
+    Driver::new(
+        Arc::new(adaptation),
+        event_manager,
+        cmd_receiver,
+        blocking_cmd_receiver,
+        rsp_receiver,
+    )
+    .drive()
+    .await
 }
+
+const MAX_RETRIES: usize = 10;
+const RETRY_DELAY_MS: u64 = 100;
 
 impl Driver {
     fn new(
-        adaptation: UwbAdaptation,
+        adaptation: Arc<UwbAdaptation>,
         event_manager: EventManager,
         cmd_receiver: mpsc::UnboundedReceiver<JNICommand>,
         blocking_cmd_receiver: mpsc::UnboundedReceiver<(BlockingJNICommand, UciResponseHandle)>,
@@ -126,42 +215,78 @@ impl Driver {
     async fn drive_once(&mut self) -> Result<()> {
         // TODO: Handle messages for real instead of just logging them.
         select! {
+            Some(()) = option_future(self.response_channel.as_ref().map(|(_, retryer)| retryer.command_failed())) => {
+                // TODO: Do we want to flush the incoming queue of commands when this happens?
+                self.response_channel = None
+            }
             Some(cmd) = self.cmd_receiver.recv() => {
+                log::info!("{:?}", cmd);
                 match cmd {
                     JNICommand::UwaEnable => {
-                        log::info!("{:?}", cmd);
-                        self.adaptation.initialize();
+                        // TODO: This mimics existing behavior, but I think we've got a few issues
+                        // here:
+                        // * We've got two different initialization sites (UwaEnable *and*
+                        // adaptation construction)
+                        // * We have multiple functions required to finish building a correct
+                        //   UwaEnable (so there are bad states to leave it in)
+                        // * We have UwaDisable, but the adaptation isn't optional, so we will end
+                        // up with an invalid but still present adaptation.
+                        //
+                        // A future patch should probably make a single constructor for everything,
+                        // and it should probably be called here rather than mutating an existing
+                        // adaptation. The adaptation should be made optional.
+                        if let Some(adaptation) = Arc::get_mut(&mut self.adaptation) {
+                            adaptation.initialize();
+                        } else {
+                            error!("Attempted to enable Uwa while it was still in use.");
+                        }
                         self.adaptation.hal_open();
                         self.adaptation.core_initialization()
                             .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
                     },
-                    JNICommand::UwaDisable(graceful) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionDeinit(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionGetCount => log::info!("{:?}", cmd),
-                    JNICommand::UwaStartRange(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaStopRange(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaGetSessionState(session_id) => log::info!("{:?}", cmd),
-                    JNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} => log::info!("{:?}", cmd),
-                    JNICommand::UwaSetCountryCode{ref code} => log::info!("{:?}", cmd),
+                    JNICommand::UwaDisable(graceful) => {
+                        self.adaptation.hal_close();
+                    },
                     JNICommand::Exit => return Err(UwbErr::Exit),
                 }
             }
             Some((cmd, tx)) = self.blocking_cmd_receiver.recv(), if self.response_channel.is_none() => {
                 // TODO: If we do something similar to communication to the HAL (using a channel
                 // to hide the asynchrony, we can remove the field and make this straightline code.
-                self.response_channel = Some(tx);
-                match cmd {
-                    BlockingJNICommand::GetDeviceInfo => {
-                        log::info!("BlockingJNICommand::GetDeviceInfo");
-                        let bytes = uci_hmsgs::build_device_info_cmd().build().to_vec();
-                        self.adaptation.send_uci_message(&bytes);
-                    },
-                    BlockingJNICommand::UwaSessionInit(session_id, session_type) => {
-                        log::info!("{:?}", cmd);
-                        let bytes = uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec();
-                        self.adaptation.send_uci_message(&bytes);
-                    }
-                }
+                log::info!("{:?}", cmd);
+                let bytes = match cmd {
+                    BlockingJNICommand::GetDeviceInfo =>
+                        GetDeviceInfoCmdBuilder {}.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaSessionInit(session_id, session_type) =>
+                        uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaSessionDeinit(session_id) =>
+                        SessionDeinitCmdBuilder { session_id }.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaSessionGetCount =>
+                        SessionGetCountCmdBuilder {}.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaStartRange(session_id) =>
+                        RangeStartCmdBuilder { session_id }.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaStopRange(session_id) =>
+                        RangeStopCmdBuilder { session_id }.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaGetSessionState(session_id) =>
+                        SessionGetStateCmdBuilder { session_id }.build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaSessionUpdateMulticastList{session_id, action, no_of_controlee, ref address_list, ref sub_session_id_list} =>
+                        uci_hmsgs::build_multicast_list_update_cmd(session_id, action, no_of_controlee, address_list, sub_session_id_list).build().to_vec()
+                    ,
+                    BlockingJNICommand::UwaSetCountryCode{ref code} =>
+                        uci_hmsgs::build_set_country_code_cmd(code)?.build().to_vec()
+                    ,
+                };
+
+                let retryer = Retryer::new();
+                self.response_channel = Some((tx, retryer.clone()));
+                retryer.send_with_retry(self.adaptation.clone(), bytes);
             }
             Some(rsp) = self.rsp_receiver.recv() => {
                 match rsp {
@@ -169,7 +294,12 @@ impl Driver {
                         log::info!("Received HAL event: {:?} with status: {:?}", event, event_status);
                     },
                     HalCallback::UciRsp(response) => {
-                        self.response_channel.take().expect("the response channel does not exist").send(response);
+                        if let Some((channel, retryer)) = self.response_channel.take() {
+                            retryer.received();
+                            channel.send(response);
+                        } else {
+                            error!("Received response packet, but no response channel available");
+                        }
                     },
                     HalCallback::UciNtf(response) => {
                         match response {
@@ -177,6 +307,10 @@ impl Driver {
                                 self.event_manager.device_status_notification_received(response);
                             },
                             uci_hrcv::UciNotification::GenericError(response) => {
+                                match (response.get_status(), self.response_channel.as_ref()) {
+                                    (StatusCode::UciStatusCommandRetry, Some((_, retryer))) => retryer.retry(),
+                                    _ => ()
+                                }
                                 self.event_manager.core_generic_error_notification_received(response);
                             },
                             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
@@ -188,6 +322,9 @@ impl Driver {
                             },
                             uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(response) => {
                                 self.event_manager.extended_range_data_notification(response);
+                            },
+                            uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
+                                self.event_manager.session_update_controller_multicast_list_notification(response);
                             },
                             _ => log::warn!("Notification type not handled yet {:?}", response),
                         }
@@ -217,6 +354,7 @@ pub struct Dispatcher {
     blocking_cmd_sender: mpsc::UnboundedSender<(BlockingJNICommand, UciResponseHandle)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
+    pub device_info: Option<GetDeviceInfoRspBuilder>,
 }
 
 impl Dispatcher {
@@ -238,7 +376,7 @@ impl Dispatcher {
             blocking_cmd_receiver,
             rsp_receiver,
         ));
-        Ok(Dispatcher { cmd_sender, blocking_cmd_sender, join_handle, runtime })
+        Ok(Dispatcher { cmd_sender, blocking_cmd_sender, join_handle, runtime, device_info: None })
     }
 
     pub fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
@@ -251,7 +389,9 @@ impl Dispatcher {
     pub fn block_on_jni_command(&self, cmd: BlockingJNICommand) -> Result<UciResponse> {
         let (tx, rx) = oneshot::channel();
         self.blocking_cmd_sender.send((cmd, tx))?;
-        Ok(self.runtime.block_on(rx)?)
+        let ret = self.runtime.block_on(rx)?;
+        log::trace!("{:?}", ret);
+        Ok(ret)
     }
 
     fn exit(&mut self) -> Result<()> {
