@@ -9,7 +9,7 @@ cc_library_static {
         },
     },
     name: "libuwb-uci",
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
     static_libs: [
         "android.system.suspend-V1-ndk",
         "android.hardware.uwb-V1-ndk",
@@ -95,7 +95,7 @@ rust_library {
     apex_available: [
         "com.android.uwb",
     ],
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
 }
 
 rust_test {
@@ -150,7 +150,7 @@ rust_library {
     apex_available: [
         "com.android.uwb",
     ],
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
 }
 
 genrule {
