@@ -127,7 +127,7 @@ impl EventManager {
         let state =
             data.get_session_state().to_i32().expect("Failed converting session_state to i32");
         let reason_code =
-            data.get_reason_code().to_i32().expect("Failed coverting reason_code to i32");
+            data.get_reason_code().to_i32().expect("Failed converting reason_code to i32");
         env.call_method(
             self.obj.as_obj(),
             "onSessionStatusNotificationReceived",
@@ -243,7 +243,7 @@ impl EventManager {
                     two_way_measurement
                         .aoa_elevation_fom
                         .to_i32()
-                        .expect("Failed converting aoa elevaion fom to i32"),
+                        .expect("Failed converting aoa elevation fom to i32"),
                 ),
                 JValue::Int(
                     two_way_measurement
@@ -330,7 +330,7 @@ impl EventManager {
                     two_way_measurement
                         .aoa_elevation_fom
                         .to_i32()
-                        .expect("Failed converting aoa elevaion fom to i32"),
+                        .expect("Failed converting aoa elevation fom to i32"),
                 ),
                 JValue::Int(
                     two_way_measurement
@@ -392,7 +392,7 @@ impl EventManager {
                 JValue::Long(
                     data.get_current_ranging_interval()
                         .to_i64()
-                        .expect("Failed converting curr ranging interval to i32"),
+                        .expect("Failed converting current ranging interval to i32"),
                 ),
                 JValue::Int(
                     data.get_ranging_measurement_type()
@@ -561,8 +561,8 @@ impl EventManager {
 
         let mut mac_address_jintarray = env.new_int_array(count)?;
         env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref());
-        let mut subession_id_jlongarray = env.new_long_array(count)?;
-        env.set_long_array_region(subession_id_jlongarray, 0, subsession_id_list.as_ref());
+        let mut subsession_id_jlongarray = env.new_long_array(count)?;
+        env.set_long_array_region(subsession_id_jlongarray, 0, subsession_id_list.as_ref());
         let mut status_jintarray = env.new_int_array(count)?;
         env.set_int_array_region(status_jintarray, 0, status_list.as_ref());
 
@@ -580,7 +580,7 @@ impl EventManager {
                 ),
                 JValue::Int(count.try_into().expect("Could not convert count")),
                 JValue::Object(JObject::from(mac_address_jintarray)),
-                JValue::Object(JObject::from(subession_id_jlongarray)),
+                JValue::Object(JObject::from(subsession_id_jlongarray)),
                 JValue::Object(JObject::from(status_jintarray)),
             ],
         )?;

@@ -125,7 +125,7 @@ impl Retryer {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                // TODO this mut be non-blocking to avoid blocking the runtime if the HAL locks up.
+                // TODO this must be non-blocking to avoid blocking the runtime if the HAL locks up.
                 // Will address in follow-up CL moving adaptation to be asynchronous.
                 adaptation.send_uci_message(&bytes);
                 select! {
@@ -252,7 +252,7 @@ impl Driver {
             }
             Some((cmd, tx)) = self.blocking_cmd_receiver.recv(), if self.response_channel.is_none() => {
                 // TODO: If we do something similar to communication to the HAL (using a channel
-                // to hide the asynchrony, we can remove the field and make this straightline code.
+                // to hide the asynchrony, we can remove the field and make this straight line code.
                 log::info!("{:?}", cmd);
                 let bytes = match cmd {
                     BlockingJNICommand::GetDeviceInfo =>
