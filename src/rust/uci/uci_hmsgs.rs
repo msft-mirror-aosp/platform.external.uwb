@@ -36,8 +36,8 @@ pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitC
     }
 }
 
-pub fn build_set_country_code_cmd(code: &[u8]) -> Result<AndroidSetCountryCodeCmdBuilder, UwbErr> {
-    Ok(AndroidSetCountryCodeCmdBuilder { country_code: code.try_into()? })
+pub fn build_set_country_code_cmd(code: &[u8]) -> AndroidSetCountryCodeCmdBuilder {
+    AndroidSetCountryCodeCmdBuilder { country_code: code.try_into().expect("invalid country code") }
 }
 
 pub fn build_multicast_list_update_cmd(

@@ -15,9 +15,10 @@
  */
 
 use crate::uci::uci_hrcv::UciResponse;
-use crate::uci::{BlockingJNICommand, HalCallback, JNICommand};
+use crate::uci::{HalCallback, JNICommand};
 use android_hardware_uwb::aidl::android::hardware::uwb::UwbStatus::UwbStatus;
 use std::array::TryFromSliceError;
+use std::option::Option;
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, thiserror::Error)]
@@ -31,10 +32,8 @@ pub enum UwbErr {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("SendError for JNICommand: {0}")]
-    SendJNICommand(#[from] mpsc::error::SendError<JNICommand>),
-    #[error("SendError for BlockingJNICommand: {0}")]
-    SendBlockingJNICommand(
-        #[from] mpsc::error::SendError<(BlockingJNICommand, oneshot::Sender<UciResponse>)>,
+    SendJNICommand(
+        #[from] mpsc::error::SendError<(JNICommand, Option<oneshot::Sender<UciResponse>>)>,
     ),
     #[error("SendError for HalCallback: {0}")]
     SendHalCallback(#[from] mpsc::error::SendError<HalCallback>),
