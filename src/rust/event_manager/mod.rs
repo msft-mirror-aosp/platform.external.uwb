@@ -48,12 +48,77 @@ const EXTENDED_MAC_ADDRESS_LEN: usize = 8;
 // TODO: We could consider caching the method ids rather than recomputing them each time at the cost
 // of less safety.
 
+pub trait Manager {
+    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()>;
+    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()>;
+    fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()>;
+    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()>;
+    fn extended_range_data_notification(
+        &self,
+        data: ExtendedMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()>;
+    fn session_update_controller_multicast_list_notification(
+        &self,
+        data: SessionUpdateControllerMulticastListNtfPacket,
+    ) -> Result<()>;
+}
+
 // Manages calling Java callbacks through the JNI.
 pub struct EventManager {
     jvm: JavaVM,
     obj: GlobalRef,
     // cache used to lookup uwb classes in callback.
     class_loader_obj: GlobalRef,
+}
+
+impl Manager for EventManager {
+    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_device_status_notification_received(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_core_generic_error_notification_received(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_session_status_notification_received(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_short_range_data_notification(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    fn extended_range_data_notification(
+        &self,
+        data: ExtendedMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_extended_range_data_notification(&env, data);
+        self.clear_exception(env);
+        result
+    }
+
+    fn session_update_controller_multicast_list_notification(
+        &self,
+        data: SessionUpdateControllerMulticastListNtfPacket,
+    ) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_session_update_controller_multicast_list_notification(&env, data);
+        self.clear_exception(env);
+        result
+    }
 }
 
 impl EventManager {
@@ -110,13 +175,6 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    pub fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_device_status_notification_received(&env, data);
-        self.clear_exception(env);
-        result
-    }
-
     fn handle_session_status_notification_received(
         &self,
         env: &JNIEnv,
@@ -137,13 +195,6 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    pub fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_session_status_notification_received(&env, data);
-        self.clear_exception(env);
-        result
-    }
-
     fn handle_core_generic_error_notification_received(
         &self,
         env: &JNIEnv,
@@ -157,13 +208,6 @@ impl EventManager {
             &[JValue::Int(status)],
         )
         .map(|_| ()) // drop void method return
-    }
-
-    pub fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_core_generic_error_notification_received(&env, data);
-        self.clear_exception(env);
-        result
     }
 
     fn create_zeroed_two_way_measurement_java<'a>(
@@ -463,16 +507,6 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    pub fn short_range_data_notification(
-        &self,
-        data: ShortMacTwoWayRangeDataNtfPacket,
-    ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_short_range_data_notification(&env, data);
-        self.clear_exception(env);
-        result
-    }
-
     fn handle_extended_range_data_notification(
         &self,
         env: &JNIEnv,
@@ -525,16 +559,6 @@ impl EventManager {
             &[JValue::Object(JObject::from(ranging_data_java))],
         )
         .map(|_| ()) // drop void method return
-    }
-
-    pub fn extended_range_data_notification(
-        &self,
-        data: ExtendedMacTwoWayRangeDataNtfPacket,
-    ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_extended_range_data_notification(&env, data);
-        self.clear_exception(env);
-        result
     }
 
     pub fn handle_session_update_controller_multicast_list_notification(
@@ -594,16 +618,6 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    pub fn session_update_controller_multicast_list_notification(
-        &self,
-        data: SessionUpdateControllerMulticastListNtfPacket,
-    ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_session_update_controller_multicast_list_notification(&env, data);
-        self.clear_exception(env);
-        result
-    }
-
     // Attempts to clear an exception.  If we do not do this, the exception continues being thrown
     // when the control flow returns to Java.  We discard errors here (after logging them) rather
     // than propagating them to the caller since there's nothing they can do with that information.
@@ -616,5 +630,43 @@ impl EventManager {
             Ok(false) => {} // No exception found.
             Err(e) => error!("Error checking JNI exception: {:?}", e),
         }
+    }
+}
+
+#[cfg(test)]
+pub struct EventManagerTest {}
+
+#[cfg(test)]
+impl EventManagerTest {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[cfg(test)]
+impl Manager for EventManagerTest {
+    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+        Ok(())
+    }
+    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+        Ok(())
+    }
+    fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
+        Ok(())
+    }
+    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()> {
+        Ok(())
+    }
+    fn extended_range_data_notification(
+        &self,
+        data: ExtendedMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()> {
+        Ok(())
+    }
+    fn session_update_controller_multicast_list_notification(
+        &self,
+        data: SessionUpdateControllerMulticastListNtfPacket,
+    ) -> Result<()> {
+        Ok(())
     }
 }
