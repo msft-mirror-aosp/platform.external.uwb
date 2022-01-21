@@ -308,29 +308,11 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
             JNICommand::Enable => {
-                // TODO: This mimics existing behavior, but I think we've got a few
-                // issues here:
-                // * We've got two different initialization sites (Enable *and*
-                // adaptation construction)
-                // * We have multiple functions required to finish building a
-                //   correct Enable (so there are bad states to leave it in)
-                // * We have Disable, but the adaptation isn't optional, so we
-                // will end up with an invalid but still present adaptation.
-                //
-                // A future patch should probably make a single constructor for
-                // everything, and it should probably be called here rather than
-                // mutating an existing adaptation. The adaptation should be made
-                // optional.
-                if let Some(adaptation) = Arc::get_mut(&mut self.adaptation) {
-                    adaptation.initialize();
-                    adaptation.hal_open();
-                    adaptation
-                        .core_initialization()
-                        .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
-                    self.set_state(UwbState::W4HalOpen);
-                } else {
-                    error!("Attempted to enable Uci while it was still in use.");
-                }
+                self.adaptation.hal_open();
+                self.adaptation
+                    .core_initialization()
+                    .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
+                self.set_state(UwbState::W4HalOpen);
             }
             JNICommand::Disable(graceful) => {
                 self.set_state(UwbState::W4HalClose);
@@ -384,7 +366,6 @@ impl<T: EventManager> Driver<T> {
 
     // Handles a single message from JNI or the HAL.
     async fn drive_once(&mut self) -> Result<()> {
-        // TODO: Handle messages for real instead of just logging them.
         select! {
             Some(()) = option_future(self.response_channel.as_ref()
                 .map(|(_, retryer)| retryer.command_failed())) => {
@@ -397,8 +378,6 @@ impl<T: EventManager> Driver<T> {
             Some((cmd, tx)) = self.cmd_receiver.recv(), if self.can_process_cmd() => {
                 match tx {
                     Some(tx) => { // Blocking JNI commands processing.
-                        // TODO: If we do something similar to communication to the HAL (using a channel
-                        // to hide the asynchrony, we can remove the field and make this straight line code.
                         self.handle_blocking_jni_cmd(tx, cmd)?;
                     },
                     None => { // Non Blocking JNI commands processing.
@@ -472,7 +451,7 @@ pub struct Dispatcher {
 impl Dispatcher {
     pub fn new<T: 'static + EventManager + std::marker::Send>(event_manager: T) -> Result<Self> {
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(None, rsp_sender));
+        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(rsp_sender)?);
 
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
     }
@@ -494,6 +473,7 @@ impl Dispatcher {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
+
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
         let runtime = Builder::new_multi_thread()

@@ -89,58 +89,36 @@ fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
 }
 
 pub trait UwbAdaptation {
-    fn initialize(&mut self);
     fn finalize(&mut self, exit_status: bool);
     fn hal_open(&self);
     fn hal_close(&self);
     fn core_initialization(&self) -> Result<(), UwbErr>;
     fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr>;
-    fn send_uci_message(&self, data: &[u8]);
+    fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr>;
 }
 
 #[derive(Clone)]
 pub struct UwbAdaptationImpl {
-    hal: Option<Strong<dyn IUwbChip>>,
+    hal: Strong<dyn IUwbChip>,
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
 }
 
 impl UwbAdaptationImpl {
-    pub fn new(
-        hal: Option<Strong<dyn IUwbChip>>,
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-    ) -> Self {
-        Self { hal, rsp_sender }
-    }
-
-    fn initialize_hal_device_context(&mut self) {
-        // TODO: If we can initialize this in new(), we can properly error if it fails and remove
-        // the checks in the functions below.
-        self.hal = get_hal_service();
-        if (self.hal.is_none()) {
-            info!("Failed to retrieve the UWB HAL!");
-        }
+    pub fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self, UwbErr> {
+        let hal = get_hal_service().ok_or(UwbErr::HalUnavailable)?;
+        Ok(UwbAdaptationImpl { hal, rsp_sender })
     }
 
     fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.getSupportedAndroidUciVersion()?);
-        }
-        Err(UwbErr::failed())
+        Ok(self.hal.getSupportedAndroidUciVersion()?)
     }
 
     fn get_supported_android_capabilities(&self) -> Result<i64, UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.getSupportedAndroidCapabilities()?);
-        }
-        Err(UwbErr::failed())
+        Ok(self.hal.getSupportedAndroidCapabilities()?)
     }
 }
 
 impl UwbAdaptation for UwbAdaptationImpl {
-    fn initialize(&mut self) {
-        self.initialize_hal_device_context();
-    }
-
     fn finalize(&mut self, exit_status: bool) {}
 
     fn hal_open(&self) {
@@ -148,39 +126,25 @@ impl UwbAdaptation for UwbAdaptationImpl {
             UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
             BinderFeatures::default(),
         );
-        if let Some(hal) = &self.hal {
-            hal.open(&m_cback);
-        } else {
-            warn!("Failed to open HAL");
-        }
+        self.hal.open(&m_cback);
     }
 
     fn hal_close(&self) {
-        if let Some(hal) = &self.hal {
-            hal.close();
-        }
+        self.hal.close();
     }
 
     fn core_initialization(&self) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.coreInit()?);
-        }
-        Err(UwbErr::failed())
+        Ok(self.hal.coreInit()?)
     }
 
     fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.sessionInit(session_id)?);
-        }
-        Err(UwbErr::failed())
+        Ok(self.hal.sessionInit(session_id)?)
     }
 
-    fn send_uci_message(&self, data: &[u8]) {
-        if let Some(hal) = &self.hal {
-            hal.sendUciMessage(data);
-        } else {
-            warn!("Failed to send uci message");
-        }
+    fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr> {
+        self.hal.sendUciMessage(data)?;
+        // TODO should we be validating the returned number?
+        Ok(())
     }
 }
 
@@ -198,7 +162,6 @@ impl MockUwbAdaptation {
 
 #[cfg(test)]
 impl UwbAdaptation for MockUwbAdaptation {
-    fn initialize(&mut self) {}
     fn finalize(&mut self, exit_status: bool) {}
     fn hal_open(&self) {}
     fn hal_close(&self) {}
@@ -212,7 +175,9 @@ impl UwbAdaptation for MockUwbAdaptation {
     fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
         Ok(())
     }
-    fn send_uci_message(&self, data: &[u8]) {}
+    fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
