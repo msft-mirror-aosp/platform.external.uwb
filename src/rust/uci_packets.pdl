@@ -212,24 +212,28 @@ enum SessionType: 8 {
     CCC = 0xA0,
 }
 
-packet UciCommand {
+enum MessageType: 3 {
+    COMMAND = 0x01,
+    RESPONSE = 0x02,
+    NOTIFICATION = 0x03,
+}
+
+packet UciPacket {
     group_id: GroupId,
     packet_boundary_flag: PacketBoundaryFlag,
-    _fixed_ = 1 : 3, // message type field
+    message_type: MessageType,
     _payload_,
 }
 
-packet UciResponse {
-    group_id: GroupId,
-    packet_boundary_flag: PacketBoundaryFlag,
-    _fixed_ = 2 : 3, // message type field
+packet UciCommand : UciPacket (message_type = COMMAND) {
     _payload_,
 }
 
-packet UciNotification {
-    group_id: GroupId,
-    packet_boundary_flag: PacketBoundaryFlag,
-    _fixed_ = 3 : 3, // message type field
+packet UciResponse : UciPacket (message_type = RESPONSE) {
+    _payload_,
+}
+
+packet UciNotification : UciPacket (message_type = NOTIFICATION) {
     _payload_,
 }
 
@@ -786,8 +790,5 @@ packet AndroidGetPowerStatsRsp : AndroidResponse (android_opcode = ANDROID_GET_P
 }
 
 test AndroidGetPowerStatsRsp {
-    "\x4e\x00\x00\x29\x00",
-    "\x00\x00\x00\x00\x00\x00\x00\x00",
-    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-    "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x4e\x00\x00\x29\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
