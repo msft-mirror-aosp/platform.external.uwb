@@ -49,8 +49,7 @@ pub enum UciNotification {
     ExtendedMacTwoWayRangeDataNtf(ExtendedMacTwoWayRangeDataNtfPacket),
 }
 
-pub fn uci_response(bytes: &[u8]) -> Result<UciResponse, UwbErr> {
-    let evt = UciResponsePacket::parse(bytes)?;
+pub fn uci_response(evt: UciResponsePacket) -> Result<UciResponse, UwbErr> {
     match evt.specialize() {
         UciResponseChild::CoreResponse(evt) => core_response(evt),
         UciResponseChild::SessionResponse(evt) => session_response(evt),
@@ -60,8 +59,7 @@ pub fn uci_response(bytes: &[u8]) -> Result<UciResponse, UwbErr> {
     }
 }
 
-pub fn uci_notification(bytes: &[u8]) -> Result<UciNotification, UwbErr> {
-    let evt = UciNotificationPacket::parse(bytes)?;
+pub fn uci_notification(evt: UciNotificationPacket) -> Result<UciNotification, UwbErr> {
     match evt.specialize() {
         UciNotificationChild::CoreNotification(evt) => core_notification(evt),
         UciNotificationChild::SessionNotification(evt) => session_notification(evt),
