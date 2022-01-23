@@ -19,6 +19,12 @@ use log::{info, warn};
 use uwb_uci_packets::*;
 
 #[derive(Debug)]
+pub enum UciMessage {
+    Response(UciResponse),
+    Notification(UciNotification),
+}
+
+#[derive(Debug)]
 pub enum UciResponse {
     GetDeviceInfoRsp(GetDeviceInfoRspBuilder),
     GetCapsInfoRsp(GetCapsInfoRspBuilder),
@@ -47,6 +53,16 @@ pub enum UciNotification {
     SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfPacket),
     ShortMacTwoWayRangeDataNtf(ShortMacTwoWayRangeDataNtfPacket),
     ExtendedMacTwoWayRangeDataNtf(ExtendedMacTwoWayRangeDataNtfPacket),
+}
+
+pub fn uci_message(evt: UciPacketPacket) -> Result<UciMessage, UwbErr> {
+    match evt.specialize() {
+        UciPacketChild::UciResponse(evt) => Ok(UciMessage::Response(uci_response(evt).unwrap())),
+        UciPacketChild::UciNotification(evt) => {
+            Ok(UciMessage::Notification(uci_notification(evt).unwrap()))
+        }
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
+    }
 }
 
 pub fn uci_response(evt: UciResponsePacket) -> Result<UciResponse, UwbErr> {
