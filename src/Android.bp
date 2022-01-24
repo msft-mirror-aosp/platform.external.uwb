@@ -21,12 +21,18 @@ rust_defaults {
         "liblog_rust",
         "liblogger",
         "libnum_traits",
-        "librustutils",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
-	"libbinder_tokio_rs",
+        "libbinder_tokio_rs",
     ],
+    target: {
+        android: {
+            rustlibs: [
+                "librustutils",
+            ],
+        },
+    },
     rlibs: [
         "libarbitrary",
     ],
@@ -37,6 +43,7 @@ rust_defaults {
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_library {
@@ -47,11 +54,29 @@ rust_library {
 rust_test {
     name: "libuwb_uci_rust_tests",
     defaults: ["libuwb_uci_defaults"],
-    test_suites: [
-        "general-tests",
-        "mts-uwb"
-    ],
-    test_config_template: "uwb_rust_test_config_template.xml",
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+            data_libs: [
+                "libandroid_runtime_lazy",
+                "libbase",
+                "libbinder",
+                "libbinder_ndk",
+                "libcutils",
+                "liblog",
+                "libutils",
+            ],
+        },
+    },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
     // build targets with secondary architectures, as the MTS test suite packaging logic flattens
     // all test artifacts into a single `testcases` directory.
@@ -80,16 +105,26 @@ rust_defaults {
         "libnum_traits",
         "libthiserror",
     ],
+    host_supported: true,
 }
 
 rust_test {
     name: "libuwb_uci_packet_tests",
     defaults: ["libuwb_uci_packet_defaults"],
-    test_suites: [
-        "general-tests",
-        "mts-uwb"
-    ],
-    test_config_template: "uwb_rust_test_config_template.xml",
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+        },
+    },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
     // build targets with secondary architectures, as the MTS test suite packaging logic flattens
     // all test artifacts into a single `testcases` directory.
@@ -103,11 +138,6 @@ rust_test {
         },
     },
     auto_gen_config: true,
-    rustlibs:[
-        "android.hardware.uwb-V1-rust",
-        "liblog_rust",
-        "libuwb_uci_rust",
-    ],
 }
 
 rust_library {
