@@ -41,30 +41,20 @@ impl IUwbClientCallback for UwbClientCallback {
     fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
         match UciPacketPacket::parse(data) {
             Ok(evt) => {
-                match evt.specialize() {
-                    UciPacketChild::UciResponse(evt) => {
-                        let packetRsp = uci_hrcv::uci_response(evt);
-                        match (packetRsp) {
-                            Ok(response) => self
-                                .rsp_sender
-                                .send(HalCallback::UciRsp(response))
-                                .unwrap_or_else(|e| error!("Error sending uci response: {:?}", e)),
-                            _ => error!("Unable to parse UCI response: {:?}", data),
-                        }
-                    }
-                    UciPacketChild::UciNotification(evt) => {
-                        let packetNtf = uci_hrcv::uci_notification(evt);
-                        match (packetNtf) {
-                            Ok(ntf) => {
-                                self.rsp_sender.send(HalCallback::UciNtf(ntf)).unwrap_or_else(|e| {
-                                    error!("Error sending uci notification: {:?}", e)
-                                })
-                            }
-                            _ => error!("Unable to parse UCI notification: {:?}", data),
-                        }
-                    }
+                let packetMsg = uci_hrcv::uci_message(evt);
+                match packetMsg {
+                    Ok(uci_hrcv::UciMessage::Response(evt)) => self
+                        .rsp_sender
+                        .send(HalCallback::UciRsp(evt))
+                        .unwrap_or_else(|e| error!("Error sending uci response: {:?}", e)),
+
+                    Ok(uci_hrcv::UciMessage::Notification(evt)) => self
+                        .rsp_sender
+                        .send(HalCallback::UciNtf(evt))
+                        .unwrap_or_else(|e| error!("Error sending uci notification: {:?}", e)),
+
                     _ => error!("UCI message which is neither a UCI RSP or NTF: {:?}", data),
-                };
+                }
             }
             _ => error!("Failed to parse packet: {:?}", data),
         }
