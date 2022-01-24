@@ -203,6 +203,10 @@ impl UwbAdaptation for MockUwbAdaptation {
     fn hal_open(&self) {}
     fn hal_close(&self) {}
     fn core_initialization(&self) -> Result<(), UwbErr> {
+        let uwb_event_test = UwbEvent::POST_INIT_CPLT;
+        let uwb_status_test = UwbStatus::OK;
+        let uwb_client_callback_test = UwbClientCallback::new(self.rsp_sender.clone());
+        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test);
         Ok(())
     }
     fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
