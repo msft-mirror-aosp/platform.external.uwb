@@ -79,6 +79,11 @@ pub enum JNICommand {
         app_config_param_len: u32,
         app_configs: Vec<u8>,
     },
+    UciRawVendorCmd {
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    },
 
     // Non blocking commands
     Enable,
@@ -269,6 +274,9 @@ impl<T: Manager> Driver<T> {
             } => SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
                 .build()
                 .to_vec(),
+            JNICommand::UciRawVendorCmd { gid, oid, payload } => {
+                uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?.to_vec()
+            }
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -344,7 +352,11 @@ impl<T: Manager> Driver<T> {
                 self.event_manager.extended_range_data_notification_received(response);
             }
             uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
-                self.event_manager.session_update_controller_multicast_list_notification_received(response);
+                self.event_manager
+                    .session_update_controller_multicast_list_notification_received(response);
+            }
+            uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
+                self.event_manager.vendor_uci_notification_received(gid, oid, payload);
             }
             _ => log::error!("Unexpected hal notification received {:?}", response),
         }

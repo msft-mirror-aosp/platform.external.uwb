@@ -15,20 +15,19 @@
  */
 
 use crate::uci::UwbErr;
+use bytes::Bytes;
+use log::error;
 use log::info;
-use num_traits::cast::FromPrimitive;
+use num_traits::FromPrimitive;
 use uwb_uci_packets::{
     AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, CoreOpCode, DeviceConfigStatus,
     DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoCmdPacket, ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder,
-    SessionType, SessionUpdateControllerMulticastListCmdBuilder, SetConfigCmdBuilder,
-    SetConfigRspBuilder, StatusCode, UciCommandPacket,
+    GetDeviceInfoCmdPacket, GroupId, ResetConfig, SessionInitCmdBuilder,
+    SessionSetAppConfigCmdBuilder, SessionType, SessionUpdateControllerMulticastListCmdBuilder,
+    SetConfigCmdBuilder, SetConfigRspBuilder, StatusCode, UciCommandPacket,
+    UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder,
+    UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
 };
-
-fn uci_ucif_send_cmd() -> StatusCode {
-    let resp = uwb_ucif_check_cmd_queue(GetDeviceInfoCmdBuilder {});
-    StatusCode::UciStatusOk
-}
 
 pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
     SessionInitCmdBuilder {
@@ -73,26 +72,27 @@ pub fn build_set_app_config_cmd(
     Ok(SessionSetAppConfigCmdBuilder { session_id, tlvs })
 }
 
-fn build_caps_info_cmd() -> GetCapsInfoCmdBuilder {
-    GetCapsInfoCmdBuilder {}
-}
-
-fn set_config_cmd(tlvs: Vec<DeviceConfigTLV>) -> SetConfigCmdBuilder {
-    SetConfigCmdBuilder { tlvs }
-}
-
-fn build_device_reset_cmd(reset_config: ResetConfig) -> DeviceResetCmdBuilder {
-    DeviceResetCmdBuilder { reset_config }
-}
-
-fn build_set_config_rsp(
-    status: StatusCode,
-    cfg_status: Vec<DeviceConfigStatus>,
-) -> SetConfigRspBuilder {
-    SetConfigRspBuilder { status, cfg_status }
-}
-
-fn uwb_ucif_check_cmd_queue(p_message: GetDeviceInfoCmdBuilder) -> StatusCode {
-    // TODO : Hook to command queue
-    return StatusCode::UciStatusOk;
+pub fn build_uci_vendor_cmd_packet(
+    gid: u32,
+    oid: u32,
+    payload: Vec<u8>,
+) -> Result<UciCommandPacket, UwbErr> {
+    let group_id: GroupId = FromPrimitive::from_u32(gid).expect("invalid vendor gid");
+    let payload = match payload.is_empty() {
+        true => Some(Bytes::from(payload)),
+        false => None,
+    };
+    let opcode: u8 = oid.try_into().expect("invalid vendor oid");
+    let packet: UciCommandPacket = match group_id {
+        VendorReserved9 => UciVendor_9_CommandBuilder { opcode, payload }.build().into(),
+        VendorReservedA => UciVendor_A_CommandBuilder { opcode, payload }.build().into(),
+        VendorReservedB => UciVendor_B_CommandBuilder { opcode, payload }.build().into(),
+        VendorReservedC => UciVendor_C_CommandBuilder { opcode, payload }.build().into(),
+        VendorReservedF => UciVendor_F_CommandBuilder { opcode, payload }.build().into(),
+        _ => {
+            error!("Invalid vendor gid {:?}", gid);
+            return Err(UwbErr::InvalidArgs);
+        }
+    };
+    Ok(packet)
 }
