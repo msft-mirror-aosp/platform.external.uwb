@@ -35,8 +35,9 @@ use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
     GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, Packet, RangeStartCmdBuilder,
-    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetCountCmdBuilder,
-    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode,
+    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder,
+    SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
+    StatusCode,
 };
 
 #[cfg(test)]
@@ -65,6 +66,18 @@ pub enum JNICommand {
     },
     UciSetCountryCode {
         code: Vec<u8>,
+    },
+    UciSetAppConfig {
+        session_id: u32,
+        no_of_params: u32,
+        app_config_param_len: u32,
+        app_configs: Vec<u8>,
+    },
+    UciGetAppConfig {
+        session_id: u32,
+        no_of_params: u32,
+        app_config_param_len: u32,
+        app_configs: Vec<u8>,
     },
 
     // Non blocking commands
@@ -198,7 +211,7 @@ impl<T: Manager> Driver<T> {
         tx: oneshot::Sender<UciResponse>,
         cmd: JNICommand,
     ) -> Result<()> {
-        log::info!("Recevied blocking cmd {:?}", cmd);
+        log::debug!("Received blocking cmd {:?}", cmd);
         let bytes = match cmd {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().to_vec(),
             JNICommand::UciSessionInit(session_id, session_type) => {
@@ -235,6 +248,27 @@ impl<T: Manager> Driver<T> {
             JNICommand::UciSetCountryCode { ref code } => {
                 uci_hmsgs::build_set_country_code_cmd(code).build().to_vec()
             }
+            JNICommand::UciSetAppConfig {
+                session_id,
+                no_of_params,
+                app_config_param_len,
+                ref app_configs,
+            } => uci_hmsgs::build_set_app_config_cmd(
+                session_id,
+                no_of_params,
+                app_config_param_len,
+                app_configs,
+            )?
+            .build()
+            .to_vec(),
+            JNICommand::UciGetAppConfig {
+                session_id,
+                no_of_params,
+                app_config_param_len,
+                ref app_configs,
+            } => SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
+                .build()
+                .to_vec(),
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -248,7 +282,7 @@ impl<T: Manager> Driver<T> {
     }
 
     fn handle_non_blocking_jni_cmd(&mut self, cmd: JNICommand) -> Result<()> {
-        log::info!("Received non blocking cmd {:?}", cmd);
+        log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
             JNICommand::Enable => {
                 // TODO: This mimics existing behavior, but I think we've got a few
@@ -287,6 +321,7 @@ impl<T: Manager> Driver<T> {
     }
 
     fn handle_hal_notification(&self, response: uci_hrcv::UciNotification) -> Result<()> {
+        log::debug!("Received hal notification {:?}", response);
         match response {
             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
                 self.event_manager.device_status_notification_received(response);
@@ -311,7 +346,7 @@ impl<T: Manager> Driver<T> {
             uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
                 self.event_manager.session_update_controller_multicast_list_notification(response);
             }
-            _ => log::error!("Unexpected notification received {:?}", response),
+            _ => log::error!("Unexpected hal notification received {:?}", response),
         }
         Ok(())
     }
@@ -342,9 +377,10 @@ impl<T: Manager> Driver<T> {
             Some(rsp) = self.rsp_receiver.recv() => {
                 match rsp {
                     HalCallback::Event{event, event_status} => {
-                        log::info!("Received HAL event: {:?} with status: {:?}", event, event_status);
+                        log::info!("Received hal event: {:?} with status: {:?}", event, event_status);
                     },
                     HalCallback::UciRsp(response) => {
+                        log::debug!("Received hal response {:?}", response);
                         if let Some((channel, retryer)) = self.response_channel.take() {
                             retryer.received();
                             channel.send(response);
