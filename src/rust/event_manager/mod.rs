@@ -52,12 +52,15 @@ pub trait Manager {
     fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()>;
     fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()>;
     fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()>;
-    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()>;
-    fn extended_range_data_notification(
+    fn short_range_data_notification_received(
+        &self,
+        data: ShortMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()>;
+    fn extended_range_data_notification_received(
         &self,
         data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()>;
-    fn session_update_controller_multicast_list_notification(
+    fn session_update_controller_multicast_list_notification_received(
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()>;
@@ -93,29 +96,33 @@ impl Manager for EventManager {
         result
     }
 
-    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()> {
+    fn short_range_data_notification_received(
+        &self,
+        data: ShortMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_short_range_data_notification(&env, data);
+        let result = self.handle_short_range_data_notification_received(&env, data);
         self.clear_exception(env);
         result
     }
 
-    fn extended_range_data_notification(
+    fn extended_range_data_notification_received(
         &self,
         data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_extended_range_data_notification(&env, data);
+        let result = self.handle_extended_range_data_notification_received(&env, data);
         self.clear_exception(env);
         result
     }
 
-    fn session_update_controller_multicast_list_notification(
+    fn session_update_controller_multicast_list_notification_received(
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_session_update_controller_multicast_list_notification(&env, data);
+        let result =
+            self.handle_session_update_controller_multicast_list_notification_received(&env, data);
         self.clear_exception(env);
         result
     }
@@ -454,7 +461,7 @@ impl EventManager {
         )
     }
 
-    fn handle_short_range_data_notification(
+    fn handle_short_range_data_notification_received(
         &self,
         env: &JNIEnv,
         data: ShortMacTwoWayRangeDataNtfPacket,
@@ -507,7 +514,7 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    fn handle_extended_range_data_notification(
+    fn handle_extended_range_data_notification_received(
         &self,
         env: &JNIEnv,
         data: ExtendedMacTwoWayRangeDataNtfPacket,
@@ -561,7 +568,7 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
-    pub fn handle_session_update_controller_multicast_list_notification(
+    pub fn handle_session_update_controller_multicast_list_notification_received(
         &self,
         env: &JNIEnv,
         data: SessionUpdateControllerMulticastListNtfPacket,
@@ -654,16 +661,19 @@ impl Manager for EventManagerTest {
     fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
         Ok(())
     }
-    fn short_range_data_notification(&self, data: ShortMacTwoWayRangeDataNtfPacket) -> Result<()> {
+    fn short_range_data_notification_received(
+        &self,
+        data: ShortMacTwoWayRangeDataNtfPacket,
+    ) -> Result<()> {
         Ok(())
     }
-    fn extended_range_data_notification(
+    fn extended_range_data_notification_received(
         &self,
         data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
-    fn session_update_controller_multicast_list_notification(
+    fn session_update_controller_multicast_list_notification_received(
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
