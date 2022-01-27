@@ -34,7 +34,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
-    GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, Packet, RangeStartCmdBuilder,
+    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder,
     RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder,
     SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
     StatusCode,
@@ -338,13 +338,13 @@ impl<T: Manager> Driver<T> {
                 self.event_manager.session_status_notification_received(response);
             }
             uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
-                self.event_manager.short_range_data_notification(response);
+                self.event_manager.short_range_data_notification_received(response);
             }
             uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(response) => {
-                self.event_manager.extended_range_data_notification(response);
+                self.event_manager.extended_range_data_notification_received(response);
             }
             uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
-                self.event_manager.session_update_controller_multicast_list_notification(response);
+                self.event_manager.session_update_controller_multicast_list_notification_received(response);
             }
             _ => log::error!("Unexpected hal notification received {:?}", response),
         }
@@ -415,7 +415,7 @@ pub struct Dispatcher {
     cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
-    pub device_info: Option<GetDeviceInfoRspBuilder>,
+    pub device_info: Option<GetDeviceInfoRspPacket>,
 }
 
 impl Dispatcher {
