@@ -31,10 +31,10 @@ use uwb_uci_packets::{
     ShortAddressTwoWayRangingMeasurement, ShortMacTwoWayRangeDataNtfPacket,
 };
 
-const UWB_RANGING_DATA_CLASS: &str = "com/android/uwb/data/UwbRangingData";
-const UWB_TWO_WAY_MEASUREMENT_CLASS: &str = "com/android/uwb/data/UwbTwoWayMeasurement";
+const UWB_RANGING_DATA_CLASS: &str = "com/android/server/uwb/data/UwbRangingData";
+const UWB_TWO_WAY_MEASUREMENT_CLASS: &str = "com/android/server/uwb/data/UwbTwoWayMeasurement";
 const MULTICAST_LIST_UPDATE_STATUS_CLASS: &str =
-    "com/android/uwb/data/UwbMulticastListUpdateStatus";
+    "com/android/server/uwb/data/UwbMulticastListUpdateStatus";
 const SHORT_MAC_ADDRESS_LEN: usize = 2;
 const EXTENDED_MAC_ADDRESS_LEN: usize = 8;
 
@@ -434,7 +434,7 @@ impl EventManager {
         let ranging_data_class = self.find_class(env, &UWB_RANGING_DATA_CLASS)?;
         env.new_object(
             ranging_data_class,
-            "(JJIJIII[Lcom/android/uwb/data/UwbTwoWayMeasurement;)V",
+            "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;)V",
             &[
                 JValue::Long(
                     data.get_sequence_number().to_i64().expect("Failed converting seq num to i64"),
@@ -515,7 +515,7 @@ impl EventManager {
         env.call_method(
             self.obj.as_obj(),
             "onRangeDataNotificationReceived",
-            "(Lcom/android/uwb/data/UwbRangingData;)V",
+            "(Lcom/android/server/uwb/data/UwbRangingData;)V",
             &[JValue::Object(JObject::from(ranging_data_java))],
         )
         .map(|_| ()) // drop void method return
@@ -569,7 +569,7 @@ impl EventManager {
         env.call_method(
             self.obj.as_obj(),
             "onRangeDataNotificationReceived",
-            "(Lcom/android/uwb/data/UwbRangingData;)V",
+            "(Lcom/android/server/uwb/data/UwbRangingData;)V",
             &[JValue::Object(JObject::from(ranging_data_java))],
         )
         .map(|_| ()) // drop void method return
@@ -626,7 +626,7 @@ impl EventManager {
         env.call_method(
             self.obj.as_obj(),
             "onMulticastListUpdateNotificationReceived",
-            "(Lcom/android/uwb/data/UwbMulticastListUpdateStatus;)V",
+            "(Lcom/android/server/uwb/data/UwbMulticastListUpdateStatus;)V",
             &[JValue::Object(JObject::from(uwb_multicast_update_object))],
         )
         .map(|_| ()) // drop void method return
