@@ -62,17 +62,10 @@ cc_library_static {
     ],
 }
 
-filegroup {
-    name: "libuwb_uci_rust_srcs",
-    srcs: [
-        "rust/lib.rs",
-    ],
-}
-
 rust_library {
     name: "libuwb_uci_rust",
     crate_name: "uwb_uci_rust",
-    srcs: [":libuwb_uci_rust_srcs"],
+    srcs: ["rust/lib.rs"],
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
@@ -100,7 +93,7 @@ rust_library {
 
 rust_test {
     name: "libuwb_uci_rust_tests",
-    srcs: [":libuwb_uci_rust_srcs"],
+    srcs: ["rust/lib.rs"],
     test_suites: ["general-tests"],
     auto_gen_config: true,
     rustlibs:[
