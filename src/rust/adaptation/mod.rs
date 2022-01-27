@@ -185,7 +185,16 @@ impl UwbAdaptation for UwbAdaptationImpl {
 }
 
 #[cfg(test)]
-pub struct MockUwbAdaptation {}
+pub struct MockUwbAdaptation {
+    rsp_sender: mpsc::UnboundedSender<HalCallback>,
+}
+
+#[cfg(test)]
+impl MockUwbAdaptation {
+    pub fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Self {
+        Self { rsp_sender }
+    }
+}
 
 #[cfg(test)]
 impl UwbAdaptation for MockUwbAdaptation {

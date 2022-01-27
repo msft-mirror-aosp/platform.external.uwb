@@ -429,14 +429,30 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new<T: 'static + EventManager + std::marker::Send>(
+    pub fn new<T: 'static + EventManager + std::marker::Send>(event_manager: T) -> Result<Self> {
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(None, rsp_sender));
+
+        Self::new_with_args(event_manager, adaptation, rsp_receiver)
+    }
+
+    #[cfg(test)]
+    pub fn new_for_testing<T: 'static + EventManager + std::marker::Send>(
         event_manager: T,
-    ) -> Result<Dispatcher> {
+        adaptation: SyncUwbAdaptation,
+        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+    ) -> Result<Self> {
+        Self::new_with_args(event_manager, adaptation, rsp_receiver)
+    }
+
+    fn new_with_args<T: 'static + EventManager + std::marker::Send>(
+        event_manager: T,
+        adaptation: SyncUwbAdaptation,
+        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+    ) -> Result<Self> {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
-        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(None, rsp_sender));
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
         let runtime = Builder::new_multi_thread()
@@ -474,6 +490,7 @@ impl Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
 
     #[test]
@@ -483,8 +500,12 @@ mod tests {
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
         );
 
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
-        let mut dispatcher = Dispatcher::new(mock_event_manager)?;
+
+        let mut dispatcher =
+            Dispatcher::new_for_testing(mock_event_manager, mock_adaptation, rsp_receiver)?;
         dispatcher.send_jni_command(JNICommand::Enable)?;
         dispatcher.exit()?;
         Ok(())
