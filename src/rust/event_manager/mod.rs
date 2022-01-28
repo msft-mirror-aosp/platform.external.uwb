@@ -64,6 +64,7 @@ pub trait Manager {
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()>;
+    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()>;
 }
 
 // Manages calling Java callbacks through the JNI.
@@ -123,6 +124,12 @@ impl Manager for EventManager {
         let env = self.jvm.attach_current_thread()?;
         let result =
             self.handle_session_update_controller_multicast_list_notification_received(&env, data);
+        self.clear_exception(env);
+        result
+    }
+    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+        let result = self.handle_vendor_uci_notification_received(&env, gid, oid, payload);
         self.clear_exception(env);
         result
     }
@@ -625,6 +632,32 @@ impl EventManager {
         .map(|_| ()) // drop void method return
     }
 
+    pub fn handle_vendor_uci_notification_received(
+        &self,
+        env: &JNIEnv,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<()> {
+        let env = self.jvm.attach_current_thread()?;
+
+        let gid: i32 = gid.try_into().expect("Failed to convert gid");
+        let oid: i32 = oid.try_into().expect("Failed to convert gid");
+        let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
+
+        env.call_method(
+            self.obj.as_obj(),
+            "onVendorUciNotificationReceived",
+            "(IIB])V",
+            &[
+                JValue::Int(gid),
+                JValue::Int(oid),
+                JValue::Object(JObject::from(payload_jbytearray)),
+            ],
+        )
+        .map(|_| ()) // drop void method return
+    }
+
     // Attempts to clear an exception.  If we do not do this, the exception continues being thrown
     // when the control flow returns to Java.  We discard errors here (after logging them) rather
     // than propagating them to the caller since there's nothing they can do with that information.
@@ -677,6 +710,9 @@ impl Manager for EventManagerTest {
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
+        Ok(())
+    }
+    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
         Ok(())
     }
 }

@@ -88,25 +88,29 @@ fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
     Some(i_uwb_chip)
 }
 
+pub trait UwbAdaptation {
+    fn initialize(&mut self);
+    fn finalize(&mut self, exit_status: bool);
+    fn hal_open(&self);
+    fn hal_close(&self);
+    fn core_initialization(&self) -> Result<(), UwbErr>;
+    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr>;
+    fn send_uci_message(&self, data: &[u8]);
+}
+
 #[derive(Clone)]
-pub struct UwbAdaptation {
+pub struct UwbAdaptationImpl {
     hal: Option<Strong<dyn IUwbChip>>,
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
 }
 
-impl UwbAdaptation {
+impl UwbAdaptationImpl {
     pub fn new(
         hal: Option<Strong<dyn IUwbChip>>,
         rsp_sender: mpsc::UnboundedSender<HalCallback>,
-    ) -> UwbAdaptation {
-        UwbAdaptation { hal, rsp_sender }
+    ) -> Self {
+        Self { hal, rsp_sender }
     }
-
-    pub fn initialize(&mut self) {
-        self.initialize_hal_device_context();
-    }
-
-    pub fn finalize(&mut self, exit_status: bool) {}
 
     fn initialize_hal_device_context(&mut self) {
         // TODO: If we can initialize this in new(), we can properly error if it fails and remove
@@ -115,38 +119,6 @@ impl UwbAdaptation {
         if (self.hal.is_none()) {
             info!("Failed to retrieve the UWB HAL!");
         }
-    }
-
-    pub fn hal_open(&self) {
-        let m_cback = BnUwbClientCallback::new_binder(
-            UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
-            BinderFeatures::default(),
-        );
-        if let Some(hal) = &self.hal {
-            hal.open(&m_cback);
-        } else {
-            warn!("Failed to open HAL");
-        }
-    }
-
-    pub fn hal_close(&self) {
-        if let Some(hal) = &self.hal {
-            hal.close();
-        }
-    }
-
-    pub fn core_initialization(&self) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.coreInit()?);
-        }
-        Err(UwbErr::failed())
-    }
-
-    pub fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.sessionInit(session_id)?);
-        }
-        Err(UwbErr::failed())
     }
 
     fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
@@ -162,14 +134,72 @@ impl UwbAdaptation {
         }
         Err(UwbErr::failed())
     }
+}
 
-    pub fn send_uci_message(&self, data: &[u8]) {
+impl UwbAdaptation for UwbAdaptationImpl {
+    fn initialize(&mut self) {
+        self.initialize_hal_device_context();
+    }
+
+    fn finalize(&mut self, exit_status: bool) {}
+
+    fn hal_open(&self) {
+        let m_cback = BnUwbClientCallback::new_binder(
+            UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
+            BinderFeatures::default(),
+        );
+        if let Some(hal) = &self.hal {
+            hal.open(&m_cback);
+        } else {
+            warn!("Failed to open HAL");
+        }
+    }
+
+    fn hal_close(&self) {
+        if let Some(hal) = &self.hal {
+            hal.close();
+        }
+    }
+
+    fn core_initialization(&self) -> Result<(), UwbErr> {
+        if let Some(hal) = &self.hal {
+            return Ok(hal.coreInit()?);
+        }
+        Err(UwbErr::failed())
+    }
+
+    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
+        if let Some(hal) = &self.hal {
+            return Ok(hal.sessionInit(session_id)?);
+        }
+        Err(UwbErr::failed())
+    }
+
+    fn send_uci_message(&self, data: &[u8]) {
         if let Some(hal) = &self.hal {
             hal.sendUciMessage(data);
         } else {
             warn!("Failed to send uci message");
         }
     }
+}
+
+#[cfg(test)]
+pub struct MockUwbAdaptation {}
+
+#[cfg(test)]
+impl UwbAdaptation for MockUwbAdaptation {
+    fn initialize(&mut self) {}
+    fn finalize(&mut self, exit_status: bool) {}
+    fn hal_open(&self) {}
+    fn hal_close(&self) {}
+    fn core_initialization(&self) -> Result<(), UwbErr> {
+        Ok(())
+    }
+    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
+        Ok(())
+    }
+    fn send_uci_message(&self, data: &[u8]) {}
 }
 
 #[cfg(test)]

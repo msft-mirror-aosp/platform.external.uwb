@@ -47,6 +47,8 @@ pub enum UwbErr {
     ConvertToArray(#[from] TryFromSliceError),
     #[error("The dispatcher does not exist")]
     NoneDispatcher,
+    #[error("Invalid args")]
+    InvalidArgs,
     #[error("Exit")]
     Exit,
     #[error("Unknown error")]
