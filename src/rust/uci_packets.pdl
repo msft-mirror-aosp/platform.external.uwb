@@ -11,7 +11,12 @@ enum GroupId : 4 {
     RANGING_SESSION_CONTROL = 0x02,
     DATA_CONTROL = 0x03,
     TEST = 0x0d,
-    ANDROID = 0x0e,
+    VENDOR_RESERVED_9 = 0x09,
+    VENDOR_RESERVED_A = 0x0a,
+    VENDOR_RESERVED_B = 0x0b,
+    VENDOR_RESERVED_C = 0x0c,
+    VENDOR_ANDROID = 0x0e,
+    VENDOR_RESERVED_F = 0x0f,
 }
 
 enum CoreOpCode : 6 {
@@ -222,117 +227,116 @@ packet UciPacket {
     group_id: GroupId,
     packet_boundary_flag: PacketBoundaryFlag,
     message_type: MessageType,
-    _payload_,
-}
-
-packet UciCommand : UciPacket (message_type = COMMAND) {
-    _payload_,
-}
-
-packet UciResponse : UciPacket (message_type = RESPONSE) {
-    _payload_,
-}
-
-packet UciNotification : UciPacket (message_type = NOTIFICATION) {
-    _payload_,
+    _body_,
 }
 
 // TODO(b/202760099): Handle fragmentation of packets if the size exceed max allowed.
+packet UciCommand : UciPacket (message_type = COMMAND, packet_boundary_flag = COMPLETE) {
+    _body_,
+}
 
-packet CoreCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = CORE) {
+packet UciResponse : UciPacket (message_type = RESPONSE, packet_boundary_flag = COMPLETE) {
+    _body_,
+}
+
+packet UciNotification : UciPacket (message_type = NOTIFICATION, packet_boundary_flag = COMPLETE) {
+    _body_,
+}
+
+packet CoreCommand : UciCommand (group_id = CORE) {
     core_opcode: CoreOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet CoreResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = CORE) {
+packet CoreResponse : UciResponse (group_id = CORE) {
     core_opcode: CoreOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet CoreNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = CORE) {
+packet CoreNotification : UciNotification (group_id = CORE) {
     core_opcode: CoreOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet SessionCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
+packet SessionCommand : UciCommand (group_id = SESSION_CONFIG) {
     session_opcode: SessionOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet SessionResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
+packet SessionResponse : UciResponse (group_id = SESSION_CONFIG) {
     session_opcode: SessionOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet SessionNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = SESSION_CONFIG) {
+packet SessionNotification : UciNotification (group_id = SESSION_CONFIG) {
     session_opcode: SessionOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet RangingCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
+packet RangingCommand : UciCommand (group_id = RANGING_SESSION_CONTROL) {
     ranging_opcode: RangeOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet RangingResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
+packet RangingResponse : UciResponse (group_id = RANGING_SESSION_CONTROL) {
     ranging_opcode: RangeOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet RangingNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = RANGING_SESSION_CONTROL) {
+packet RangingNotification : UciNotification (group_id = RANGING_SESSION_CONTROL) {
     ranging_opcode: RangeOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet AndroidCommand : UciCommand (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+packet AndroidCommand : UciCommand (group_id = VENDOR_ANDROID) {
     android_opcode: AndroidOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet AndroidResponse : UciResponse (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+packet AndroidResponse : UciResponse (group_id = VENDOR_ANDROID) {
     android_opcode: AndroidOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
-packet AndroidNotification : UciNotification (packet_boundary_flag = COMPLETE, group_id = ANDROID) {
+packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
     android_opcode: AndroidOpCode,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_payload_): 8,
-    _payload_,
+    _size_(_body_): 8,
+    _body_,
 }
 
 packet GetDeviceInfoCmd : CoreCommand (core_opcode = CORE_DEVICE_INFO) {
@@ -635,7 +639,7 @@ packet RangeDataNtf : RangingNotification (ranging_opcode = RANGE_START) {
     _reserved_: 8,
     mac_address_indicator: MacAddressIndicator,
     _reserved_: 64,
-    _payload_,
+    _body_,
 }
 
 packet ShortMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
@@ -791,4 +795,125 @@ packet AndroidGetPowerStatsRsp : AndroidResponse (android_opcode = ANDROID_GET_P
 
 test AndroidGetPowerStatsRsp {
     "\x4e\x00\x00\x29\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+}
+
+// TODO: Figure out a way to avoid the repetition of the body below without breaking the packet inheritance.
+packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_A_Command : UciCommand (group_id = VENDOR_RESERVED_A) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_B_Command : UciCommand (group_id = VENDOR_RESERVED_B) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_C_Command : UciCommand (group_id = VENDOR_RESERVED_C) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_F_Command :  UciCommand (group_id = VENDOR_RESERVED_F) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_9_Response : UciResponse (group_id = VENDOR_RESERVED_9) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_A_Response : UciResponse (group_id = VENDOR_RESERVED_A) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_B_Response : UciResponse (group_id = VENDOR_RESERVED_B) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_C_Response : UciResponse (group_id = VENDOR_RESERVED_C) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_F_Response : UciResponse (group_id = VENDOR_RESERVED_F) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_9_Notification : UciNotification (group_id = VENDOR_RESERVED_9) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_A_Notification : UciNotification (group_id = VENDOR_RESERVED_A) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_B_Notification : UciNotification (group_id = VENDOR_RESERVED_B) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_C_Notification : UciNotification (group_id = VENDOR_RESERVED_C) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
+}
+
+packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F) {
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_payload_): 8,
+    _payload_,
 }

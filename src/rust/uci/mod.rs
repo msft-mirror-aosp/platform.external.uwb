@@ -18,7 +18,7 @@ pub mod state_machine;
 pub mod uci_hmsgs;
 pub mod uci_hrcv;
 
-use crate::adaptation::UwbAdaptation;
+use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
 use crate::event_manager::{EventManager, Manager};
 use crate::uci::uci_hrcv::UciResponse;
@@ -45,6 +45,7 @@ use crate::event_manager::EventManagerTest;
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
+type SyncUwbAdaptation = Box<dyn UwbAdaptation + std::marker::Send + std::marker::Sync>;
 
 // Commands sent from JNI.
 #[derive(Debug)]
@@ -78,6 +79,11 @@ pub enum JNICommand {
         no_of_params: u32,
         app_config_param_len: u32,
         app_configs: Vec<u8>,
+    },
+    UciRawVendorCmd {
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
     },
 
     // Non blocking commands
@@ -134,7 +140,7 @@ impl Retryer {
         self.failed.notify_one()
     }
 
-    fn send_with_retry(self, adaptation: Arc<UwbAdaptation>, bytes: Vec<u8>) {
+    fn send_with_retry(self, adaptation: Arc<SyncUwbAdaptation>, bytes: Vec<u8>) {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
@@ -169,7 +175,7 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
 }
 
 struct Driver<T: Manager> {
-    adaptation: Arc<UwbAdaptation>,
+    adaptation: Arc<SyncUwbAdaptation>,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -178,7 +184,7 @@ struct Driver<T: Manager> {
 
 // Creates a future that handles messages from JNI and the HAL.
 async fn drive<T: Manager>(
-    adaptation: UwbAdaptation,
+    adaptation: SyncUwbAdaptation,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -191,7 +197,7 @@ const RETRY_DELAY_MS: u64 = 100;
 
 impl<T: Manager> Driver<T> {
     fn new(
-        adaptation: Arc<UwbAdaptation>,
+        adaptation: Arc<SyncUwbAdaptation>,
         event_manager: T,
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -269,6 +275,9 @@ impl<T: Manager> Driver<T> {
             } => SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
                 .build()
                 .to_vec(),
+            JNICommand::UciRawVendorCmd { gid, oid, payload } => {
+                uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?.to_vec()
+            }
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -344,7 +353,11 @@ impl<T: Manager> Driver<T> {
                 self.event_manager.extended_range_data_notification_received(response);
             }
             uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
-                self.event_manager.session_update_controller_multicast_list_notification_received(response);
+                self.event_manager
+                    .session_update_controller_multicast_list_notification_received(response);
+            }
+            uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
+                self.event_manager.vendor_uci_notification_received(gid, oid, payload);
             }
             _ => log::error!("Unexpected hal notification received {:?}", response),
         }
@@ -424,7 +437,7 @@ impl Dispatcher {
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let adaptation = UwbAdaptation::new(None, rsp_sender);
+        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(None, rsp_sender));
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
         let runtime = Builder::new_multi_thread()
