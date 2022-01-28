@@ -104,7 +104,7 @@ enum DeviceConfigId : 8 {
     LOW_POWER_MODE = 0x01,
 }
 
-enum AppConfigId : 8 {
+enum AppConfigTlvType : 8 {
     DEVICE_TYPE = 0x00,
     RANGING_ROUND_USAGE = 0x01,
     STS_CONFIG = 0x02,
@@ -153,6 +153,8 @@ enum AppConfigId : 8 {
     STS_LENGTH = 0x35,
 
     // CCC specific
+    CCC_HOP_MODE_KEY = 0xA0,
+    CCC_UWB_TIME0 = 0xA1,
     CCC_RANGING_PROTOCOL_VER = 0xA3,
     CCC_UWB_CONFIG_ID = 0xA4,
     CCC_PULSESHAPE_COMBO = 0xA5,
@@ -163,6 +165,39 @@ enum AppConfigId : 8 {
     NB_OF_AZIMUTH_MEASUREMENTS = 0xE4,
     NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
 }
+
+enum CapTlvType : 8 {
+    SUPPORTED_CHANNELS = 0x0,
+    SUPPORTED_AOA_MODES = 0x1,
+    SUPPORTED_DEVICE_ROLES = 0x2,
+    SUPPORTS_BLOCK_STRIDING = 0x3,
+    SUPPORTS_NON_DEFERRED_MODE = 0x4,
+    SUPPORTS_ADAPTIVE_PAYLOAD_POWER = 0x5,
+    INITIATION_TIME_MS = 0x6,
+    SUPPORTED_MAC_FCS_CRC_TYPES = 0x7,
+    SUPPORTED_MULTI_NODE_MODES = 0x8,
+    SUPPORTED_PREAMBLE_MODES = 0x9,
+    SUPPORTED_PRF_MODES = 0xA,
+    SUPPORTED_RANGING_ROUND_USAGE_MODES = 0xB,
+    SUPPORTED_RFRAME_MODES = 0xC,
+    SUPPORTED_SFD_IDS = 0xD,
+    SUPPORTED_STS_MODES = 0xE,
+    SUPPORTED_STS_SEGEMENTS = 0xE,
+    SUPPORTED_BPRF_PHR_DATA_RATES = 0xF,
+    SUPPORTED_PSDU_DATA_RATES = 0x10,
+
+    // CCC specific
+    CCC_SUPPORTED_VERSIONS = 0xA0,
+    CCC_SUPPORTED_UWB_CONFIGS = 0xA1,
+    CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA2,
+    CCC_SUPPORTED_RAN_MULTIPLIER = 0xA3,
+    CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA4,
+    CCC_SUPPORTED_SYNC_CODES = 0xA5,
+    CCC_SUPPORTED_CHANNELS = 0xA6,
+    CCC_SUPPORTED_HOPPING_SEQUENCES = 0xA7,
+    CCC_SUPPORTED_HOPPING_CONFIG_MODES = 0xA8,
+}
+
 
 // AOA result request type.
 // Values set for AOA_RESULT_REQ config ID.
@@ -367,8 +402,8 @@ test GetCapsInfoCmd {
     "\x20\x03\x00\x00",
 }
 
-struct TLV {
-    t: 8,
+struct CapTlv {
+    t: CapTlvType,
     _count_(v): 8,
     v: 8[],
 }
@@ -376,7 +411,7 @@ struct TLV {
 packet GetCapsInfoRsp : CoreResponse (core_opcode = CORE_GET_CAPS_INFO) {
     status: StatusCode,
     _count_(tlvs): 8,
-    tlvs: TLV[],
+    tlvs: CapTlv[],
 }
 
 test GetCapsInfoRsp {
@@ -508,7 +543,7 @@ test SessionStatusNtf {
 }
 
 struct AppConfigTlv {
-    cfg_id: AppConfigId,
+    cfg_id: AppConfigTlvType,
     _count_(v): 8,
     v: 8[],
 }
@@ -524,7 +559,7 @@ test SessionSetAppConfigCmd {
 }
 
 struct AppConfigStatus {
-    cfg_id: AppConfigId,
+    cfg_id: AppConfigTlvType,
     status: StatusCode,
 }
 
@@ -541,7 +576,7 @@ test SessionSetAppConfigRsp {
 packet SessionGetAppConfigCmd : SessionCommand (session_opcode = SESSION_GET_APP_CONFIG) {
     session_id: 32,
     _count_(app_cfg): 8,
-    app_cfg: 8[], // AppConfigId (Infra does not allow array of enums)
+    app_cfg: 8[], // AppConfigTlvType (Infra does not allow array of enums)
 }
 
 test SessionGetAppConfigCmd {
