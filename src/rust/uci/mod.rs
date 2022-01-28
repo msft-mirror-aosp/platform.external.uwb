@@ -20,7 +20,7 @@ pub mod uci_hrcv;
 
 use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
-use crate::event_manager::{EventManager, Manager};
+use crate::event_manager::{EventManager, EventManagerImpl};
 use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
@@ -39,9 +39,6 @@ use uwb_uci_packets::{
     SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
     StatusCode,
 };
-
-#[cfg(test)]
-use crate::event_manager::EventManagerTest;
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
@@ -174,7 +171,7 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
     }
 }
 
-struct Driver<T: Manager> {
+struct Driver<T: EventManager> {
     adaptation: Arc<SyncUwbAdaptation>,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
@@ -183,7 +180,7 @@ struct Driver<T: Manager> {
 }
 
 // Creates a future that handles messages from JNI and the HAL.
-async fn drive<T: Manager>(
+async fn drive<T: EventManager>(
     adaptation: SyncUwbAdaptation,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
@@ -195,7 +192,7 @@ async fn drive<T: Manager>(
 const MAX_RETRIES: usize = 10;
 const RETRY_DELAY_MS: u64 = 100;
 
-impl<T: Manager> Driver<T> {
+impl<T: EventManager> Driver<T> {
     fn new(
         adaptation: Arc<SyncUwbAdaptation>,
         event_manager: T,
@@ -432,7 +429,9 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new<T: 'static + Manager + std::marker::Send>(event_manager: T) -> Result<Dispatcher> {
+    pub fn new<T: 'static + EventManager + std::marker::Send>(
+        event_manager: T,
+    ) -> Result<Dispatcher> {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
@@ -475,6 +474,7 @@ impl Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event_manager::MockEventManager;
 
     #[test]
     fn test_driver() -> Result<()> {
@@ -483,8 +483,8 @@ mod tests {
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
         );
 
-        let event_manager = EventManagerTest::new();
-        let mut dispatcher = Dispatcher::new(event_manager)?;
+        let mock_event_manager = MockEventManager::new();
+        let mut dispatcher = Dispatcher::new(mock_event_manager)?;
         dispatcher.send_jni_command(JNICommand::Enable)?;
         dispatcher.exit()?;
         Ok(())
