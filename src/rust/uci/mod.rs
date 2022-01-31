@@ -199,7 +199,7 @@ async fn drive<T: EventManager>(
 }
 
 const MAX_RETRIES: usize = 10;
-const RETRY_DELAY_MS: u64 = 100;
+const RETRY_DELAY_MS: u64 = 300;
 
 impl<T: EventManager> Driver<T> {
     fn new(
