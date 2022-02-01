@@ -360,7 +360,6 @@ impl<T: EventManager> Driver<T> {
             uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
                 self.event_manager.vendor_uci_notification_received(gid, oid, payload);
             }
-            _ => log::error!("Unexpected hal notification received {:?}", response),
         }
         Ok(())
     }
