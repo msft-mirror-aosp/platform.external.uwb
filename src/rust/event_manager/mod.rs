@@ -597,11 +597,11 @@ impl EventManagerImpl {
         }
 
         let mac_address_jintarray = env.new_int_array(count)?;
-        env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref());
+        env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref())?;
         let subsession_id_jlongarray = env.new_long_array(count)?;
-        env.set_long_array_region(subsession_id_jlongarray, 0, subsession_id_list.as_ref());
+        env.set_long_array_region(subsession_id_jlongarray, 0, subsession_id_list.as_ref())?;
         let status_jintarray = env.new_int_array(count)?;
-        env.set_int_array_region(status_jintarray, 0, status_list.as_ref());
+        env.set_int_array_region(status_jintarray, 0, status_list.as_ref())?;
 
         let uwb_multicast_update_object = env.new_object(
             uwb_multicast_update_class,
