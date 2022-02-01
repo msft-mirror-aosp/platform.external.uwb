@@ -33,10 +33,10 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
-    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder,
-    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder,
-    SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
-    StatusCode,
+    GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet,
+    RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
+    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
+    SessionState, SessionStatusNtfPacket, StatusCode,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -47,6 +47,7 @@ type SyncUwbAdaptation = Box<dyn UwbAdaptation + std::marker::Send + std::marker
 #[derive(Debug)]
 pub enum JNICommand {
     // Blocking UCI commands
+    UciGetCapsInfo,
     UciGetDeviceInfo,
     UciSessionInit(u32, u8),
     UciSessionDeinit(u32),
@@ -233,6 +234,7 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received blocking cmd {:?}", cmd);
         let bytes = match cmd {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().to_vec(),
+            JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().to_vec(),
             JNICommand::UciSessionInit(session_id, session_type) => {
                 uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec()
             }
