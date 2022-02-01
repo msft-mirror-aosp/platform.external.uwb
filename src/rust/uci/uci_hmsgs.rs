@@ -56,11 +56,10 @@ pub fn build_multicast_list_update_cmd(
 pub fn build_set_app_config_cmd(
     session_id: u32,
     no_of_params: u32,
-    app_config_param_len: u32,
     mut app_configs: &[u8],
 ) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
     let mut tlvs = Vec::new();
-    for i in 0..no_of_params {
+    for _ in 0..no_of_params {
         let tlv = AppConfigTlv::parse(app_configs)?;
         app_configs = &app_configs[tlv.v.len() + 2..];
         tlvs.push(tlv);

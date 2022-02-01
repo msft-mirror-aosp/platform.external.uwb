@@ -580,7 +580,6 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
         let uwb_multicast_update_class =
             self.find_class(&env, &MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
 
@@ -639,8 +638,6 @@ impl EventManagerImpl {
         oid: u32,
         payload: Vec<u8>,
     ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-
         let gid: i32 = gid.try_into().expect("Failed to convert gid");
         let oid: i32 = oid.try_into().expect("Failed to convert gid");
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;

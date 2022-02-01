@@ -105,7 +105,7 @@ impl UwbAdaptationImpl {
 
 #[async_trait]
 impl UwbAdaptation for UwbAdaptationImpl {
-    async fn finalize(&mut self, exit_status: bool) {}
+    async fn finalize(&mut self, _exit_status: bool) {}
 
     async fn hal_open(&self) {
         let m_cback = BnUwbClientCallback::new_async_binder(
@@ -150,7 +150,7 @@ impl MockUwbAdaptation {
 #[cfg(test)]
 #[async_trait]
 impl UwbAdaptation for MockUwbAdaptation {
-    async fn finalize(&mut self, exit_status: bool) {}
+    async fn finalize(&mut self, _exit_status: bool) {}
     async fn hal_open(&self) {}
     async fn hal_close(&self) {}
     async fn core_initialization(&self) -> Result<(), UwbErr> {

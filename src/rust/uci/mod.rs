@@ -68,6 +68,7 @@ pub enum JNICommand {
     UciSetAppConfig {
         session_id: u32,
         no_of_params: u32,
+        // TODO this field should be removed, in tandem with a change to the Uwb APEX
         app_config_param_len: u32,
         app_configs: Vec<u8>,
     },
@@ -267,27 +268,16 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciSetCountryCode { ref code } => {
                 uci_hmsgs::build_set_country_code_cmd(code).build().to_vec()
             }
-            JNICommand::UciSetAppConfig {
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                ref app_configs,
-            } => uci_hmsgs::build_set_app_config_cmd(
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                app_configs,
-            )?
-            .build()
-            .to_vec(),
-            JNICommand::UciGetAppConfig {
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                ref app_configs,
-            } => SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
-                .build()
-                .to_vec(),
+            JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
+                uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
+                    .build()
+                    .to_vec()
+            }
+            JNICommand::UciGetAppConfig { session_id, ref app_configs, .. } => {
+                SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
+                    .build()
+                    .to_vec()
+            }
             JNICommand::UciRawVendorCmd { gid, oid, payload } => {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?.to_vec()
             }
@@ -315,7 +305,7 @@ impl<T: EventManager> Driver<T> {
                     .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
                 self.set_state(UwbState::W4HalOpen);
             }
-            JNICommand::Disable(graceful) => {
+            JNICommand::Disable(_graceful) => {
                 self.adaptation.hal_close().await;
                 self.set_state(UwbState::W4HalClose);
             }
