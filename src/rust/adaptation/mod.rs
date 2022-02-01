@@ -4,17 +4,21 @@ use crate::error::UwbErr;
 use crate::uci::uci_hrcv;
 use crate::uci::HalCallback;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
-    IUwb::{BnUwb, IUwb},
-    IUwbChip::{BnUwbChip, IUwbChip},
-    IUwbClientCallback::{BnUwbClientCallback, IUwbClientCallback},
+    IUwb::{BnUwb, IUwbAsync},
+    IUwbChip::{BnUwbChip, IUwbChipAsync},
+    IUwbClientCallback::{BnUwbClientCallback, IUwbClientCallbackAsyncServer},
     UwbEvent::UwbEvent,
     UwbStatus::UwbStatus,
 };
 use android_hardware_uwb::binder::{
     self, BinderFeatures, Interface, Result as BinderResult, Strong,
 };
+use async_trait::async_trait;
+use binder_tokio::{Tokio, TokioRuntime};
 use log::{error, info, warn};
+use std::error::Error;
 use std::result::Result;
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use uwb_uci_packets::{UciPacketChild, UciPacketPacket};
 
@@ -30,15 +34,16 @@ impl UwbClientCallback {
 
 impl Interface for UwbClientCallback {}
 
-impl IUwbClientCallback for UwbClientCallback {
-    fn onHalEvent(&self, event: UwbEvent, event_status: UwbStatus) -> BinderResult<()> {
+#[async_trait]
+impl IUwbClientCallbackAsyncServer for UwbClientCallback {
+    async fn onHalEvent(&self, event: UwbEvent, event_status: UwbStatus) -> BinderResult<()> {
         self.rsp_sender
             .send(HalCallback::Event { event, event_status })
             .unwrap_or_else(|e| error!("Error sending evt callback: {:?}", e));
         Ok(())
     }
 
-    fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
+    async fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
         match UciPacketPacket::parse(data) {
             Ok(evt) => {
                 let packetMsg = uci_hrcv::uci_message(evt);
@@ -62,125 +67,74 @@ impl IUwbClientCallback for UwbClientCallback {
     }
 }
 
-fn get_hal_service() -> Option<Strong<dyn IUwbChip>> {
+async fn get_hal_service() -> Result<Strong<dyn IUwbChipAsync<Tokio>>, UwbErr> {
     let service_name: &str = "android.hardware.uwb.IUwb/default";
-    let i_uwb: Strong<dyn IUwb> = match binder::get_interface(service_name) {
-        Ok(chip) => chip,
-        Err(e) => {
-            warn!("Failed to connect to the AIDL HAL service.");
-            return None;
-        }
-    };
-    let chip_names = match i_uwb.getChips() {
-        Ok(names) => names,
-        Err(e) => {
-            warn!("Failed to retrieve the HAL chip names.");
-            return None;
-        }
-    };
-    let i_uwb_chip = match i_uwb.getChip(&chip_names[0]) {
-        Ok(chip) => chip,
-        Err(e) => {
-            warn!("Failed to retrieve the HAL chip.");
-            return None;
-        }
-    };
-    Some(i_uwb_chip)
+    let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::get_interface(service_name).await?;
+    let chip_names = i_uwb.getChips().await?;
+    let i_uwb_chip = i_uwb.getChip(&chip_names[0]).await?.into_async();
+    Ok(i_uwb_chip)
 }
 
+#[async_trait]
 pub trait UwbAdaptation {
-    fn initialize(&mut self);
-    fn finalize(&mut self, exit_status: bool);
-    fn hal_open(&self);
-    fn hal_close(&self);
-    fn core_initialization(&self) -> Result<(), UwbErr>;
-    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr>;
-    fn send_uci_message(&self, data: &[u8]);
+    async fn finalize(&mut self, exit_status: bool);
+    async fn hal_open(&self);
+    async fn hal_close(&self);
+    async fn core_initialization(&self) -> Result<(), UwbErr>;
+    async fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr>;
+    async fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr>;
 }
 
 #[derive(Clone)]
 pub struct UwbAdaptationImpl {
-    hal: Option<Strong<dyn IUwbChip>>,
+    hal: Strong<dyn IUwbChipAsync<Tokio>>,
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
 }
 
 impl UwbAdaptationImpl {
-    pub fn new(
-        hal: Option<Strong<dyn IUwbChip>>,
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-    ) -> Self {
-        Self { hal, rsp_sender }
+    pub async fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self, UwbErr> {
+        let hal = get_hal_service().await?;
+        Ok(UwbAdaptationImpl { hal, rsp_sender })
     }
 
-    fn initialize_hal_device_context(&mut self) {
-        // TODO: If we can initialize this in new(), we can properly error if it fails and remove
-        // the checks in the functions below.
-        self.hal = get_hal_service();
-        if (self.hal.is_none()) {
-            info!("Failed to retrieve the UWB HAL!");
-        }
+    async fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
+        Ok(self.hal.getSupportedAndroidUciVersion().await?)
     }
 
-    fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.getSupportedAndroidUciVersion()?);
-        }
-        Err(UwbErr::failed())
-    }
-
-    fn get_supported_android_capabilities(&self) -> Result<i64, UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.getSupportedAndroidCapabilities()?);
-        }
-        Err(UwbErr::failed())
+    async fn get_supported_android_capabilities(&self) -> Result<i64, UwbErr> {
+        Ok(self.hal.getSupportedAndroidCapabilities().await?)
     }
 }
 
+#[async_trait]
 impl UwbAdaptation for UwbAdaptationImpl {
-    fn initialize(&mut self) {
-        self.initialize_hal_device_context();
-    }
+    async fn finalize(&mut self, exit_status: bool) {}
 
-    fn finalize(&mut self, exit_status: bool) {}
-
-    fn hal_open(&self) {
-        let m_cback = BnUwbClientCallback::new_binder(
+    async fn hal_open(&self) {
+        let m_cback = BnUwbClientCallback::new_async_binder(
             UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
+            TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
-        if let Some(hal) = &self.hal {
-            hal.open(&m_cback);
-        } else {
-            warn!("Failed to open HAL");
-        }
+        self.hal.open(&m_cback).await;
     }
 
-    fn hal_close(&self) {
-        if let Some(hal) = &self.hal {
-            hal.close();
-        }
+    async fn hal_close(&self) {
+        self.hal.close().await;
     }
 
-    fn core_initialization(&self) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.coreInit()?);
-        }
-        Err(UwbErr::failed())
+    async fn core_initialization(&self) -> Result<(), UwbErr> {
+        Ok(self.hal.coreInit().await?)
     }
 
-    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
-        if let Some(hal) = &self.hal {
-            return Ok(hal.sessionInit(session_id)?);
-        }
-        Err(UwbErr::failed())
+    async fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
+        Ok(self.hal.sessionInit(session_id).await?)
     }
 
-    fn send_uci_message(&self, data: &[u8]) {
-        if let Some(hal) = &self.hal {
-            hal.sendUciMessage(data);
-        } else {
-            warn!("Failed to send uci message");
-        }
+    async fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr> {
+        self.hal.sendUciMessage(data).await?;
+        // TODO should we be validating the returned number?
+        Ok(())
     }
 }
 
@@ -197,35 +151,37 @@ impl MockUwbAdaptation {
 }
 
 #[cfg(test)]
+#[async_trait]
 impl UwbAdaptation for MockUwbAdaptation {
-    fn initialize(&mut self) {}
-    fn finalize(&mut self, exit_status: bool) {}
-    fn hal_open(&self) {}
-    fn hal_close(&self) {}
-    fn core_initialization(&self) -> Result<(), UwbErr> {
+    async fn finalize(&mut self, exit_status: bool) {}
+    async fn hal_open(&self) {}
+    async fn hal_close(&self) {}
+    async fn core_initialization(&self) -> Result<(), UwbErr> {
         let uwb_event_test = UwbEvent::POST_INIT_CPLT;
         let uwb_status_test = UwbStatus::OK;
         let uwb_client_callback_test = UwbClientCallback::new(self.rsp_sender.clone());
-        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test);
+        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test).await;
         Ok(())
     }
-    fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
+    async fn session_initialization(&self, session_id: i32) -> Result<(), UwbErr> {
         Ok(())
     }
-    fn send_uci_message(&self, data: &[u8]) {}
+    async fn send_uci_message(&self, data: &[u8]) -> Result<(), UwbErr> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_onHalEvent() {
+    #[tokio::test]
+    async fn test_onHalEvent() {
         let uwb_event_test = UwbEvent(0);
         let uwb_status_test = UwbStatus(1);
         let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
         let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
-        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test);
+        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test).await;
         assert_eq!(result, Ok(()));
     }
 
@@ -237,7 +193,7 @@ mod tests {
         ];
         let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
-        let result = uwb_client_callback_test.onUciMessage(&data);
+        let result = uwb_client_callback_test.onUciMessage(&data).await;
         assert_eq!(result, Ok(()));
         let response = rsp_receiver.recv().await;
         assert!(matches!(
@@ -246,15 +202,15 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn test_onUciMessage_bad() {
+    #[tokio::test]
+    async fn test_onUciMessage_bad() {
         let data = [
             0x42, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
             0x0a,
         ];
         let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         let uwb_client_callback_test = UwbClientCallback::new(rsp_sender);
-        let result = uwb_client_callback_test.onUciMessage(&data);
+        let result = uwb_client_callback_test.onUciMessage(&data).await;
         assert_eq!(result, Ok(()));
         let response = rsp_receiver.try_recv();
         assert!(response.is_err());
