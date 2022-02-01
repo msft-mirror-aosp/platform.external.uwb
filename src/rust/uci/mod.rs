@@ -19,7 +19,7 @@ pub mod uci_hrcv;
 
 use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
-use crate::event_manager::{EventManager, EventManagerImpl};
+use crate::event_manager::EventManager;
 use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,

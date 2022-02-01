@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use crate::uci::uci_hrcv::UciNotification;
-use jni::errors::{Error, Result};
-use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue, JValue::Void};
+use jni::errors::Result;
+use jni::objects::{GlobalRef, JClass, JObject, JValue, JValue::Void};
 use jni::signature::JavaType;
 use jni::sys::jobjectArray;
 use jni::{AttachGuard, JNIEnv, JavaVM};

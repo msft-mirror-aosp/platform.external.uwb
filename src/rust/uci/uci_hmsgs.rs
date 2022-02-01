@@ -17,16 +17,12 @@
 use crate::uci::UwbErr;
 use bytes::Bytes;
 use log::error;
-use log::info;
 use num_traits::FromPrimitive;
 use uwb_uci_packets::{
-    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, CoreOpCode, DeviceConfigStatus,
-    DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoCmdPacket, GroupId, ResetConfig, SessionInitCmdBuilder,
+    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, GroupId, SessionInitCmdBuilder,
     SessionSetAppConfigCmdBuilder, SessionType, SessionUpdateControllerMulticastListCmdBuilder,
-    SetConfigCmdBuilder, SetConfigRspBuilder, StatusCode, UciCommandPacket,
-    UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder,
-    UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
+    UciCommandPacket, UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder,
+    UciVendor_B_CommandBuilder, UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
 };
 
 pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {

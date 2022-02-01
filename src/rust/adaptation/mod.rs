@@ -4,23 +4,20 @@ use crate::error::UwbErr;
 use crate::uci::uci_hrcv;
 use crate::uci::HalCallback;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
-    IUwb::{BnUwb, IUwbAsync},
-    IUwbChip::{BnUwbChip, IUwbChipAsync},
+    IUwb::IUwbAsync,
+    IUwbChip::IUwbChipAsync,
     IUwbClientCallback::{BnUwbClientCallback, IUwbClientCallbackAsyncServer},
     UwbEvent::UwbEvent,
     UwbStatus::UwbStatus,
 };
-use android_hardware_uwb::binder::{
-    self, BinderFeatures, Interface, Result as BinderResult, Strong,
-};
+use android_hardware_uwb::binder::{BinderFeatures, Interface, Result as BinderResult, Strong};
 use async_trait::async_trait;
 use binder_tokio::{Tokio, TokioRuntime};
-use log::{error, info, warn};
-use std::error::Error;
+use log::error;
 use std::result::Result;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{UciPacketChild, UciPacketPacket};
+use uwb_uci_packets::UciPacketPacket;
 
 pub struct UwbClientCallback {
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
