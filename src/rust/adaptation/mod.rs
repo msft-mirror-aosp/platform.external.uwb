@@ -93,14 +93,6 @@ impl UwbAdaptationImpl {
         let hal = get_hal_service().await?;
         Ok(UwbAdaptationImpl { hal, rsp_sender })
     }
-
-    async fn get_supported_android_uci_version(&self) -> Result<i32, UwbErr> {
-        Ok(self.hal.getSupportedAndroidUciVersion().await?)
-    }
-
-    async fn get_supported_android_capabilities(&self) -> Result<i64, UwbErr> {
-        Ok(self.hal.getSupportedAndroidCapabilities().await?)
-    }
 }
 
 #[async_trait]
@@ -109,7 +101,7 @@ impl UwbAdaptation for UwbAdaptationImpl {
 
     async fn hal_open(&self) {
         let m_cback = BnUwbClientCallback::new_async_binder(
-            UwbClientCallback { rsp_sender: self.rsp_sender.clone() },
+            UwbClientCallback::new(self.rsp_sender.clone()),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );

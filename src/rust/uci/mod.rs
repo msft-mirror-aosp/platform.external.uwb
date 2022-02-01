@@ -495,7 +495,7 @@ impl Dispatcher {
         Ok(ret)
     }
 
-    fn exit(&mut self) -> Result<()> {
+    pub fn exit(&mut self) -> Result<()> {
         self.send_jni_command(JNICommand::Exit)?;
         let _ = self.runtime.block_on(&mut self.join_handle);
         Ok(())
