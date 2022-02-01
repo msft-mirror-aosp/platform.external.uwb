@@ -150,9 +150,7 @@ impl Retryer {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                // TODO this must be non-blocking to avoid blocking the runtime if the HAL locks up.
-                // Will address in follow-up CL moving adaptation to be asynchronous.
-                adaptation.send_uci_message(&bytes);
+                adaptation.send_uci_message(&bytes).await;
                 select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)) => warn!("UWB chip did not respond within {}ms deadline. Retrying (#{})...", RETRY_DELAY_MS, retry + 1),
                     _ = self.command_serviced() => {
@@ -318,8 +316,8 @@ impl<T: EventManager> Driver<T> {
                 self.set_state(UwbState::W4HalOpen);
             }
             JNICommand::Disable(graceful) => {
-                self.set_state(UwbState::W4HalClose);
                 self.adaptation.hal_close().await;
+                self.set_state(UwbState::W4HalClose);
             }
             JNICommand::Exit => {
                 return Err(UwbErr::Exit);
