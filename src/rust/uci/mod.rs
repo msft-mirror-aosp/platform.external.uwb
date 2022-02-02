@@ -523,7 +523,7 @@ mod tests {
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mut mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
 
         let mut dispatcher =

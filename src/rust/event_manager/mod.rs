@@ -682,34 +682,39 @@ impl MockEventManager {
 
 #[cfg(test)]
 impl EventManager for MockEventManager {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+    fn device_status_notification_received(&self, _data: DeviceStatusNtfPacket) -> Result<()> {
         Ok(())
     }
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+    fn core_generic_error_notification_received(&self, _data: GenericErrorPacket) -> Result<()> {
         Ok(())
     }
-    fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
+    fn session_status_notification_received(&self, _data: SessionStatusNtfPacket) -> Result<()> {
         Ok(())
     }
     fn short_range_data_notification_received(
         &self,
-        data: ShortMacTwoWayRangeDataNtfPacket,
+        _data: ShortMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
     fn extended_range_data_notification_received(
         &self,
-        data: ExtendedMacTwoWayRangeDataNtfPacket,
+        _data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
     fn session_update_controller_multicast_list_notification_received(
         &self,
-        data: SessionUpdateControllerMulticastListNtfPacket,
+        _data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
-    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+    fn vendor_uci_notification_received(
+        &self,
+        _gid: u32,
+        _oid: u32,
+        _payload: Vec<u8>,
+    ) -> Result<()> {
         Ok(())
     }
 }

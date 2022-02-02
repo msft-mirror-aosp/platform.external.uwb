@@ -157,16 +157,17 @@ impl UwbAdaptation for MockUwbAdaptation {
         uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test).await?;
         Ok(())
     }
-    async fn session_initialization(&self, session_id: i32) -> Result<()> {
+    async fn session_initialization(&self, _session_id: i32) -> Result<()> {
         Ok(())
     }
-    async fn send_uci_message(&self, data: &[u8]) -> Result<()> {
+    async fn send_uci_message(&self, _data: &[u8]) -> Result<()> {
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
     use super::*;
 
     #[tokio::test]
