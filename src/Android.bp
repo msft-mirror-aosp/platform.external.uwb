@@ -62,10 +62,12 @@ cc_library_static {
     ],
 }
 
-rust_library {
-    name: "libuwb_uci_rust",
+rust_defaults {
+    name: "libuwb_uci_defaults",
+    srcs: [
+        "rust/lib.rs",
+    ],
     crate_name: "uwb_uci_rust",
-    srcs: ["rust/lib.rs"],
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
@@ -80,6 +82,10 @@ rust_library {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
+	"libbinder_tokio_rs",
+    ],
+    proc_macros: [
+        "libasync_trait",
     ],
     shared_libs: [
         "libbase",
@@ -92,26 +98,16 @@ rust_library {
     min_sdk_version: "Tiramisu",
 }
 
+rust_library {
+    name: "libuwb_uci_rust",
+    defaults: ["libuwb_uci_defaults"],
+}
+
 rust_test {
     name: "libuwb_uci_rust_tests",
-    srcs: ["rust/lib.rs"],
+    defaults: ["libuwb_uci_defaults"],
     test_suites: ["general-tests"],
     auto_gen_config: true,
-    rustlibs:[
-        "android.hardware.uwb-V1-rust",
-        "libanyhow",
-        "libbinder_rs",
-        "libbytes",
-        "libjni",
-        "liblazy_static",
-        "liblog_rust",
-        "liblogger",
-        "libnum_traits",
-        "libthiserror",
-        "libtokio",
-        "libuwb_uci_packets",
-        "libuwb_uci_rust",
-    ],
 }
 
 rust_test {

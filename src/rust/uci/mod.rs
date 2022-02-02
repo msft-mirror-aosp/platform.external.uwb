@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-pub mod state_machine;
 pub mod uci_hmsgs;
 pub mod uci_hrcv;
 
@@ -34,10 +33,10 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
-    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder,
-    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder,
-    SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
-    StatusCode,
+    GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet,
+    RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
+    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
+    SessionState, SessionStatusNtfPacket, StatusCode,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -48,6 +47,7 @@ type SyncUwbAdaptation = Box<dyn UwbAdaptation + std::marker::Send + std::marker
 #[derive(Debug)]
 pub enum JNICommand {
     // Blocking UCI commands
+    UciGetCapsInfo,
     UciGetDeviceInfo,
     UciSessionInit(u32, u8),
     UciSessionDeinit(u32),
@@ -95,6 +95,15 @@ pub enum HalCallback {
     Event { event: UwbEvent, event_status: UwbStatus },
     UciRsp(uci_hrcv::UciResponse),
     UciNtf(uci_hrcv::UciNotification),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum UwbState {
+    None,
+    W4HalOpen,
+    Ready,
+    W4UciResp,
+    W4HalClose,
 }
 
 #[derive(Clone)]
@@ -177,10 +186,11 @@ struct Driver<T: EventManager> {
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     response_channel: Option<(UciResponseHandle, Retryer)>,
+    state: UwbState,
 }
 
 // Creates a future that handles messages from JNI and the HAL.
-async fn drive<T: EventManager>(
+async fn drive<T: EventManager + Send + Sync>(
     adaptation: SyncUwbAdaptation,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
@@ -190,7 +200,7 @@ async fn drive<T: EventManager>(
 }
 
 const MAX_RETRIES: usize = 10;
-const RETRY_DELAY_MS: u64 = 100;
+const RETRY_DELAY_MS: u64 = 300;
 
 impl<T: EventManager> Driver<T> {
     fn new(
@@ -199,7 +209,14 @@ impl<T: EventManager> Driver<T> {
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
     ) -> Self {
-        Self { adaptation, event_manager, cmd_receiver, rsp_receiver, response_channel: None }
+        Self {
+            adaptation,
+            event_manager,
+            cmd_receiver,
+            rsp_receiver,
+            response_channel: None,
+            state: UwbState::None,
+        }
     }
 
     // Continually handles messages.
@@ -217,6 +234,7 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received blocking cmd {:?}", cmd);
         let bytes = match cmd {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().to_vec(),
+            JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().to_vec(),
             JNICommand::UciSessionInit(session_id, session_type) => {
                 uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec()
             }
@@ -284,40 +302,28 @@ impl<T: EventManager> Driver<T> {
         let retryer = Retryer::new();
         self.response_channel = Some((tx, retryer.clone()));
         retryer.send_with_retry(self.adaptation.clone(), bytes);
+        self.set_state(UwbState::W4UciResp);
         Ok(())
     }
 
-    fn handle_non_blocking_jni_cmd(&mut self, cmd: JNICommand) -> Result<()> {
+    async fn handle_non_blocking_jni_cmd(&mut self, cmd: JNICommand) -> Result<()> {
         log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
             JNICommand::Enable => {
-                // TODO: This mimics existing behavior, but I think we've got a few
-                // issues here:
-                // * We've got two different initialization sites (Enable *and*
-                // adaptation construction)
-                // * We have multiple functions required to finish building a
-                //   correct Enable (so there are bad states to leave it in)
-                // * We have Disable, but the adaptation isn't optional, so we
-                // will end up with an invalid but still present adaptation.
-                //
-                // A future patch should probably make a single constructor for
-                // everything, and it should probably be called here rather than
-                // mutating an existing adaptation. The adaptation should be made
-                // optional.
-                if let Some(adaptation) = Arc::get_mut(&mut self.adaptation) {
-                    adaptation.initialize();
-                    adaptation.hal_open();
-                    adaptation
-                        .core_initialization()
-                        .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
-                } else {
-                    error!("Attempted to enable Uci while it was still in use.");
-                }
+                self.adaptation.hal_open().await;
+                self.adaptation
+                    .core_initialization()
+                    .await
+                    .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
+                self.set_state(UwbState::W4HalOpen);
             }
             JNICommand::Disable(graceful) => {
-                self.adaptation.hal_close();
+                self.set_state(UwbState::W4HalClose);
+                self.adaptation.hal_close().await;
             }
-            JNICommand::Exit => return Err(UwbErr::Exit),
+            JNICommand::Exit => {
+                return Err(UwbErr::Exit);
+            }
             _ => {
                 error!("Unexpected non blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -326,7 +332,7 @@ impl<T: EventManager> Driver<T> {
         Ok(())
     }
 
-    fn handle_hal_notification(&self, response: uci_hrcv::UciNotification) -> Result<()> {
+    async fn handle_hal_notification(&self, response: uci_hrcv::UciNotification) -> Result<()> {
         log::debug!("Received hal notification {:?}", response);
         match response {
             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
@@ -340,7 +346,7 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager.core_generic_error_notification_received(response);
             }
             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
-                self.invoke_hal_session_init_if_necessary(&response);
+                self.invoke_hal_session_init_if_necessary(&response).await;
                 self.event_manager.session_status_notification_received(response);
             }
             uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
@@ -363,34 +369,42 @@ impl<T: EventManager> Driver<T> {
 
     // Handles a single message from JNI or the HAL.
     async fn drive_once(&mut self) -> Result<()> {
-        // TODO: Handle messages for real instead of just logging them.
         select! {
             Some(()) = option_future(self.response_channel.as_ref()
                 .map(|(_, retryer)| retryer.command_failed())) => {
                 // TODO: Do we want to flush the incoming queue of commands when this happens?
+                self.set_state(UwbState::W4HalOpen);
                 self.response_channel = None
             }
             // Note: If a blocking command is awaiting a response, any non-blocking commands are not
             // dequeued until the blocking cmd's response is received.
-            Some((cmd, tx)) = self.cmd_receiver.recv(), if self.response_channel.is_none() => {
+            Some((cmd, tx)) = self.cmd_receiver.recv(), if self.can_process_cmd() => {
                 match tx {
                     Some(tx) => { // Blocking JNI commands processing.
-                        // TODO: If we do something similar to communication to the HAL (using a channel
-                        // to hide the asynchrony, we can remove the field and make this straight line code.
                         self.handle_blocking_jni_cmd(tx, cmd)?;
                     },
                     None => { // Non Blocking JNI commands processing.
-                        self.handle_non_blocking_jni_cmd(cmd)?;
+                        self.handle_non_blocking_jni_cmd(cmd).await?;
                     }
                 }
             }
             Some(rsp) = self.rsp_receiver.recv() => {
                 match rsp {
                     HalCallback::Event{event, event_status} => {
-                        log::info!("Received hal event: {:?} with status: {:?}", event, event_status);
+                        log::info!("Received HAL event: {:?} with status: {:?}", event, event_status);
+                        match event {
+                            UwbEvent::POST_INIT_CPLT => {
+                                self.set_state(UwbState::Ready);
+                            }
+                            UwbEvent::CLOSE_CPLT => {
+                                self.set_state(UwbState::None);
+                            }
+                            _ => (),
+                        }
                     },
                     HalCallback::UciRsp(response) => {
                         log::debug!("Received hal response {:?}", response);
+                        self.set_state(UwbState::Ready);
                         if let Some((channel, retryer)) = self.response_channel.take() {
                             retryer.received();
                             channel.send(response);
@@ -399,7 +413,7 @@ impl<T: EventManager> Driver<T> {
                         }
                     },
                     HalCallback::UciNtf(response) => {
-                        self.handle_hal_notification(response)?;
+                        self.handle_hal_notification(response).await?;
                     }
                 }
             }
@@ -408,15 +422,25 @@ impl<T: EventManager> Driver<T> {
     }
 
     // Triggers the session init HAL API, if a new session is initialized.
-    fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) -> () {
+    async fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) -> () {
         let session_id =
             response.get_session_id().to_i32().expect("Failed converting session_id to u32");
         if let SessionState::SessionStateInit = response.get_session_state() {
             info!("Session {:?} initialized, invoking session init HAL API", session_id);
             self.adaptation
                 .session_initialization(session_id)
+                .await
                 .unwrap_or_else(|e| error!("Error invoking session init HAL API : {:?}", e));
         }
+    }
+
+    fn set_state(&mut self, state: UwbState) {
+        info!("UWB state change from {:?} to {:?}", self.state, state);
+        self.state = state;
+    }
+
+    fn can_process_cmd(&mut self) -> bool {
+        self.state == UwbState::None || self.state == UwbState::Ready
     }
 }
 
@@ -429,15 +453,18 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new<T: 'static + EventManager + std::marker::Send>(event_manager: T) -> Result<Self> {
+    pub fn new<T: 'static + EventManager + Send + Sync>(event_manager: T) -> Result<Self> {
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let adaptation: SyncUwbAdaptation = Box::new(UwbAdaptationImpl::new(None, rsp_sender));
+        // TODO when simplifying constructors, avoid spare runtime
+        let adaptation: SyncUwbAdaptation = Box::new(
+            Builder::new_current_thread().build()?.block_on(UwbAdaptationImpl::new(rsp_sender))?,
+        );
 
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
     }
 
     #[cfg(test)]
-    pub fn new_for_testing<T: 'static + EventManager + std::marker::Send>(
+    pub fn new_for_testing<T: 'static + EventManager + Send + Sync>(
         event_manager: T,
         adaptation: SyncUwbAdaptation,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -445,7 +472,7 @@ impl Dispatcher {
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
     }
 
-    fn new_with_args<T: 'static + EventManager + std::marker::Send>(
+    fn new_with_args<T: 'static + EventManager + Send + Sync>(
         event_manager: T,
         adaptation: SyncUwbAdaptation,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -453,6 +480,7 @@ impl Dispatcher {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
             mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
+
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
         let runtime = Builder::new_multi_thread()
@@ -501,12 +529,13 @@ mod tests {
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mut mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
 
         let mut dispatcher =
             Dispatcher::new_for_testing(mock_event_manager, mock_adaptation, rsp_receiver)?;
         dispatcher.send_jni_command(JNICommand::Enable)?;
+        dispatcher.send_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()?;
         Ok(())
     }
