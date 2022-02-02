@@ -51,6 +51,8 @@ pub enum UwbErr {
     InvalidArgs,
     #[error("Exit")]
     Exit,
+    #[error("Could not connect to HAL")]
+    HalUnavailable(#[from] binder::StatusCode),
     #[error("Unknown error")]
     Undefined,
 }
