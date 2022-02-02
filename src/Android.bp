@@ -69,6 +69,7 @@ rust_defaults {
     ],
     crate_name: "uwb_uci_rust",
     lints: "android",
+    clippy_lints: "android",
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
