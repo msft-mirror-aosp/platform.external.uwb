@@ -68,6 +68,7 @@ rust_defaults {
         "rust/lib.rs",
     ],
     crate_name: "uwb_uci_rust",
+    lints: "android",
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
