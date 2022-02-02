@@ -59,7 +59,7 @@ pub enum JNICommand {
         session_id: u32,
         action: u8,
         no_of_controlee: u8,
-        address_list: Vec<u8>,
+        address_list: Vec<i16>,
         sub_session_id_list: Vec<i32>,
     },
     UciSetCountryCode {

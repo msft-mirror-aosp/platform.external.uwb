@@ -40,7 +40,7 @@ pub fn build_multicast_list_update_cmd(
     session_id: u32,
     action: u8,
     no_of_controlee: u8,
-    address_list: &[u8],
+    address_list: &[i16],
     sub_session_id_list: &[i32],
 ) -> SessionUpdateControllerMulticastListCmdBuilder {
     let mut controlees = Vec::new();
