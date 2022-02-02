@@ -332,9 +332,10 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager.device_status_notification_received(response)?;
             }
             uci_hrcv::UciNotification::GenericError(response) => {
-                match (response.get_status(), self.response_channel.as_ref()) {
-                    (StatusCode::UciStatusCommandRetry, Some((_, retryer))) => retryer.retry(),
-                    _ => (),
+                if let (StatusCode::UciStatusCommandRetry, Some((_, retryer))) =
+                    (response.get_status(), self.response_channel.as_ref())
+                {
+                    retryer.retry();
                 }
                 self.event_manager.core_generic_error_notification_received(response)?;
             }
@@ -416,7 +417,7 @@ impl<T: EventManager> Driver<T> {
     }
 
     // Triggers the session init HAL API, if a new session is initialized.
-    async fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) -> () {
+    async fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) {
         let session_id =
             response.get_session_id().to_i32().expect("Failed converting session_id to u32");
         if let SessionState::SessionStateInit = response.get_session_state() {
