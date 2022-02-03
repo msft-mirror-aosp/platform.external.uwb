@@ -17,16 +17,12 @@
 use crate::uci::UwbErr;
 use bytes::Bytes;
 use log::error;
-use log::info;
 use num_traits::FromPrimitive;
 use uwb_uci_packets::{
-    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, CoreOpCode, DeviceConfigStatus,
-    DeviceConfigTLV, DeviceResetCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoCmdPacket, GroupId, ResetConfig, SessionInitCmdBuilder,
+    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, GroupId, SessionInitCmdBuilder,
     SessionSetAppConfigCmdBuilder, SessionType, SessionUpdateControllerMulticastListCmdBuilder,
-    SetConfigCmdBuilder, SetConfigRspBuilder, StatusCode, UciCommandPacket,
-    UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder,
-    UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
+    UciCommandPacket, UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder,
+    UciVendor_B_CommandBuilder, UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
 };
 
 pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
@@ -44,7 +40,7 @@ pub fn build_multicast_list_update_cmd(
     session_id: u32,
     action: u8,
     no_of_controlee: u8,
-    address_list: &[u8],
+    address_list: &[i16],
     sub_session_id_list: &[i32],
 ) -> SessionUpdateControllerMulticastListCmdBuilder {
     let mut controlees = Vec::new();
@@ -60,11 +56,10 @@ pub fn build_multicast_list_update_cmd(
 pub fn build_set_app_config_cmd(
     session_id: u32,
     no_of_params: u32,
-    app_config_param_len: u32,
     mut app_configs: &[u8],
 ) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
     let mut tlvs = Vec::new();
-    for i in 0..no_of_params {
+    for _ in 0..no_of_params {
         let tlv = AppConfigTlv::parse(app_configs)?;
         app_configs = &app_configs[tlv.v.len() + 2..];
         tlvs.push(tlv);
@@ -77,6 +72,7 @@ pub fn build_uci_vendor_cmd_packet(
     oid: u32,
     payload: Vec<u8>,
 ) -> Result<UciCommandPacket, UwbErr> {
+    use GroupId::*;
     let group_id: GroupId = FromPrimitive::from_u32(gid).expect("invalid vendor gid");
     let payload = match payload.is_empty() {
         true => Some(Bytes::from(payload)),

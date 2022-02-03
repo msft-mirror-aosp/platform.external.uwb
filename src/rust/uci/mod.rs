@@ -19,7 +19,7 @@ pub mod uci_hrcv;
 
 use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
-use crate::event_manager::{EventManager, EventManagerImpl};
+use crate::event_manager::EventManager;
 use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
@@ -59,7 +59,7 @@ pub enum JNICommand {
         session_id: u32,
         action: u8,
         no_of_controlee: u8,
-        address_list: Vec<u8>,
+        address_list: Vec<i16>,
         sub_session_id_list: Vec<i32>,
     },
     UciSetCountryCode {
@@ -68,6 +68,7 @@ pub enum JNICommand {
     UciSetAppConfig {
         session_id: u32,
         no_of_params: u32,
+        // TODO this field should be removed, in tandem with a change to the Uwb APEX
         app_config_param_len: u32,
         app_configs: Vec<u8>,
     },
@@ -150,9 +151,9 @@ impl Retryer {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                // TODO this must be non-blocking to avoid blocking the runtime if the HAL locks up.
-                // Will address in follow-up CL moving adaptation to be asynchronous.
-                adaptation.send_uci_message(&bytes);
+                adaptation.send_uci_message(&bytes).await.unwrap_or_else(|e| {
+                    error!("Sending UCI message failed: {:?}", e);
+                });
                 select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)) => warn!("UWB chip did not respond within {}ms deadline. Retrying (#{})...", RETRY_DELAY_MS, retry + 1),
                     _ = self.command_serviced() => {
@@ -164,7 +165,9 @@ impl Retryer {
             }
             if !received_response {
                 error!("After {} retries, no response from UWB chip", MAX_RETRIES);
-                adaptation.core_initialization();
+                adaptation.core_initialization().await.unwrap_or_else(|e| {
+                    error!("Resetting chip due to no responses failed: {:?}", e);
+                });
                 self.failed();
             }
         });
@@ -222,7 +225,11 @@ impl<T: EventManager> Driver<T> {
     // Continually handles messages.
     async fn drive(mut self) -> Result<()> {
         loop {
-            self.drive_once().await?
+            match self.drive_once().await {
+                Err(UwbErr::Exit) => return Ok(()),
+                Err(e) => error!("drive_once: {:?}", e),
+                Ok(()) => (),
+            }
         }
     }
 
@@ -269,27 +276,16 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciSetCountryCode { ref code } => {
                 uci_hmsgs::build_set_country_code_cmd(code).build().to_vec()
             }
-            JNICommand::UciSetAppConfig {
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                ref app_configs,
-            } => uci_hmsgs::build_set_app_config_cmd(
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                app_configs,
-            )?
-            .build()
-            .to_vec(),
-            JNICommand::UciGetAppConfig {
-                session_id,
-                no_of_params,
-                app_config_param_len,
-                ref app_configs,
-            } => SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
-                .build()
-                .to_vec(),
+            JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
+                uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
+                    .build()
+                    .to_vec()
+            }
+            JNICommand::UciGetAppConfig { session_id, ref app_configs, .. } => {
+                SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
+                    .build()
+                    .to_vec()
+            }
             JNICommand::UciRawVendorCmd { gid, oid, payload } => {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?.to_vec()
             }
@@ -310,16 +306,13 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
             JNICommand::Enable => {
-                self.adaptation.hal_open().await;
-                self.adaptation
-                    .core_initialization()
-                    .await
-                    .unwrap_or_else(|e| error!("Error invoking core init HAL API : {:?}", e));
+                self.adaptation.hal_open().await?;
+                self.adaptation.core_initialization().await?;
                 self.set_state(UwbState::W4HalOpen);
             }
-            JNICommand::Disable(graceful) => {
+            JNICommand::Disable(_graceful) => {
+                self.adaptation.hal_close().await?;
                 self.set_state(UwbState::W4HalClose);
-                self.adaptation.hal_close().await;
             }
             JNICommand::Exit => {
                 return Err(UwbErr::Exit);
@@ -336,33 +329,32 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received hal notification {:?}", response);
         match response {
             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
-                self.event_manager.device_status_notification_received(response);
+                self.event_manager.device_status_notification_received(response)?;
             }
             uci_hrcv::UciNotification::GenericError(response) => {
                 match (response.get_status(), self.response_channel.as_ref()) {
                     (StatusCode::UciStatusCommandRetry, Some((_, retryer))) => retryer.retry(),
                     _ => (),
                 }
-                self.event_manager.core_generic_error_notification_received(response);
+                self.event_manager.core_generic_error_notification_received(response)?;
             }
             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
                 self.invoke_hal_session_init_if_necessary(&response).await;
-                self.event_manager.session_status_notification_received(response);
+                self.event_manager.session_status_notification_received(response)?;
             }
             uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
-                self.event_manager.short_range_data_notification_received(response);
+                self.event_manager.short_range_data_notification_received(response)?;
             }
             uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(response) => {
-                self.event_manager.extended_range_data_notification_received(response);
+                self.event_manager.extended_range_data_notification_received(response)?;
             }
             uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(response) => {
                 self.event_manager
-                    .session_update_controller_multicast_list_notification_received(response);
+                    .session_update_controller_multicast_list_notification_received(response)?;
             }
             uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
-                self.event_manager.vendor_uci_notification_received(gid, oid, payload);
+                self.event_manager.vendor_uci_notification_received(gid, oid, payload)?;
             }
-            _ => log::error!("Unexpected hal notification received {:?}", response),
         }
         Ok(())
     }
@@ -407,7 +399,9 @@ impl<T: EventManager> Driver<T> {
                         self.set_state(UwbState::Ready);
                         if let Some((channel, retryer)) = self.response_channel.take() {
                             retryer.received();
-                            channel.send(response);
+                            channel.send(response).unwrap_or_else(|_| {
+                                error!("Unable to send response, receiver gone");
+                            });
                         } else {
                             error!("Received response packet, but no response channel available");
                         }
@@ -508,7 +502,7 @@ impl Dispatcher {
         Ok(ret)
     }
 
-    fn exit(&mut self) -> Result<()> {
+    pub fn exit(&mut self) -> Result<()> {
         self.send_jni_command(JNICommand::Exit)?;
         let _ = self.runtime.block_on(&mut self.join_handle);
         Ok(())
@@ -529,7 +523,7 @@ mod tests {
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mut mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
 
         let mut dispatcher =
