@@ -25,7 +25,6 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
 use log::{debug, error, info, warn};
-use num_traits::ToPrimitive;
 use std::future::Future;
 use std::option::Option;
 use std::sync::Arc;
@@ -418,12 +417,14 @@ impl<T: EventManager> Driver<T> {
 
     // Triggers the session init HAL API, if a new session is initialized.
     async fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) {
-        let session_id =
-            response.get_session_id().to_i32().expect("Failed converting session_id to u32");
         if let SessionState::SessionStateInit = response.get_session_state() {
-            info!("Session {:?} initialized, invoking session init HAL API", session_id);
+            info!(
+                "Session {:?} initialized, invoking session init HAL API",
+                response.get_session_id()
+            );
             self.adaptation
-                .session_initialization(session_id)
+                // HAL API accepts signed int, so cast received session_id as i32.
+                .session_initialization(response.get_session_id() as i32)
                 .await
                 .unwrap_or_else(|e| error!("Error invoking session init HAL API : {:?}", e));
         }
