@@ -15,7 +15,6 @@
  */
 
 use crate::error::UwbErr;
-use log::{info, warn};
 use num_traits::ToPrimitive;
 use uwb_uci_packets::*;
 

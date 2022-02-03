@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use crate::uci::uci_hrcv::UciNotification;
-use jni::errors::{Error, Result};
-use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue, JValue::Void};
+use jni::errors::Result;
+use jni::objects::{GlobalRef, JClass, JObject, JValue, JValue::Void};
 use jni::signature::JavaType;
 use jni::sys::jobjectArray;
 use jni::{AttachGuard, JNIEnv, JavaVM};
@@ -581,7 +580,6 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
         let uwb_multicast_update_class =
             self.find_class(&env, &MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
 
@@ -598,12 +596,12 @@ impl EventManagerImpl {
             status_list.push(iter.status.into());
         }
 
-        let mut mac_address_jintarray = env.new_int_array(count)?;
-        env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref());
-        let mut subsession_id_jlongarray = env.new_long_array(count)?;
-        env.set_long_array_region(subsession_id_jlongarray, 0, subsession_id_list.as_ref());
-        let mut status_jintarray = env.new_int_array(count)?;
-        env.set_int_array_region(status_jintarray, 0, status_list.as_ref());
+        let mac_address_jintarray = env.new_int_array(count)?;
+        env.set_int_array_region(mac_address_jintarray, 0, mac_address_list.as_ref())?;
+        let subsession_id_jlongarray = env.new_long_array(count)?;
+        env.set_long_array_region(subsession_id_jlongarray, 0, subsession_id_list.as_ref())?;
+        let status_jintarray = env.new_int_array(count)?;
+        env.set_int_array_region(status_jintarray, 0, status_list.as_ref())?;
 
         let uwb_multicast_update_object = env.new_object(
             uwb_multicast_update_class,
@@ -640,8 +638,6 @@ impl EventManagerImpl {
         oid: u32,
         payload: Vec<u8>,
     ) -> Result<()> {
-        let env = self.jvm.attach_current_thread()?;
-
         let gid: i32 = gid.try_into().expect("Failed to convert gid");
         let oid: i32 = oid.try_into().expect("Failed to convert gid");
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
@@ -686,34 +682,39 @@ impl MockEventManager {
 
 #[cfg(test)]
 impl EventManager for MockEventManager {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+    fn device_status_notification_received(&self, _data: DeviceStatusNtfPacket) -> Result<()> {
         Ok(())
     }
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+    fn core_generic_error_notification_received(&self, _data: GenericErrorPacket) -> Result<()> {
         Ok(())
     }
-    fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()> {
+    fn session_status_notification_received(&self, _data: SessionStatusNtfPacket) -> Result<()> {
         Ok(())
     }
     fn short_range_data_notification_received(
         &self,
-        data: ShortMacTwoWayRangeDataNtfPacket,
+        _data: ShortMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
     fn extended_range_data_notification_received(
         &self,
-        data: ExtendedMacTwoWayRangeDataNtfPacket,
+        _data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
     fn session_update_controller_multicast_list_notification_received(
         &self,
-        data: SessionUpdateControllerMulticastListNtfPacket,
+        _data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
         Ok(())
     }
-    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+    fn vendor_uci_notification_received(
+        &self,
+        _gid: u32,
+        _oid: u32,
+        _payload: Vec<u8>,
+    ) -> Result<()> {
         Ok(())
     }
 }
