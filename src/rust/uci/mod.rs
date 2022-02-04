@@ -523,6 +523,7 @@ mod tests {
     use super::*;
     use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
+    use uwb_uci_packets::GetDeviceInfoRspBuilder;
 
     fn setup_dispatcher(config_fn: fn(&mut Box<MockUwbAdaptation>)) -> Result<Dispatcher> {
         // TODO: Remove this once we call it somewhere real.
@@ -543,6 +544,22 @@ mod tests {
         )
     }
 
+    fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
+        let cmd_data = GetDeviceInfoCmdBuilder {}.build().to_vec();
+        let rsp_data = GetDeviceInfoRspBuilder {
+            status: StatusCode::UciStatusOk,
+            uci_version: 0,
+            mac_version: 0,
+            phy_version: 0,
+            uci_test_version: 0,
+            vendor_spec_info: vec![],
+        }
+        .build()
+        .to_vec();
+
+        (cmd_data, rsp_data)
+    }
+
     #[test]
     fn test_initialize() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation| {
@@ -561,6 +578,17 @@ mod tests {
         })?;
 
         dispatcher.send_jni_command(JNICommand::Disable(true))?;
+        dispatcher.exit()
+    }
+
+    #[test]
+    fn test_send_uci_message() -> Result<()> {
+        let mut dispatcher = setup_dispatcher(|mock_adaptation| {
+            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
+            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), Ok(()));
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()
     }
 }
