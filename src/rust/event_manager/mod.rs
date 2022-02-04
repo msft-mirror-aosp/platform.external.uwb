@@ -169,7 +169,7 @@ impl EventManagerImpl {
             "(Ljava/lang/String;)Ljava/lang/Class;",
             &[JValue::Object(JObject::from(env.new_string(class_name)?))],
         )?;
-        class_value.l().map(|value| JClass::from(value))
+        class_value.l().map(JClass::from)
     }
 
     fn handle_device_status_notification_received(
@@ -430,7 +430,7 @@ impl EventManagerImpl {
         two_way_measurements_java: jobjectArray,
         num_two_way_measurements: i32,
     ) -> Result<JObject<'a>> {
-        let ranging_data_class = self.find_class(env, &UWB_RANGING_DATA_CLASS)?;
+        let ranging_data_class = self.find_class(env, UWB_RANGING_DATA_CLASS)?;
         env.new_object(
             ranging_data_class,
             "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;)V",
@@ -472,10 +472,10 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: ShortMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
-        let two_way_measurement_class = self.find_class(&env, &UWB_TWO_WAY_MEASUREMENT_CLASS)?;
+        let two_way_measurement_class = self.find_class(env, UWB_TWO_WAY_MEASUREMENT_CLASS)?;
         let two_way_measurement_initial_java =
             EventManagerImpl::create_zeroed_two_way_measurement_java(
-                &env,
+                env,
                 two_way_measurement_class,
                 env.new_byte_array(
                     EXTENDED_MAC_ADDRESS_LEN
@@ -496,7 +496,7 @@ impl EventManagerImpl {
         for (i, two_way_measurement) in data.get_two_way_ranging_measurements().iter().enumerate() {
             let two_way_measurement_java =
                 EventManagerImpl::create_short_mac_two_way_measurement_java(
-                    &env,
+                    env,
                     two_way_measurement_class,
                     two_way_measurement,
                 )?;
@@ -507,7 +507,7 @@ impl EventManagerImpl {
             )?
         }
         let ranging_data_java = self.create_range_data_java(
-            &env,
+            env,
             data.into(),
             two_way_measurements_java,
             num_two_way_measurements,
@@ -516,7 +516,7 @@ impl EventManagerImpl {
             self.obj.as_obj(),
             "onRangeDataNotificationReceived",
             "(Lcom/android/server/uwb/data/UwbRangingData;)V",
-            &[JValue::Object(JObject::from(ranging_data_java))],
+            &[JValue::Object(ranging_data_java)],
         )
         .map(|_| ()) // drop void method return
     }
@@ -526,10 +526,10 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
-        let two_way_measurement_class = self.find_class(&env, &UWB_TWO_WAY_MEASUREMENT_CLASS)?;
+        let two_way_measurement_class = self.find_class(env, UWB_TWO_WAY_MEASUREMENT_CLASS)?;
         let two_way_measurement_initial_java =
             EventManagerImpl::create_zeroed_two_way_measurement_java(
-                &env,
+                env,
                 two_way_measurement_class,
                 env.new_byte_array(
                     EXTENDED_MAC_ADDRESS_LEN
@@ -550,7 +550,7 @@ impl EventManagerImpl {
         for (i, two_way_measurement) in data.get_two_way_ranging_measurements().iter().enumerate() {
             let two_way_measurement_java =
                 EventManagerImpl::create_extended_mac_two_way_measurement_java(
-                    &env,
+                    env,
                     two_way_measurement_class,
                     two_way_measurement,
                 )?;
@@ -561,7 +561,7 @@ impl EventManagerImpl {
             )?;
         }
         let ranging_data_java = self.create_range_data_java(
-            &env,
+            env,
             data.into(),
             two_way_measurements_java,
             num_two_way_measurements,
@@ -570,7 +570,7 @@ impl EventManagerImpl {
             self.obj.as_obj(),
             "onRangeDataNotificationReceived",
             "(Lcom/android/server/uwb/data/UwbRangingData;)V",
-            &[JValue::Object(JObject::from(ranging_data_java))],
+            &[JValue::Object(ranging_data_java)],
         )
         .map(|_| ()) // drop void method return
     }
@@ -581,7 +581,7 @@ impl EventManagerImpl {
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
         let uwb_multicast_update_class =
-            self.find_class(&env, &MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
+            self.find_class(env, MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
 
         let controlee_status = data.get_controlee_status();
         let count: i32 =
@@ -615,7 +615,7 @@ impl EventManagerImpl {
                         .try_into()
                         .expect("Could not convert remaining multicast list size"),
                 ),
-                JValue::Int(count.try_into().expect("Could not convert count")),
+                JValue::Int(count),
                 JValue::Object(JObject::from(mac_address_jintarray)),
                 JValue::Object(JObject::from(subsession_id_jlongarray)),
                 JValue::Object(JObject::from(status_jintarray)),
@@ -626,7 +626,7 @@ impl EventManagerImpl {
             self.obj.as_obj(),
             "onMulticastListUpdateNotificationReceived",
             "(Lcom/android/server/uwb/data/UwbMulticastListUpdateStatus;)V",
-            &[JValue::Object(JObject::from(uwb_multicast_update_object))],
+            &[JValue::Object(uwb_multicast_update_object)],
         )
         .map(|_| ()) // drop void method return
     }
@@ -671,12 +671,13 @@ impl EventManagerImpl {
 }
 
 #[cfg(test)]
+#[derive(Default)]
 pub struct MockEventManager {}
 
 #[cfg(test)]
 impl MockEventManager {
     pub fn new() -> Self {
-        Self {}
+        Default::default()
     }
 }
 
