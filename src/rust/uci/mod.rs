@@ -508,8 +508,13 @@ impl Dispatcher {
 
     pub fn exit(&mut self) -> Result<()> {
         self.send_jni_command(JNICommand::Exit)?;
-        let _ = self.runtime.block_on(&mut self.join_handle);
-        Ok(())
+        match self.runtime.block_on(&mut self.join_handle) {
+            Err(err) if err.is_panic() => {
+                error!("Driver thread is panic!");
+                Err(UwbErr::Undefined)
+            }
+            _ => Ok(()),
+        }
     }
 }
 
@@ -546,8 +551,7 @@ mod tests {
         })?;
 
         dispatcher.send_jni_command(JNICommand::Enable)?;
-        dispatcher.exit()?;
-        Ok(())
+        dispatcher.exit()
     }
 
     #[test]
@@ -557,7 +561,6 @@ mod tests {
         })?;
 
         dispatcher.send_jni_command(JNICommand::Disable(true))?;
-        dispatcher.exit()?;
-        Ok(())
+        dispatcher.exit()
     }
 }
