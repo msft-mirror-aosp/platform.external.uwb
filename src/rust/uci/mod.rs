@@ -519,27 +519,44 @@ mod tests {
     use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
 
-    #[test]
-    fn test_driver() -> Result<()> {
+    fn setup_dispatcher(config_fn: fn(&mut Box<MockUwbAdaptation>)) -> Result<Dispatcher> {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
-            logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Error),
+            logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         let mut mock_adaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
 
-        mock_adaptation.expect_hal_open(Ok(()));
-        mock_adaptation.expect_core_initialization(Ok(()));
+        config_fn(&mut mock_adaptation);
 
-        let mut dispatcher = Dispatcher::new_for_testing(
+        Dispatcher::new_for_testing(
             mock_event_manager,
             mock_adaptation as SyncUwbAdaptation,
             rsp_receiver,
-        )?;
+        )
+    }
+
+    #[test]
+    fn test_initialize() -> Result<()> {
+        let mut dispatcher = setup_dispatcher(|mock_adaptation| {
+            mock_adaptation.expect_hal_open(Ok(()));
+            mock_adaptation.expect_core_initialization(Ok(()));
+        })?;
+
         dispatcher.send_jni_command(JNICommand::Enable)?;
-        dispatcher.send_jni_command(JNICommand::UciGetDeviceInfo)?;
+        dispatcher.exit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_deinitialize() -> Result<()> {
+        let mut dispatcher = setup_dispatcher(|mock_adaptation| {
+            mock_adaptation.expect_hal_close(Ok(()));
+        })?;
+
+        dispatcher.send_jni_command(JNICommand::Disable(true))?;
         dispatcher.exit()?;
         Ok(())
     }
