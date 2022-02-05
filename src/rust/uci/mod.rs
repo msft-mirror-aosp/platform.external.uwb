@@ -35,7 +35,7 @@ use uwb_uci_packets::{
     GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet,
     RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
     SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
-    SessionState, SessionStatusNtfPacket, StatusCode,
+    SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -238,24 +238,24 @@ impl<T: EventManager> Driver<T> {
         cmd: JNICommand,
     ) -> Result<()> {
         log::debug!("Received blocking cmd {:?}", cmd);
-        let bytes = match cmd {
-            JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().to_vec(),
-            JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().to_vec(),
+        let command: UciCommandPacket = match cmd {
+            JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
+            JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
-                uci_hmsgs::build_session_init_cmd(session_id, session_type).build().to_vec()
+                uci_hmsgs::build_session_init_cmd(session_id, session_type).build().into()
             }
             JNICommand::UciSessionDeinit(session_id) => {
-                SessionDeinitCmdBuilder { session_id }.build().to_vec()
+                SessionDeinitCmdBuilder { session_id }.build().into()
             }
-            JNICommand::UciSessionGetCount => SessionGetCountCmdBuilder {}.build().to_vec(),
+            JNICommand::UciSessionGetCount => SessionGetCountCmdBuilder {}.build().into(),
             JNICommand::UciStartRange(session_id) => {
-                RangeStartCmdBuilder { session_id }.build().to_vec()
+                RangeStartCmdBuilder { session_id }.build().into()
             }
             JNICommand::UciStopRange(session_id) => {
-                RangeStopCmdBuilder { session_id }.build().to_vec()
+                RangeStopCmdBuilder { session_id }.build().into()
             }
             JNICommand::UciGetSessionState(session_id) => {
-                SessionGetStateCmdBuilder { session_id }.build().to_vec()
+                SessionGetStateCmdBuilder { session_id }.build().into()
             }
             JNICommand::UciSessionUpdateMulticastList {
                 session_id,
@@ -271,22 +271,22 @@ impl<T: EventManager> Driver<T> {
                 sub_session_id_list,
             )
             .build()
-            .to_vec(),
+            .into(),
             JNICommand::UciSetCountryCode { ref code } => {
-                uci_hmsgs::build_set_country_code_cmd(code).build().to_vec()
+                uci_hmsgs::build_set_country_code_cmd(code).build().into()
             }
             JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
                 uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
                     .build()
-                    .to_vec()
+                    .into()
             }
             JNICommand::UciGetAppConfig { session_id, ref app_configs, .. } => {
                 SessionGetAppConfigCmdBuilder { session_id, app_cfg: app_configs.to_vec() }
                     .build()
-                    .to_vec()
+                    .into()
             }
             JNICommand::UciRawVendorCmd { gid, oid, payload } => {
-                uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?.to_vec()
+                uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?
             }
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
@@ -294,9 +294,11 @@ impl<T: EventManager> Driver<T> {
             }
         };
 
+        log::debug!("Sending HAL UCI message {:?}", command);
+
         let retryer = Retryer::new();
         self.response_channel = Some((tx, retryer.clone()));
-        retryer.send_with_retry(self.adaptation.clone(), bytes);
+        retryer.send_with_retry(self.adaptation.clone(), command.to_vec());
         self.set_state(UwbState::W4UciResp);
         Ok(())
     }
@@ -395,7 +397,7 @@ impl<T: EventManager> Driver<T> {
                         }
                     },
                     HalCallback::UciRsp(response) => {
-                        log::debug!("Received hal response {:?}", response);
+                        log::debug!("Received HAL UCI message {:?}", response);
                         self.set_state(UwbState::Ready);
                         if let Some((channel, retryer)) = self.response_channel.take() {
                             retryer.received();
