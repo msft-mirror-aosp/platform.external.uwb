@@ -527,11 +527,17 @@ mod tests {
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mock_adaptation: SyncUwbAdaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mut mock_adaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
         let mock_event_manager = MockEventManager::new();
 
-        let mut dispatcher =
-            Dispatcher::new_for_testing(mock_event_manager, mock_adaptation, rsp_receiver)?;
+        mock_adaptation.expect_hal_open(Ok(()));
+        mock_adaptation.expect_core_initialization(Ok(()));
+
+        let mut dispatcher = Dispatcher::new_for_testing(
+            mock_event_manager,
+            mock_adaptation as SyncUwbAdaptation,
+            rsp_receiver,
+        )?;
         dispatcher.send_jni_command(JNICommand::Enable)?;
         dispatcher.send_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()?;
