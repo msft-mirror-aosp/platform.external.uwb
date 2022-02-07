@@ -591,4 +591,19 @@ mod tests {
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()
     }
+
+    #[test]
+    fn test_send_uci_message_with_retry() -> Result<()> {
+        let mut dispatcher = setup_dispatcher(|mock_adaptation| {
+            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
+
+            // Let the first 2 tries not response data, then the 3rd tries response successfully.
+            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), Ok(()));
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
+        dispatcher.exit()
+    }
 }
