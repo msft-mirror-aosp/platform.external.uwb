@@ -606,4 +606,17 @@ mod tests {
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()
     }
+
+    #[test]
+    fn test_send_uci_message_failed() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation| {
+            let (cmd_data, _rsp_data) = generate_fake_cmd_rsp_data();
+            mock_adaptation.expect_send_uci_message(cmd_data, None, Err(UwbErr::failed()));
+        })?;
+
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetDeviceInfo)
+            .expect_err("This method should fail.");
+        Ok(())
+    }
 }
