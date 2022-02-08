@@ -137,12 +137,28 @@ use std::sync::Mutex;
 
 #[cfg(test)]
 enum ExpectedCall {
-    Finalize { expected_exit_status: bool },
-    HalOpen { out: Result<()> },
-    HalClose { out: Result<()> },
-    CoreInitialization { out: Result<()> },
-    SessionInitialization { expected_session_id: i32, out: Result<()> },
-    SendUciMessage { expected_data: Vec<u8>, rsp_data: Option<Vec<u8>>, out: Result<()> },
+    Finalize {
+        expected_exit_status: bool,
+    },
+    HalOpen {
+        out: Result<()>,
+    },
+    HalClose {
+        out: Result<()>,
+    },
+    CoreInitialization {
+        out: Result<()>,
+    },
+    SessionInitialization {
+        expected_session_id: i32,
+        out: Result<()>,
+    },
+    SendUciMessage {
+        expected_data: Vec<u8>,
+        rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
+        out: Result<()>,
+    },
 }
 
 #[cfg(test)]
@@ -188,11 +204,13 @@ impl MockUwbAdaptation {
         &mut self,
         expected_data: Vec<u8>,
         rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendUciMessage {
             expected_data,
             rsp_data,
+            notf_data,
             out,
         });
     }
@@ -342,10 +360,10 @@ impl UwbAdaptation for MockUwbAdaptation {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedCall::SendUciMessage { expected_data, rsp_data, out })
+                Some(ExpectedCall::SendUciMessage { expected_data, rsp_data, notf_data, out })
                     if expected_data == data =>
                 {
-                    Some((rsp_data, out))
+                    Some((rsp_data, notf_data, out))
                 }
                 Some(call) => {
                     expected_calls.push_front(call);
@@ -356,9 +374,12 @@ impl UwbAdaptation for MockUwbAdaptation {
         };
 
         match expected_out {
-            Some((rsp_data, out)) => {
+            Some((rsp_data, notf_data, out)) => {
                 if let Some(rsp) = rsp_data {
                     self.send_client_message(rsp).await;
+                }
+                if let Some(notf) = notf_data {
+                    self.send_client_message(notf).await;
                 }
                 out
             }
