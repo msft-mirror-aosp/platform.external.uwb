@@ -137,12 +137,28 @@ use std::sync::Mutex;
 
 #[cfg(test)]
 enum ExpectedCall {
-    Finalize { expected_exit_status: bool },
-    HalOpen { out: Result<()> },
-    HalClose { out: Result<()> },
-    CoreInitialization { out: Result<()> },
-    SessionInitialization { expected_session_id: i32, out: Result<()> },
-    SendUciMessage { expected_data: Vec<u8>, out: Result<()> },
+    Finalize {
+        expected_exit_status: bool,
+    },
+    HalOpen {
+        out: Result<()>,
+    },
+    HalClose {
+        out: Result<()>,
+    },
+    CoreInitialization {
+        out: Result<()>,
+    },
+    SessionInitialization {
+        expected_session_id: i32,
+        out: Result<()>,
+    },
+    SendUciMessage {
+        expected_data: Vec<u8>,
+        rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
+        out: Result<()>,
+    },
 }
 
 #[cfg(test)]
@@ -184,16 +200,29 @@ impl MockUwbAdaptation {
             .push_back(ExpectedCall::SessionInitialization { expected_session_id, out });
     }
     #[allow(dead_code)]
-    pub fn expect_send_uci_message(&mut self, expected_data: Vec<u8>, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::SendUciMessage { expected_data, out });
+    pub fn expect_send_uci_message(
+        &mut self,
+        expected_data: Vec<u8>,
+        rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendUciMessage {
+            expected_data,
+            rsp_data,
+            notf_data,
+            out,
+        });
     }
 
-    async fn send_client_callback(&self, event: UwbEvent, status: UwbStatus) {
+    async fn send_client_event(&self, event: UwbEvent, status: UwbStatus) {
         let uwb_client_callback = UwbClientCallback::new(self.rsp_sender.clone());
         let _ = uwb_client_callback.onHalEvent(event, status).await;
+    }
+
+    async fn send_client_message(&self, rsp_data: Vec<u8>) {
+        let uwb_client_callback = UwbClientCallback::new(self.rsp_sender.clone());
+        let _ = uwb_client_callback.onUciMessage(&rsp_data).await;
     }
 }
 
@@ -239,7 +268,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_callback(UwbEvent::OPEN_CPLT, status).await;
+                self.send_client_event(UwbEvent::OPEN_CPLT, status).await;
                 out
             }
             None => {
@@ -265,7 +294,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_callback(UwbEvent::CLOSE_CPLT, status).await;
+                self.send_client_event(UwbEvent::CLOSE_CPLT, status).await;
                 out
             }
             None => {
@@ -291,7 +320,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_callback(UwbEvent::POST_INIT_CPLT, status).await;
+                self.send_client_event(UwbEvent::POST_INIT_CPLT, status).await;
                 out
             }
             None => {
@@ -331,10 +360,10 @@ impl UwbAdaptation for MockUwbAdaptation {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedCall::SendUciMessage { expected_data, out })
+                Some(ExpectedCall::SendUciMessage { expected_data, rsp_data, notf_data, out })
                     if expected_data == data =>
                 {
-                    Some(out)
+                    Some((rsp_data, notf_data, out))
                 }
                 Some(call) => {
                     expected_calls.push_front(call);
@@ -345,7 +374,15 @@ impl UwbAdaptation for MockUwbAdaptation {
         };
 
         match expected_out {
-            Some(out) => out,
+            Some((rsp_data, notf_data, out)) => {
+                if let Some(rsp) = rsp_data {
+                    self.send_client_message(rsp).await;
+                }
+                if let Some(notf) = notf_data {
+                    self.send_client_message(notf).await;
+                }
+                out
+            }
             None => {
                 warn!("unpected send_uci_message() called");
                 Err(UwbErr::Undefined)

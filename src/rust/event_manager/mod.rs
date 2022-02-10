@@ -671,51 +671,251 @@ impl EventManagerImpl {
 }
 
 #[cfg(test)]
+use jni::errors::{Error, JniError};
+#[cfg(test)]
+use log::warn;
+#[cfg(test)]
+use std::collections::VecDeque;
+#[cfg(test)]
+use std::sync::Mutex;
+
+#[cfg(test)]
+enum ExpectedCall {
+    DeviceStatus {
+        out: Result<()>,
+    },
+    CoreGenericError {
+        out: Result<()>,
+    },
+    SessionStatus {
+        out: Result<()>,
+    },
+    ShortRangeData {
+        out: Result<()>,
+    },
+    ExtendedRangeData {
+        out: Result<()>,
+    },
+    SessionUpdateControllerMulticastList {
+        out: Result<()>,
+    },
+    VendorUci {
+        exptected_gid: u32,
+        exptected_oid: u32,
+        exptected_payload: Vec<u8>,
+        out: Result<()>,
+    },
+}
+
+#[cfg(test)]
 #[derive(Default)]
-pub struct MockEventManager {}
+pub struct MockEventManager {
+    expected_calls: Mutex<VecDeque<ExpectedCall>>,
+}
 
 #[cfg(test)]
 impl MockEventManager {
     pub fn new() -> Self {
         Default::default()
     }
+
+    #[allow(dead_code)]
+    pub fn expect_device_status_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::DeviceStatus { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_core_generic_error_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::CoreGenericError { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_session_status_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::SessionStatus { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_short_range_data_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::ShortRangeData { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_extended_range_data_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::ExtendedRangeData { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_session_update_controller_multicast_list_notification_received(
+        &mut self,
+        out: Result<()>,
+    ) {
+        self.add_expected_call(ExpectedCall::SessionUpdateControllerMulticastList { out });
+    }
+
+    #[allow(dead_code)]
+    pub fn expect_vendor_uci_notification_received(
+        &mut self,
+        exptected_gid: u32,
+        exptected_oid: u32,
+        exptected_payload: Vec<u8>,
+        out: Result<()>,
+    ) {
+        self.add_expected_call(ExpectedCall::VendorUci {
+            exptected_gid,
+            exptected_oid,
+            exptected_payload,
+            out,
+        });
+    }
+
+    fn add_expected_call(&mut self, call: ExpectedCall) {
+        self.expected_calls.lock().unwrap().push_back(call);
+    }
+
+    fn unwrap_out(&self, out: Option<Result<()>>, method_name: &str) -> Result<()> {
+        out.unwrap_or_else(move || {
+            warn!("unpected {:?}() called", method_name);
+            Err(Error::JniCall(JniError::Unknown))
+        })
+    }
+}
+
+#[cfg(test)]
+impl Drop for MockEventManager {
+    fn drop(&mut self) {
+        assert!(self.expected_calls.lock().unwrap().is_empty());
+    }
 }
 
 #[cfg(test)]
 impl EventManager for MockEventManager {
     fn device_status_notification_received(&self, _data: DeviceStatusNtfPacket) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::DeviceStatus { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "device_status_notification_received")
     }
+
     fn core_generic_error_notification_received(&self, _data: GenericErrorPacket) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::CoreGenericError { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "core_generic_error_notification_received")
     }
+
     fn session_status_notification_received(&self, _data: SessionStatusNtfPacket) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::SessionStatus { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "session_status_notification_received")
     }
+
     fn short_range_data_notification_received(
         &self,
         _data: ShortMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::ShortRangeData { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "short_range_data_notification_received")
     }
     fn extended_range_data_notification_received(
         &self,
         _data: ExtendedMacTwoWayRangeDataNtfPacket,
     ) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::ExtendedRangeData { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "extended_range_data_notification_received")
     }
+
     fn session_update_controller_multicast_list_notification_received(
         &self,
         _data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()> {
-        Ok(())
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::SessionUpdateControllerMulticastList { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "session_update_controller_multicast_list_notification_received")
     }
-    fn vendor_uci_notification_received(
-        &self,
-        _gid: u32,
-        _oid: u32,
-        _payload: Vec<u8>,
-    ) -> Result<()> {
-        Ok(())
+
+    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+        let out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::VendorUci {
+                    exptected_gid,
+                    exptected_oid,
+                    exptected_payload,
+                    out,
+                }) if gid == exptected_gid
+                    && oid == exptected_oid
+                    && payload == exptected_payload =>
+                {
+                    Some(out)
+                }
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        self.unwrap_out(out, "vendor_uci_notification_received")
     }
 }
