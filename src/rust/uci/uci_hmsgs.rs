@@ -22,7 +22,7 @@ use uwb_uci_packets::{
     AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, DeviceResetCmdBuilder, GroupId,
     ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder, SessionType,
     SessionUpdateControllerMulticastListCmdBuilder, UciCommandPacket, UciVendor_9_CommandBuilder,
-    UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder, UciVendor_C_CommandBuilder,
+    UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder, UciVendor_E_CommandBuilder,
     UciVendor_F_CommandBuilder,
 };
 
@@ -84,7 +84,7 @@ pub fn build_uci_vendor_cmd_packet(
         VendorReserved9 => UciVendor_9_CommandBuilder { opcode, payload }.build().into(),
         VendorReservedA => UciVendor_A_CommandBuilder { opcode, payload }.build().into(),
         VendorReservedB => UciVendor_B_CommandBuilder { opcode, payload }.build().into(),
-        VendorReservedC => UciVendor_C_CommandBuilder { opcode, payload }.build().into(),
+        VendorReservedE => UciVendor_E_CommandBuilder { opcode, payload }.build().into(),
         VendorReservedF => UciVendor_F_CommandBuilder { opcode, payload }.build().into(),
         _ => {
             error!("Invalid vendor gid {:?}", gid);

@@ -14,8 +14,8 @@ enum GroupId : 4 {
     VENDOR_RESERVED_9 = 0x09,
     VENDOR_RESERVED_A = 0x0a,
     VENDOR_RESERVED_B = 0x0b,
-    VENDOR_RESERVED_C = 0x0c,
-    VENDOR_ANDROID = 0x0e,
+    VENDOR_ANDROID    = 0x0c,
+    VENDOR_RESERVED_E = 0x0e,
     VENDOR_RESERVED_F = 0x0f,
 }
 
@@ -857,7 +857,7 @@ packet UciVendor_B_Command : UciCommand (group_id = VENDOR_RESERVED_B) {
     _payload_,
 }
 
-packet UciVendor_C_Command : UciCommand (group_id = VENDOR_RESERVED_C) {
+packet UciVendor_E_Command : UciCommand (group_id = VENDOR_RESERVED_E) {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
@@ -897,7 +897,7 @@ packet UciVendor_B_Response : UciResponse (group_id = VENDOR_RESERVED_B) {
     _payload_,
 }
 
-packet UciVendor_C_Response : UciResponse (group_id = VENDOR_RESERVED_C) {
+packet UciVendor_E_Response : UciResponse (group_id = VENDOR_RESERVED_E) {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
@@ -937,7 +937,7 @@ packet UciVendor_B_Notification : UciNotification (group_id = VENDOR_RESERVED_B)
     _payload_,
 }
 
-packet UciVendor_C_Notification : UciNotification (group_id = VENDOR_RESERVED_C) {
+packet UciVendor_E_Notification : UciNotification (group_id = VENDOR_RESERVED_E) {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,

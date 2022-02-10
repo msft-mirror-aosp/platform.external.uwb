@@ -111,10 +111,10 @@ pub fn uci_response(evt: UciResponsePacket) -> Result<UciResponse, UwbErr> {
                 payload,
             )
         }
-        UciResponseChild::UciVendor_C_Response(evt) => {
+        UciResponseChild::UciVendor_E_Response(evt) => {
             let payload = match evt.specialize() {
-                UciVendor_C_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_C_ResponseChild::None => Vec::new(),
+                UciVendor_E_ResponseChild::Payload(payload) => payload.to_vec(),
+                UciVendor_E_ResponseChild::None => Vec::new(),
             };
             vendor_response(
                 evt.get_group_id().to_u32().unwrap(),
@@ -177,10 +177,10 @@ pub fn uci_notification(evt: UciNotificationPacket) -> Result<UciNotification, U
                 payload,
             )
         }
-        UciNotificationChild::UciVendor_C_Notification(evt) => {
+        UciNotificationChild::UciVendor_E_Notification(evt) => {
             let payload = match evt.specialize() {
-                UciVendor_C_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_C_NotificationChild::None => Vec::new(),
+                UciVendor_E_NotificationChild::Payload(payload) => payload.to_vec(),
+                UciVendor_E_NotificationChild::None => Vec::new(),
             };
             vendor_notification(
                 evt.get_group_id().to_u32().unwrap(),
