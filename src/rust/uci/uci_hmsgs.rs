@@ -73,7 +73,7 @@ pub fn build_uci_vendor_cmd_packet(
     payload: Vec<u8>,
 ) -> Result<UciCommandPacket, UwbErr> {
     use GroupId::*;
-    let group_id: GroupId = FromPrimitive::from_u32(gid).expect("invalid vendor gid");
+    let group_id: GroupId = GroupId::from_u32(gid).expect("invalid vendor gid");
     let payload = match payload.is_empty() {
         true => Some(Bytes::from(payload)),
         false => None,
