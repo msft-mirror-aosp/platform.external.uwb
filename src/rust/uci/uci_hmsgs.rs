@@ -19,10 +19,11 @@ use bytes::Bytes;
 use log::error;
 use num_traits::FromPrimitive;
 use uwb_uci_packets::{
-    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, GroupId, SessionInitCmdBuilder,
-    SessionSetAppConfigCmdBuilder, SessionType, SessionUpdateControllerMulticastListCmdBuilder,
-    UciCommandPacket, UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder,
-    UciVendor_B_CommandBuilder, UciVendor_C_CommandBuilder, UciVendor_F_CommandBuilder,
+    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, DeviceResetCmdBuilder, GroupId,
+    ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder, SessionType,
+    SessionUpdateControllerMulticastListCmdBuilder, UciCommandPacket, UciVendor_9_CommandBuilder,
+    UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder, UciVendor_C_CommandBuilder,
+    UciVendor_F_CommandBuilder,
 };
 
 pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
@@ -91,4 +92,10 @@ pub fn build_uci_vendor_cmd_packet(
         }
     };
     Ok(packet)
+}
+
+pub fn build_device_reset_cmd(reset_config: u8) -> DeviceResetCmdBuilder {
+    DeviceResetCmdBuilder {
+        reset_config: ResetConfig::from_u8(reset_config).expect("invalid reset config"),
+    }
 }
