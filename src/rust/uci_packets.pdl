@@ -262,6 +262,10 @@ packet UciPacket {
     group_id: GroupId,
     packet_boundary_flag: PacketBoundaryFlag,
     message_type: MessageType,
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+    _size_(_body_): 8,
     _body_,
 }
 
@@ -279,109 +283,87 @@ packet UciNotification : UciPacket (message_type = NOTIFICATION, packet_boundary
 }
 
 packet CoreCommand : UciCommand (group_id = CORE) {
-    core_opcode: CoreOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet CoreResponse : UciResponse (group_id = CORE) {
-    core_opcode: CoreOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet CoreNotification : UciNotification (group_id = CORE) {
-    core_opcode: CoreOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet SessionCommand : UciCommand (group_id = SESSION_CONFIG) {
-    session_opcode: SessionOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet SessionResponse : UciResponse (group_id = SESSION_CONFIG) {
-    session_opcode: SessionOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet SessionNotification : UciNotification (group_id = SESSION_CONFIG) {
-    session_opcode: SessionOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet RangingCommand : UciCommand (group_id = RANGING_SESSION_CONTROL) {
-    ranging_opcode: RangeOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet RangingResponse : UciResponse (group_id = RANGING_SESSION_CONTROL) {
-    ranging_opcode: RangeOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet RangingNotification : UciNotification (group_id = RANGING_SESSION_CONTROL) {
-    ranging_opcode: RangeOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
+
 packet AndroidCommand : UciCommand (group_id = VENDOR_ANDROID) {
-    android_opcode: AndroidOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet AndroidResponse : UciResponse (group_id = VENDOR_ANDROID) {
-    android_opcode: AndroidOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
 packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
-    android_opcode: AndroidOpCode,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_body_): 8,
     _body_,
 }
 
-packet GetDeviceInfoCmd : CoreCommand (core_opcode = CORE_DEVICE_INFO) {
+// TODO: b/202760099: Use the enum instead of the raw value in the |opcode| field.
+packet DeviceResetCmd : CoreCommand (opcode = 0x0) { //CORE_DEVICE_RESET
+    reset_config: ResetConfig,
+}
+
+test DeviceResetCmd {
+    "\x20\x00\x00\x01\x00",
+}
+
+packet DeviceResetRsp : CoreResponse (opcode = 0x0) { //CORE_DEVICE_RESET
+    status: StatusCode,
+}
+
+test DeviceResetRsp {
+    "\x40\x00\x00\x01\x00",
+}
+
+packet DeviceStatusNtf : CoreNotification (opcode = 0x1) { //CORE_DEVICE_STATUS_NTF
+    device_state: DeviceState,
+}
+
+test DeviceStatusNtf {
+    "\x60\x01\x00\x01\x01",
+}
+
+packet GetDeviceInfoCmd : CoreCommand (opcode = 0x2) { //CORE_DEVICE_INFO
 }
 
 test GetDeviceInfoCmd {
     "\x20\x02\x00\x00",
 }
 
-packet GetDeviceInfoRsp : CoreResponse (core_opcode = CORE_DEVICE_INFO) {
+packet GetDeviceInfoRsp : CoreResponse (opcode = 0x2) { //CORE_DEVICE_INFO
     status: StatusCode,
     uci_version: 16,
     mac_version: 16,
@@ -395,7 +377,7 @@ test GetDeviceInfoRsp {
     "\x40\x02\x00\x0b\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
 }
 
-packet GetCapsInfoCmd : CoreCommand (core_opcode = CORE_GET_CAPS_INFO) {
+packet GetCapsInfoCmd : CoreCommand (opcode = 0x3) { //CORE_GET_CAPS_INFO
 }
 
 test GetCapsInfoCmd {
@@ -408,7 +390,8 @@ struct CapTlv {
     v: 8[],
 }
 
-packet GetCapsInfoRsp : CoreResponse (core_opcode = CORE_GET_CAPS_INFO) {
+
+packet GetCapsInfoRsp : CoreResponse (opcode = 0x3) { //CORE_GET_CAPS_INFO
     status: StatusCode,
     _count_(tlvs): 8,
     tlvs: CapTlv[],
@@ -424,7 +407,7 @@ struct DeviceConfigTLV {
     v: 8[],
 }
 
-packet SetConfigCmd : CoreCommand (core_opcode = CORE_SET_CONFIG) {
+packet SetConfigCmd : CoreCommand (opcode = 0x4) { //CORE_SET_CONFIG
     _count_(tlvs): 8,
     tlvs: DeviceConfigTLV[],
 }
@@ -438,7 +421,7 @@ struct DeviceConfigStatus {
     status: StatusCode,
 }
 
-packet SetConfigRsp : CoreResponse (core_opcode = CORE_SET_CONFIG) {
+packet SetConfigRsp : CoreResponse (opcode = 0x4) { //CORE_SET_CONFIG
     status: StatusCode,
     _count_(cfg_status): 8,
     cfg_status: DeviceConfigStatus[],
@@ -448,7 +431,7 @@ test SetConfigRsp {
     "\x40\x04\x00\x04\x01\x01\x01\x01",
 }
 
-packet GetConfigCmd : CoreCommand (core_opcode = CORE_GET_CONFIG) {
+packet GetConfigCmd : CoreCommand (opcode = 0x5) { //CORE_GET_CONFIG
     _count_(cfg_id): 8,
     cfg_id: 8[], // DeviceConfigId (Infra does not allow array of enums)
 }
@@ -457,7 +440,7 @@ test GetConfigCmd {
     "\x20\x05\x00\x02\x01\x01",
 }
 
-packet GetConfigRsp : CoreResponse (core_opcode = CORE_GET_CONFIG) {
+packet GetConfigRsp : CoreResponse (opcode = 0x5) { //CORE_GET_CONFIG
     status: StatusCode,
     _count_(tlvs): 8,
     tlvs: DeviceConfigTLV[]
@@ -467,31 +450,7 @@ test GetConfigRsp {
     "\x40\x05\x00\x05\x01\x01\x00\x01\x01",
 }
 
-packet DeviceStatusNtf : CoreNotification (core_opcode = CORE_DEVICE_STATUS_NTF) {
-    device_state: DeviceState,
-}
-
-test DeviceStatusNtf {
-    "\x60\x01\x00\x01\x01",
-}
-
-packet DeviceResetCmd : CoreCommand (core_opcode = CORE_DEVICE_RESET) {
-    reset_config: ResetConfig,
-}
-
-test DeviceResetCmd {
-    "\x20\x00\x00\x01\x00",
-}
-
-packet DeviceResetRsp : CoreResponse (core_opcode = CORE_DEVICE_RESET) {
-    status: StatusCode,
-}
-
-test DeviceResetRsp {
-    "\x40\x00\x00\x01\x00",
-}
-
-packet GenericError : CoreNotification (core_opcode = CORE_GENERIC_ERROR_NTF) {
+packet GenericError : CoreNotification (opcode = 0x7) { //CORE_GENERIC_ERROR_NTF
     status: StatusCode,
 }
 
@@ -499,7 +458,7 @@ test GenericError {
     "\x60\x07\x00\x01\x01",
 }
 
-packet SessionInitCmd : SessionCommand (session_opcode = SESSION_INIT) {
+packet SessionInitCmd : SessionCommand (opcode = 0x0) { //SESSION_INIT
     session_id: 32,
     session_type: SessionType,
 }
@@ -508,7 +467,7 @@ test SessionInitCmd {
     "\x22\x00\x00\x05\x01\x02\x03\x04\x01",
 }
 
-packet SessionInitRsp : SessionResponse (session_opcode = SESSION_INIT) {
+packet SessionInitRsp : SessionResponse (opcode = 0x0) { //SESSION_INIT
     status: StatusCode,
 }
 
@@ -516,7 +475,7 @@ test SessionInitRsp {
     "\x41\x00\x00\x01\x11",
 }
 
-packet SessionDeinitCmd : SessionCommand (session_opcode = SESSION_DEINIT) {
+packet SessionDeinitCmd : SessionCommand (opcode = 0x1) { //SESSION_DEINIT
     session_id: 32,
 }
 
@@ -524,7 +483,7 @@ test SessionDeinitCmd {
     "\x21\x01\x00\x04\x01\x02\x03\x04",
 }
 
-packet SessionDeinitRsp : SessionResponse (session_opcode = SESSION_DEINIT) {
+packet SessionDeinitRsp : SessionResponse (opcode = 0x1) { //SESSION_DEINIT
     status: StatusCode,
 }
 
@@ -532,7 +491,7 @@ test SessionDeinitRsp {
     "\x41\x01\x00\x01\x00",
 }
 
-packet SessionStatusNtf : SessionNotification (session_opcode = SESSION_STATUS_NTF) {
+packet SessionStatusNtf : SessionNotification (opcode = 0x2) { //SESSION_STATUS_NTF
     session_id: 32,
     session_state: SessionState,
     reason_code: ReasonCode,
@@ -548,7 +507,7 @@ struct AppConfigTlv {
     v: 8[],
 }
 
-packet SessionSetAppConfigCmd : SessionCommand (session_opcode = SESSION_SET_APP_CONFIG) {
+packet SessionSetAppConfigCmd : SessionCommand (opcode = 0x3) { //SESSION_SET_APP_CONFIG
     session_id: 32,
     _count_(tlvs): 8,
     tlvs: AppConfigTlv[]
@@ -563,7 +522,7 @@ struct AppConfigStatus {
     status: StatusCode,
 }
 
-packet SessionSetAppConfigRsp : SessionResponse (session_opcode = SESSION_SET_APP_CONFIG) {
+packet SessionSetAppConfigRsp : SessionResponse (opcode = 0x3) { //SESSION_SET_APP_CONFIG
     status: StatusCode,
     _count_(cfg_status): 8,
     cfg_status: AppConfigStatus[],
@@ -573,7 +532,7 @@ test SessionSetAppConfigRsp {
     "\x41\x03\x00\x04\x01\x01\x01\x00",
 }
 
-packet SessionGetAppConfigCmd : SessionCommand (session_opcode = SESSION_GET_APP_CONFIG) {
+packet SessionGetAppConfigCmd : SessionCommand (opcode = 0x4) { //SESSION_GET_APP_CONFIG
     session_id: 32,
     _count_(app_cfg): 8,
     app_cfg: 8[], // AppConfigTlvType (Infra does not allow array of enums)
@@ -583,7 +542,7 @@ test SessionGetAppConfigCmd {
     "\x21\x04\x00\x05\x01\x02\x03\x04\x00",
 }
 
-packet SessionGetAppConfigRsp : SessionResponse (session_opcode = SESSION_GET_APP_CONFIG) {
+packet SessionGetAppConfigRsp : SessionResponse (opcode = 0x4) { //SESSION_GET_APP_CONFIG
     status: StatusCode,
     _count_(tlvs): 8,
     tlvs: AppConfigTlv[],
@@ -593,7 +552,23 @@ test SessionGetAppConfigRsp {
     "\x41\x04\x00\x02\x01\x00",
 }
 
-packet SessionGetStateCmd : SessionCommand (session_opcode = SESSION_GET_STATE) {
+packet SessionGetCountCmd : SessionCommand (opcode = 0x5) { //SESSION_GET_COUNT
+}
+
+test SessionGetCountCmd {
+    "\x21\x05\x00\x00",
+}
+
+packet SessionGetCountRsp : SessionResponse (opcode = 0x5) { //SESSION_GET_COUNT
+    status: StatusCode,
+    session_count: 8,
+}
+
+test SessionGetCountRsp {
+    "\x41\x05\x00\x02\x00\x01",
+}
+
+packet SessionGetStateCmd : SessionCommand (opcode = 0x6) { //SESSION_GET_STATE
     session_id: 32,
 }
 
@@ -601,7 +576,7 @@ test SessionGetStateCmd {
     "\x21\x06\x00\x04\x00\x01\x02\x03",
 }
 
-packet SessionGetStateRsp : SessionResponse (session_opcode = SESSION_GET_STATE) {
+packet SessionGetStateRsp : SessionResponse (opcode = 0x6) { //SESSION_GET_STATE
     status: StatusCode,
     session_state: SessionState,
 }
@@ -610,7 +585,49 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x01",
 }
 
-packet RangeStartCmd : RangingCommand (ranging_opcode = RANGE_START) {
+struct Controlee {
+    short_address: 16,
+    subsession_id: 32,
+}
+
+packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+    session_id: 32,
+    action: 8,
+    _count_(controlees): 8,
+    controlees: Controlee[],
+}
+
+test SessionUpdateControllerMulticastListCmd {
+    "\x21\x07\x00\x06\x00\x01\x02\x03\x04\x00",
+}
+
+packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+    status: StatusCode,
+}
+
+test SessionUpdateControllerMulticastListRsp {
+    "\x41\x07\x00\x01\x00",
+}
+
+struct ControleeStatus {
+    mac_address: 16,
+    subsession_id: 32,
+    status: 8,
+}
+
+packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+    session_id: 32,
+    remaining_multicast_list_size: 8,
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatus[],
+}
+
+test SessionUpdateControllerMulticastListNtf {
+    "\x61\x07\x00\x06\x00\x01\x02\x03\x04\x00",
+}
+
+
+packet RangeStartCmd : RangingCommand (opcode = 0x0) { //RANGE_START
     session_id: 32,
 }
 
@@ -618,7 +635,7 @@ test RangeStartCmd {
     "\x22\x00\x00\x04\x00\x01\x02\x03",
 }
 
-packet RangeStartRsp : RangingResponse (ranging_opcode = RANGE_START) {
+packet RangeStartRsp : RangingResponse (opcode = 0x0) { //RANGE_START
     status: StatusCode,
 }
 
@@ -665,7 +682,7 @@ enum RangingMeasurementType : 8 {
     TWO_WAY = 0x1,
 }
 
-packet RangeDataNtf : RangingNotification (ranging_opcode = RANGE_START) {
+packet RangeDataNtf : RangingNotification (opcode = 0x0) { //RANGE_START
     sequence_number: 32,
     session_id: 32,
     rcr_indicator: 8,
@@ -695,7 +712,7 @@ test ExtendedMacTwoWayRangeDataNtf {
     "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-packet RangeStopCmd : RangingCommand (ranging_opcode = RANGE_STOP) {
+packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
     session_id: 32,
 }
 
@@ -703,7 +720,7 @@ test RangeStopCmd {
     "\x22\x01\x00\x04\x00\x02\x03\x04",
 }
 
-packet RangeStopRsp : RangingResponse (ranging_opcode = RANGE_STOP) {
+packet RangeStopRsp : RangingResponse (opcode = 0x1) { //RANGE_STOP
     status: StatusCode,
 }
 
@@ -711,7 +728,7 @@ test RangeStopRsp {
     "\x42\x01\x00\x01\x00",
 }
 
-packet RangeGetRangingCountCmd : RangingCommand (ranging_opcode = RANGE_GET_RANGING_COUNT) {
+packet RangeGetRangingCountCmd : RangingCommand (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
     session_id: 32,
 }
 
@@ -719,7 +736,7 @@ test RangeGetRangingCountCmd {
     "\x22\x03\x00\x04\x00\x02\x03\x04",
 }
 
-packet RangeGetRangingCountRsp : RangingResponse (ranging_opcode = RANGE_GET_RANGING_COUNT) {
+packet RangeGetRangingCountRsp : RangingResponse (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
     status: StatusCode,
     count: 32,
 }
@@ -728,81 +745,7 @@ test RangeGetRangingCountRsp {
     "\x42\x03\x00\x05\x00\x02\x03\x04\x05",
 }
 
-packet SessionGetCountCmd : SessionCommand (session_opcode = SESSION_GET_COUNT) {
-}
-
-test SessionGetCountCmd {
-    "\x21\x05\x00\x00",
-}
-
-packet SessionGetCountRsp : SessionResponse (session_opcode = SESSION_GET_COUNT) {
-    status: StatusCode,
-    session_count: 8,
-}
-
-test SessionGetCountRsp {
-    "\x41\x05\x00\x02\x00\x01",
-}
-
-struct Controlee {
-    short_address: 16,
-    subsession_id: 32,
-}
-
-packet SessionUpdateControllerMulticastListCmd : SessionCommand (session_opcode = SESSION_UPDATE_CONTROLLER_MULTICAST_LIST) {
-    session_id: 32,
-    action: 8,
-    _count_(controlees): 8,
-    controlees: Controlee[],
-}
-
-test SessionUpdateControllerMulticastListCmd {
-    "\x21\x07\x00\x06\x00\x01\x02\x03\x04\x00",
-}
-
-packet SessionUpdateControllerMulticastListRsp : SessionResponse (session_opcode = SESSION_UPDATE_CONTROLLER_MULTICAST_LIST) {
-    status: StatusCode,
-}
-
-test SessionUpdateControllerMulticastListRsp {
-    "\x41\x07\x00\x01\x00",
-}
-
-struct ControleeStatus {
-    mac_address: 16,
-    subsession_id: 32,
-    status: 8,
-}
-
-packet SessionUpdateControllerMulticastListNtf : SessionNotification (session_opcode = SESSION_UPDATE_CONTROLLER_MULTICAST_LIST) {
-    session_id: 32,
-    remaining_multicast_list_size: 8,
-    _count_(controlee_status): 8,
-    controlee_status: ControleeStatus[],
-}
-
-test SessionUpdateControllerMulticastListNtf {
-    "\x61\x07\x00\x06\x00\x01\x02\x03\x04\x00",
-}
-
-packet AndroidSetCountryCodeCmd: AndroidCommand (android_opcode = ANDROID_SET_COUNTRY_CODE) {
-    country_code : 8[2],
-}
-
-// Set country code to US.
-test AndroidSetCountryCodeCmd {
-    "\x2e\x01\x00\x02\x55\x53",
-}
-
-packet AndroidSetCountryCodeRsp : AndroidResponse (android_opcode = ANDROID_SET_COUNTRY_CODE) {
-    status: StatusCode,
-}
-
-test AndroidSetCountryCodeRsp {
-    "\x4e\x01\x00\x01\x00",
-}
-
-packet AndroidGetPowerStatsCmd: AndroidCommand (android_opcode = ANDROID_GET_POWER_STATS) {
+packet AndroidGetPowerStatsCmd: AndroidCommand (opcode = 0x0) { //ANDROID_GET_POWER_STATS
 }
 
 test AndroidGetPowerStatsCmd {
@@ -824,7 +767,7 @@ struct UwbPowerStats {
     data_stats: PowerStats,
 }
 
-packet AndroidGetPowerStatsRsp : AndroidResponse (android_opcode = ANDROID_GET_POWER_STATS) {
+packet AndroidGetPowerStatsRsp : AndroidResponse (opcode = 0x0) { //ANDROID_GET_POWER_STATS
     stats: UwbPowerStats,
 }
 
@@ -832,123 +775,80 @@ test AndroidGetPowerStatsRsp {
     "\x4e\x00\x00\x29\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-// TODO: Figure out a way to avoid the repetition of the body below without breaking the packet inheritance.
+
+packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
+    country_code : 8[2],
+}
+
+// Set country code to US.
+test AndroidSetCountryCodeCmd {
+    "\x2e\x01\x00\x02\x55\x53",
+}
+
+packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
+    status: StatusCode,
+}
+
+test AndroidSetCountryCodeRsp {
+    "\x4e\x01\x00\x01\x00",
+}
+
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_A_Command : UciCommand (group_id = VENDOR_RESERVED_A) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_B_Command : UciCommand (group_id = VENDOR_RESERVED_B) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_E_Command : UciCommand (group_id = VENDOR_RESERVED_E) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_F_Command :  UciCommand (group_id = VENDOR_RESERVED_F) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_9_Response : UciResponse (group_id = VENDOR_RESERVED_9) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_A_Response : UciResponse (group_id = VENDOR_RESERVED_A) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_B_Response : UciResponse (group_id = VENDOR_RESERVED_B) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_E_Response : UciResponse (group_id = VENDOR_RESERVED_E) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_F_Response : UciResponse (group_id = VENDOR_RESERVED_F) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_9_Notification : UciNotification (group_id = VENDOR_RESERVED_9) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_A_Notification : UciNotification (group_id = VENDOR_RESERVED_A) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_B_Notification : UciNotification (group_id = VENDOR_RESERVED_B) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_E_Notification : UciNotification (group_id = VENDOR_RESERVED_E) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
 
 packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F) {
-    opcode: 6,
-    _reserved_: 2,
-    _reserved_: 8,
-    _size_(_payload_): 8,
     _payload_,
 }
