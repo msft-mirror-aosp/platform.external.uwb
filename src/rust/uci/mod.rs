@@ -360,8 +360,8 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager
                     .session_update_controller_multicast_list_notification_received(response)?;
             }
-            uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
-                self.event_manager.vendor_uci_notification_received(gid, oid, payload)?;
+            uci_hrcv::UciNotification::RawVendorNtf(response) => {
+                self.event_manager.vendor_uci_notification_received(response)?;
             }
         }
         Ok(())

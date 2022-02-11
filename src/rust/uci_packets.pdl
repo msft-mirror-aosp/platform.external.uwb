@@ -265,21 +265,21 @@ packet UciPacket {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
-    _size_(_body_): 8,
-    _body_,
+    _size_(_payload_): 8,
+    _payload_,
 }
 
 // TODO(b/202760099): Handle fragmentation of packets if the size exceed max allowed.
 packet UciCommand : UciPacket (message_type = COMMAND, packet_boundary_flag = COMPLETE) {
-    _body_,
+    _payload_,
 }
 
 packet UciResponse : UciPacket (message_type = RESPONSE, packet_boundary_flag = COMPLETE) {
-    _body_,
+    _payload_,
 }
 
 packet UciNotification : UciPacket (message_type = NOTIFICATION, packet_boundary_flag = COMPLETE) {
-    _body_,
+    _payload_,
 }
 
 packet CoreCommand : UciCommand (group_id = CORE) {
@@ -318,7 +318,6 @@ packet RangingNotification : UciNotification (group_id = RANGING_SESSION_CONTROL
     _body_,
 }
 
-
 packet AndroidCommand : UciCommand (group_id = VENDOR_ANDROID) {
     _body_,
 }
@@ -331,7 +330,7 @@ packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
     _body_,
 }
 
-// TODO: b/202760099: Use the enum instead of the raw value in the |opcode| field.
+// TODO: b/202760099: Use the correspnding opcode enum instead of the raw value in the |opcode| field.
 packet DeviceResetCmd : CoreCommand (opcode = 0x0) { //CORE_DEVICE_RESET
     reset_config: ResetConfig,
 }

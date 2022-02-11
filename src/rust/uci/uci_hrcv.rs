@@ -15,7 +15,6 @@
  */
 
 use crate::error::UwbErr;
-use num_traits::ToPrimitive;
 use uwb_uci_packets::*;
 
 #[derive(Debug)]
@@ -43,9 +42,7 @@ pub enum UciResponse {
     RangeGetRangingCountRsp(RangeGetRangingCountRspPacket),
     AndroidSetCountryCodeRsp(AndroidSetCountryCodeRspPacket),
     AndroidGetPowerStatsRsp(AndroidGetPowerStatsRspPacket),
-    // TODO: Ideally if the PDL supported packet hierarchy better, we could have
-    // done - RawVendorRsp(UciResponsePacket).
-    RawVendorRsp { gid: u32, oid: u32, payload: Vec<u8> },
+    RawVendorRsp(UciResponsePacket),
 }
 
 #[derive(Debug)]
@@ -56,9 +53,7 @@ pub enum UciNotification {
     SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfPacket),
     ShortMacTwoWayRangeDataNtf(ShortMacTwoWayRangeDataNtfPacket),
     ExtendedMacTwoWayRangeDataNtf(ExtendedMacTwoWayRangeDataNtfPacket),
-    // TODO: Ideally if the PDL supported packet hierarchy better, we could have
-    // done - RawVendorNtf(UciNotificationPacket).
-    RawVendorNtf { gid: u32, oid: u32, payload: Vec<u8> },
+    RawVendorNtf(UciNotificationPacket),
 }
 
 pub fn uci_message(evt: UciPacketPacket) -> Result<UciMessage, UwbErr> {
@@ -77,62 +72,11 @@ pub fn uci_response(evt: UciResponsePacket) -> Result<UciResponse, UwbErr> {
         UciResponseChild::SessionResponse(evt) => session_response(evt),
         UciResponseChild::RangingResponse(evt) => ranging_response(evt),
         UciResponseChild::AndroidResponse(evt) => android_response(evt),
-        // TODO: This is ugly! But, needed because of pdl limitations.
-        UciResponseChild::UciVendor_9_Response(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_9_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_9_ResponseChild::None => Vec::new(),
-            };
-            vendor_response(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciResponseChild::UciVendor_A_Response(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_A_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_A_ResponseChild::None => Vec::new(),
-            };
-            vendor_response(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciResponseChild::UciVendor_B_Response(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_B_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_B_ResponseChild::None => Vec::new(),
-            };
-            vendor_response(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciResponseChild::UciVendor_E_Response(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_E_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_E_ResponseChild::None => Vec::new(),
-            };
-            vendor_response(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciResponseChild::UciVendor_F_Response(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_F_ResponseChild::Payload(payload) => payload.to_vec(),
-                UciVendor_F_ResponseChild::None => Vec::new(),
-            };
-            vendor_response(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
+        UciResponseChild::UciVendor_9_Response(evt) => vendor_response(evt.into()),
+        UciResponseChild::UciVendor_A_Response(evt) => vendor_response(evt.into()),
+        UciResponseChild::UciVendor_B_Response(evt) => vendor_response(evt.into()),
+        UciResponseChild::UciVendor_E_Response(evt) => vendor_response(evt.into()),
+        UciResponseChild::UciVendor_F_Response(evt) => vendor_response(evt.into()),
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
@@ -143,62 +87,11 @@ pub fn uci_notification(evt: UciNotificationPacket) -> Result<UciNotification, U
         UciNotificationChild::SessionNotification(evt) => session_notification(evt),
         UciNotificationChild::RangingNotification(evt) => ranging_notification(evt),
         UciNotificationChild::AndroidNotification(evt) => android_notification(evt),
-        // TODO: This is ugly! But, needed because of pdl limitations.
-        UciNotificationChild::UciVendor_9_Notification(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_9_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_9_NotificationChild::None => Vec::new(),
-            };
-            vendor_notification(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciNotificationChild::UciVendor_A_Notification(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_A_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_A_NotificationChild::None => Vec::new(),
-            };
-            vendor_notification(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciNotificationChild::UciVendor_B_Notification(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_B_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_B_NotificationChild::None => Vec::new(),
-            };
-            vendor_notification(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciNotificationChild::UciVendor_E_Notification(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_E_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_E_NotificationChild::None => Vec::new(),
-            };
-            vendor_notification(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
-        UciNotificationChild::UciVendor_F_Notification(evt) => {
-            let payload = match evt.specialize() {
-                UciVendor_F_NotificationChild::Payload(payload) => payload.to_vec(),
-                UciVendor_F_NotificationChild::None => Vec::new(),
-            };
-            vendor_notification(
-                evt.get_group_id().to_u32().unwrap(),
-                evt.get_opcode().to_u32().unwrap(),
-                payload,
-            )
-        }
+        UciNotificationChild::UciVendor_9_Notification(evt) => vendor_notification(evt.into()),
+        UciNotificationChild::UciVendor_A_Notification(evt) => vendor_notification(evt.into()),
+        UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
+        UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
+        UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
         _ => Err(UwbErr::Specialize(evt.to_vec())),
     }
 }
@@ -256,8 +149,8 @@ fn android_response(evt: AndroidResponsePacket) -> Result<UciResponse, UwbErr> {
     }
 }
 
-fn vendor_response(gid: u32, oid: u32, payload: Vec<u8>) -> Result<UciResponse, UwbErr> {
-    Ok(UciResponse::RawVendorRsp { gid, oid, payload })
+fn vendor_response(evt: UciResponsePacket) -> Result<UciResponse, UwbErr> {
+    Ok(UciResponse::RawVendorRsp(evt))
 }
 
 fn core_notification(evt: CoreNotificationPacket) -> Result<UciNotification, UwbErr> {
@@ -303,6 +196,6 @@ fn android_notification(evt: AndroidNotificationPacket) -> Result<UciNotificatio
     Err(UwbErr::Specialize(evt.to_vec()))
 }
 
-fn vendor_notification(gid: u32, oid: u32, payload: Vec<u8>) -> Result<UciNotification, UwbErr> {
-    Ok(UciNotification::RawVendorNtf { gid, oid, payload })
+fn vendor_notification(evt: UciNotificationPacket) -> Result<UciNotification, UwbErr> {
+    Ok(UciNotification::RawVendorNtf(evt))
 }
