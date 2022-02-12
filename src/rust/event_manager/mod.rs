@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use jni::errors::Result;
+use jni::errors::{Error, JniError, Result};
 use jni::objects::{GlobalRef, JClass, JObject, JValue, JValue::Void};
 use jni::signature::JavaType;
 use jni::sys::jobjectArray;
@@ -25,9 +25,11 @@ use std::convert::TryInto;
 use std::vec::Vec;
 use uwb_uci_packets::{
     DeviceStatusNtfPacket, ExtendedAddressTwoWayRangingMeasurement,
-    ExtendedMacTwoWayRangeDataNtfPacket, GenericErrorPacket, RangeDataNtfPacket,
+    ExtendedMacTwoWayRangeDataNtfPacket, GenericErrorPacket, Packet, RangeDataNtfPacket,
     SessionStatusNtfPacket, SessionUpdateControllerMulticastListNtfPacket,
-    ShortAddressTwoWayRangingMeasurement, ShortMacTwoWayRangeDataNtfPacket,
+    ShortAddressTwoWayRangingMeasurement, ShortMacTwoWayRangeDataNtfPacket, UciNotificationChild,
+    UciNotificationPacket, UciVendor_9_NotificationChild, UciVendor_A_NotificationChild,
+    UciVendor_B_NotificationChild, UciVendor_E_NotificationChild, UciVendor_F_NotificationChild,
 };
 
 const UWB_RANGING_DATA_CLASS: &str = "com/android/server/uwb/data/UwbRangingData";
@@ -63,7 +65,7 @@ pub trait EventManager {
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()>;
-    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()>;
+    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()>;
 }
 
 // Manages calling Java callbacks through the JNI.
@@ -126,9 +128,9 @@ impl EventManager for EventManagerImpl {
         self.clear_exception(env);
         result
     }
-    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_vendor_uci_notification_received(&env, gid, oid, payload);
+        let result = self.handle_vendor_uci_notification_received(&env, data);
         self.clear_exception(env);
         result
     }
@@ -631,15 +633,43 @@ impl EventManagerImpl {
         .map(|_| ()) // drop void method return
     }
 
+    fn get_vendor_uci_payload(data: UciNotificationPacket) -> Result<Vec<u8>> {
+        match data.specialize() {
+            UciNotificationChild::UciVendor_9_Notification(evt) => match evt.specialize() {
+                UciVendor_9_NotificationChild::Payload(payload) => Ok(payload.to_vec()),
+                UciVendor_9_NotificationChild::None => Ok(Vec::new()),
+            },
+            UciNotificationChild::UciVendor_A_Notification(evt) => match evt.specialize() {
+                UciVendor_A_NotificationChild::Payload(payload) => Ok(payload.to_vec()),
+                UciVendor_A_NotificationChild::None => Ok(Vec::new()),
+            },
+            UciNotificationChild::UciVendor_B_Notification(evt) => match evt.specialize() {
+                UciVendor_B_NotificationChild::Payload(payload) => Ok(payload.to_vec()),
+                UciVendor_B_NotificationChild::None => Ok(Vec::new()),
+            },
+            UciNotificationChild::UciVendor_E_Notification(evt) => match evt.specialize() {
+                UciVendor_E_NotificationChild::Payload(payload) => Ok(payload.to_vec()),
+                UciVendor_E_NotificationChild::None => Ok(Vec::new()),
+            },
+            UciNotificationChild::UciVendor_F_Notification(evt) => match evt.specialize() {
+                UciVendor_F_NotificationChild::Payload(payload) => Ok(payload.to_vec()),
+                UciVendor_F_NotificationChild::None => Ok(Vec::new()),
+            },
+            _ => {
+                error!("Invalid vendor notification with gid {:?}", data.to_vec());
+                Err(Error::JniCall(JniError::Unknown))
+            }
+        }
+    }
+
     pub fn handle_vendor_uci_notification_received(
         &self,
         env: &JNIEnv,
-        gid: u32,
-        oid: u32,
-        payload: Vec<u8>,
+        data: UciNotificationPacket,
     ) -> Result<()> {
-        let gid: i32 = gid.try_into().expect("Failed to convert gid");
-        let oid: i32 = oid.try_into().expect("Failed to convert gid");
+        let gid: i32 = data.get_group_id().to_i32().expect("Failed to convert gid");
+        let oid: i32 = data.get_opcode().to_i32().expect("Failed to convert gid");
+        let payload: Vec<u8> = EventManagerImpl::get_vendor_uci_payload(data)?;
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
 
         env.call_method(
@@ -671,8 +701,6 @@ impl EventManagerImpl {
 }
 
 #[cfg(test)]
-use jni::errors::{Error, JniError};
-#[cfg(test)]
 use log::warn;
 #[cfg(test)]
 use std::collections::VecDeque;
@@ -681,30 +709,13 @@ use std::sync::Mutex;
 
 #[cfg(test)]
 enum ExpectedCall {
-    DeviceStatus {
-        out: Result<()>,
-    },
-    CoreGenericError {
-        out: Result<()>,
-    },
-    SessionStatus {
-        out: Result<()>,
-    },
-    ShortRangeData {
-        out: Result<()>,
-    },
-    ExtendedRangeData {
-        out: Result<()>,
-    },
-    SessionUpdateControllerMulticastList {
-        out: Result<()>,
-    },
-    VendorUci {
-        exptected_gid: u32,
-        exptected_oid: u32,
-        exptected_payload: Vec<u8>,
-        out: Result<()>,
-    },
+    DeviceStatus { out: Result<()> },
+    CoreGenericError { out: Result<()> },
+    SessionStatus { out: Result<()> },
+    ShortRangeData { out: Result<()> },
+    ExtendedRangeData { out: Result<()> },
+    SessionUpdateControllerMulticastList { out: Result<()> },
+    VendorUci { out: Result<()> },
 }
 
 #[cfg(test)]
@@ -753,19 +764,8 @@ impl MockEventManager {
     }
 
     #[allow(dead_code)]
-    pub fn expect_vendor_uci_notification_received(
-        &mut self,
-        exptected_gid: u32,
-        exptected_oid: u32,
-        exptected_payload: Vec<u8>,
-        out: Result<()>,
-    ) {
-        self.add_expected_call(ExpectedCall::VendorUci {
-            exptected_gid,
-            exptected_oid,
-            exptected_payload,
-            out,
-        });
+    pub fn expect_vendor_uci_notification_received(&mut self, out: Result<()>) {
+        self.add_expected_call(ExpectedCall::VendorUci { out });
     }
 
     fn add_expected_call(&mut self, call: ExpectedCall) {
@@ -893,21 +893,11 @@ impl EventManager for MockEventManager {
         self.unwrap_out(out, "session_update_controller_multicast_list_notification_received")
     }
 
-    fn vendor_uci_notification_received(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<()> {
+    fn vendor_uci_notification_received(&self, _data: UciNotificationPacket) -> Result<()> {
         let out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedCall::VendorUci {
-                    exptected_gid,
-                    exptected_oid,
-                    exptected_payload,
-                    out,
-                }) if gid == exptected_gid
-                    && oid == exptected_oid
-                    && payload == exptected_payload =>
-                {
-                    Some(out)
-                }
+                Some(ExpectedCall::VendorUci { out }) => Some(out),
                 Some(call) => {
                     expected_calls.push_front(call);
                     None

@@ -82,6 +82,9 @@ pub enum JNICommand {
         oid: u32,
         payload: Vec<u8>,
     },
+    UciDeviceReset {
+        reset_config: u8,
+    },
 
     // Non blocking commands
     Enable,
@@ -288,6 +291,9 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciRawVendorCmd { gid, oid, payload } => {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?
             }
+            JNICommand::UciDeviceReset { reset_config } => {
+                uci_hmsgs::build_device_reset_cmd(reset_config).build().into()
+            }
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -354,8 +360,8 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager
                     .session_update_controller_multicast_list_notification_received(response)?;
             }
-            uci_hrcv::UciNotification::RawVendorNtf { gid, oid, payload } => {
-                self.event_manager.vendor_uci_notification_received(gid, oid, payload)?;
+            uci_hrcv::UciNotification::RawVendorNtf(response) => {
+                self.event_manager.vendor_uci_notification_received(response)?;
             }
         }
         Ok(())
