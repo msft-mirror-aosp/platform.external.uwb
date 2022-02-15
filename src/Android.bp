@@ -9,7 +9,7 @@ cc_library_static {
         },
     },
     name: "libuwb-uci",
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
     static_libs: [
         "android.system.suspend-V1-ndk",
         "android.hardware.uwb-V1-ndk",
@@ -62,27 +62,32 @@ cc_library_static {
     ],
 }
 
-filegroup {
-    name: "libuwb_uci_rust_srcs",
+rust_defaults {
+    name: "libuwb_uci_defaults",
     srcs: [
         "rust/lib.rs",
     ],
-}
-
-rust_library {
-    name: "libuwb_uci_rust",
     crate_name: "uwb_uci_rust",
-    srcs: [":libuwb_uci_rust_srcs"],
+    lints: "android",
+    clippy_lints: "android",
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
         "libbinder_ndk_sys",
         "libbinder_rs",
+        "libbytes",
+        "libjni",
         "liblazy_static",
         "liblog_rust",
         "liblogger",
+        "libnum_traits",
+        "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
+	"libbinder_tokio_rs",
+    ],
+    proc_macros: [
+        "libasync_trait",
     ],
     shared_libs: [
         "libbase",
@@ -92,24 +97,19 @@ rust_library {
     apex_available: [
         "com.android.uwb",
     ],
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
+}
+
+rust_library {
+    name: "libuwb_uci_rust",
+    defaults: ["libuwb_uci_defaults"],
 }
 
 rust_test {
     name: "libuwb_uci_rust_tests",
-    srcs: [":libuwb_uci_rust_srcs"],
+    defaults: ["libuwb_uci_defaults"],
     test_suites: ["general-tests"],
     auto_gen_config: true,
-    rustlibs:[
-        "android.hardware.uwb-V1-rust",
-        "libanyhow",
-        "liblazy_static",
-        "liblog_rust",
-        "liblogger",
-        "libtokio",
-        "libuwb_uci_packets",
-        "libuwb_uci_rust",
-    ],
 }
 
 rust_test {
@@ -143,7 +143,7 @@ rust_library {
     apex_available: [
         "com.android.uwb",
     ],
-    min_sdk_version: "current", // TODO: Move to 32 once SDK is finalized
+    min_sdk_version: "Tiramisu",
 }
 
 genrule {

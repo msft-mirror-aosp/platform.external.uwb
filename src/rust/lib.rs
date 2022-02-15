@@ -13,6 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+// TODO remove this and add appropriate documentation once it is decided whether this stays here or
+// moves into packages/modules/Uwb
+#![allow(missing_docs)]
 
-pub mod adaptation;
-mod uci;
+mod adaptation;
+pub mod error;
+pub mod event_manager;
+pub mod uci;
