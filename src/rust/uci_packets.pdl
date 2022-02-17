@@ -14,8 +14,9 @@ enum GroupId : 4 {
     VENDOR_RESERVED_9 = 0x09,
     VENDOR_RESERVED_A = 0x0a,
     VENDOR_RESERVED_B = 0x0b,
-    VENDOR_ANDROID    = 0x0c,
-    VENDOR_RESERVED_E = 0x0e,
+    // TODO(b/218883784): Temp switch of GID till qorvo switches over.
+    VENDOR_ANDROID    = 0x0e,
+    VENDOR_RESERVED_E = 0x0c,
     VENDOR_RESERVED_F = 0x0f,
 }
 
@@ -752,28 +753,20 @@ test AndroidGetPowerStatsCmd {
 }
 
 struct PowerStats {
-    tx_time: 32,
-    tx_wake_count: 32,
-    rx_time: 32,
-    rx_wake_count: 32,
-}
-
-struct UwbPowerStats {
     status: StatusCode,
-    idle_time: 32,
-    sleep_time: 32,
-    ranging_stats: PowerStats,
-    data_stats: PowerStats,
+    idle_time_ms: 32,
+    tx_time_ms: 32,
+    rx_time_ms: 32,
+    total_wake_count:32,
 }
 
 packet AndroidGetPowerStatsRsp : AndroidResponse (opcode = 0x0) { //ANDROID_GET_POWER_STATS
-    stats: UwbPowerStats,
+    stats: PowerStats,
 }
 
 test AndroidGetPowerStatsRsp {
-    "\x4e\x00\x00\x29\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x4e\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
-
 
 packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
     country_code : 8[2],
