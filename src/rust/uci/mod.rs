@@ -32,10 +32,10 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
-    GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, Packet,
-    RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
-    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
-    SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
+    AndroidGetPowerStatsCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
+    GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder, RangeStopCmdBuilder,
+    SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder,
+    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -85,6 +85,7 @@ pub enum JNICommand {
     UciDeviceReset {
         reset_config: u8,
     },
+    UciGetPowerStats,
 
     // Non blocking commands
     Enable,
@@ -251,6 +252,7 @@ impl<T: EventManager> Driver<T> {
                 SessionDeinitCmdBuilder { session_id }.build().into()
             }
             JNICommand::UciSessionGetCount => SessionGetCountCmdBuilder {}.build().into(),
+            JNICommand::UciGetPowerStats => AndroidGetPowerStatsCmdBuilder {}.build().into(),
             JNICommand::UciStartRange(session_id) => {
                 RangeStartCmdBuilder { session_id }.build().into()
             }
