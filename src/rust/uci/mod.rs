@@ -236,7 +236,7 @@ impl<T: EventManager> Driver<T> {
         }
     }
 
-    fn handle_blocking_jni_cmd(
+    async fn handle_blocking_jni_cmd(
         &mut self,
         tx: oneshot::Sender<UciResponse>,
         cmd: JNICommand,
@@ -296,6 +296,14 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciDeviceReset { reset_config } => {
                 uci_hmsgs::build_device_reset_cmd(reset_config).build().into()
             }
+            JNICommand::Disable(_graceful) => {
+                self.adaptation.hal_close().await?;
+                self.set_state(UwbState::W4HalClose);
+                tx.send(UciResponse::DisableRsp).unwrap_or_else(|_| {
+                    error!("Unable to send response, receiver gone");
+                });
+                return Ok(());
+            }
             _ => {
                 error!("Unexpected blocking cmd received {:?}", cmd);
                 return Ok(());
@@ -318,10 +326,6 @@ impl<T: EventManager> Driver<T> {
                 self.adaptation.hal_open().await?;
                 self.adaptation.core_initialization().await?;
                 self.set_state(UwbState::W4HalOpen);
-            }
-            JNICommand::Disable(_graceful) => {
-                self.adaptation.hal_close().await?;
-                self.set_state(UwbState::W4HalClose);
             }
             JNICommand::Exit => {
                 return Err(UwbErr::Exit);
@@ -383,7 +387,7 @@ impl<T: EventManager> Driver<T> {
             Some((cmd, tx)) = self.cmd_receiver.recv(), if self.can_process_cmd() => {
                 match tx {
                     Some(tx) => { // Blocking JNI commands processing.
-                        self.handle_blocking_jni_cmd(tx, cmd)?;
+                        self.handle_blocking_jni_cmd(tx, cmd).await?;
                     },
                     None => { // Non Blocking JNI commands processing.
                         self.handle_non_blocking_jni_cmd(cmd).await?;
@@ -587,7 +591,7 @@ mod tests {
             mock_adaptation.expect_hal_close(Ok(()));
         })?;
 
-        dispatcher.send_jni_command(JNICommand::Disable(true))?;
+        dispatcher.block_on_jni_command(JNICommand::Disable(true))?;
         dispatcher.exit()
     }
 
