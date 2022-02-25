@@ -23,7 +23,7 @@ pub enum UciMessage {
     Notification(UciNotification),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UciResponse {
     GetDeviceInfoRsp(GetDeviceInfoRspPacket),
     GetCapsInfoRsp(GetCapsInfoRspPacket),
@@ -46,7 +46,7 @@ pub enum UciResponse {
     DisableRsp,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UciNotification {
     GenericError(GenericErrorPacket),
     DeviceStatusNtf(DeviceStatusNtfPacket),
