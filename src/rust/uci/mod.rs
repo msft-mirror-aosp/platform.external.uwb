@@ -205,8 +205,8 @@ async fn drive<T: EventManager + Send + Sync>(
     Driver::new(Arc::new(adaptation), event_manager, cmd_receiver, rsp_receiver).drive().await
 }
 
-const MAX_RETRIES: usize = 10;
-const RETRY_DELAY_MS: u64 = 300;
+const MAX_RETRIES: usize = 5;
+const RETRY_DELAY_MS: u64 = 800;
 
 impl<T: EventManager> Driver<T> {
     fn new(
