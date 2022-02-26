@@ -16,6 +16,7 @@
 
 pub mod uci_hmsgs;
 pub mod uci_hrcv;
+pub mod uci_logger;
 
 use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
@@ -33,9 +34,9 @@ use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder, RangeStopCmdBuilder,
-    SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder,
-    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
+    GetDeviceInfoRspPacket, RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
+    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
+    SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -150,11 +151,11 @@ impl Retryer {
         self.failed.notify_one()
     }
 
-    fn send_with_retry(self, adaptation: Arc<SyncUwbAdaptation>, bytes: Vec<u8>) {
+    fn send_with_retry(self, adaptation: Arc<SyncUwbAdaptation>, cmd: UciCommandPacket) {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                adaptation.send_uci_message(&bytes).await.unwrap_or_else(|e| {
+                adaptation.send_uci_message(cmd.clone()).await.unwrap_or_else(|e| {
                     error!("Sending UCI message failed: {:?}", e);
                 });
                 select! {
@@ -202,14 +203,14 @@ async fn drive<T: EventManager + Send + Sync>(
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
-    Driver::new(Arc::new(adaptation), event_manager, cmd_receiver, rsp_receiver).drive().await
+    Driver::new(Arc::new(adaptation), event_manager, cmd_receiver, rsp_receiver).await.drive().await
 }
 
 const MAX_RETRIES: usize = 5;
 const RETRY_DELAY_MS: u64 = 800;
 
 impl<T: EventManager> Driver<T> {
-    fn new(
+    async fn new(
         adaptation: Arc<SyncUwbAdaptation>,
         event_manager: T,
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
@@ -314,7 +315,7 @@ impl<T: EventManager> Driver<T> {
 
         let retryer = Retryer::new();
         self.response_channel = Some((tx, retryer.clone()));
-        retryer.send_with_retry(self.adaptation.clone(), command.to_vec());
+        retryer.send_with_retry(self.adaptation.clone(), command);
         self.set_state(UwbState::W4UciResp);
         Ok(())
     }
@@ -533,9 +534,9 @@ impl Dispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adaptation::MockUwbAdaptation;
+    use crate::adaptation::tests::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
-    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder};
+    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet};
 
     fn setup_dispatcher(
         config_fn: fn(&mut Box<MockUwbAdaptation>, &mut MockEventManager),
