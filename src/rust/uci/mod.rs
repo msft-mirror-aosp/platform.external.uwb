@@ -41,7 +41,7 @@ use uwb_uci_packets::{
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
-type SyncUwbAdaptation = Box<dyn UwbAdaptation + std::marker::Send + std::marker::Sync>;
+type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 
 // Commands sent from JNI.
 #[derive(Debug)]
@@ -151,7 +151,7 @@ impl Retryer {
         self.failed.notify_one()
     }
 
-    fn send_with_retry(self, adaptation: Arc<SyncUwbAdaptation>, cmd: UciCommandPacket) {
+    fn send_with_retry(self, adaptation: SyncUwbAdaptation, cmd: UciCommandPacket) {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
@@ -188,7 +188,7 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
 }
 
 struct Driver<T: EventManager> {
-    adaptation: Arc<SyncUwbAdaptation>,
+    adaptation: SyncUwbAdaptation,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -203,7 +203,7 @@ async fn drive<T: EventManager + Send + Sync>(
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
-    Driver::new(Arc::new(adaptation), event_manager, cmd_receiver, rsp_receiver).await.drive().await
+    Driver::new(adaptation, event_manager, cmd_receiver, rsp_receiver).await.drive().await
 }
 
 const MAX_RETRIES: usize = 5;
@@ -211,7 +211,7 @@ const RETRY_DELAY_MS: u64 = 800;
 
 impl<T: EventManager> Driver<T> {
     async fn new(
-        adaptation: Arc<SyncUwbAdaptation>,
+        adaptation: SyncUwbAdaptation,
         event_manager: T,
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -467,7 +467,7 @@ impl Dispatcher {
     pub fn new<T: 'static + EventManager + Send + Sync>(event_manager: T) -> Result<Self> {
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         // TODO when simplifying constructors, avoid spare runtime
-        let adaptation: SyncUwbAdaptation = Box::new(
+        let adaptation: SyncUwbAdaptation = Arc::new(
             Builder::new_current_thread().build()?.block_on(UwbAdaptationImpl::new(rsp_sender))?,
         );
 
@@ -539,7 +539,7 @@ mod tests {
     use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet};
 
     fn setup_dispatcher(
-        config_fn: fn(&mut Box<MockUwbAdaptation>, &mut MockEventManager),
+        config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
     ) -> Result<Dispatcher> {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
@@ -547,7 +547,7 @@ mod tests {
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mut mock_adaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender));
         let mut mock_event_manager = MockEventManager::new();
 
         config_fn(&mut mock_adaptation, &mut mock_event_manager);

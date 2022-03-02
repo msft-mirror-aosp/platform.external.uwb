@@ -188,26 +188,26 @@ pub mod tests {
         }
 
         #[allow(dead_code)]
-        pub fn expect_finalize(&mut self, expected_exit_status: bool) {
+        pub fn expect_finalize(&self, expected_exit_status: bool) {
             self.expected_calls
                 .lock()
                 .unwrap()
                 .push_back(ExpectedCall::Finalize { expected_exit_status });
         }
         #[allow(dead_code)]
-        pub fn expect_hal_open(&mut self, out: Result<()>) {
+        pub fn expect_hal_open(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalOpen { out });
         }
         #[allow(dead_code)]
-        pub fn expect_hal_close(&mut self, out: Result<()>) {
+        pub fn expect_hal_close(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalClose { out });
         }
         #[allow(dead_code)]
-        pub fn expect_core_initialization(&mut self, out: Result<()>) {
+        pub fn expect_core_initialization(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreInitialization { out });
         }
         #[allow(dead_code)]
-        pub fn expect_session_initialization(&mut self, expected_session_id: i32, out: Result<()>) {
+        pub fn expect_session_initialization(&self, expected_session_id: i32, out: Result<()>) {
             self.expected_calls
                 .lock()
                 .unwrap()
@@ -215,7 +215,7 @@ pub mod tests {
         }
         #[allow(dead_code)]
         pub fn expect_send_uci_message(
-            &mut self,
+            &self,
             expected_data: Vec<u8>,
             rsp_data: Option<Vec<u8>>,
             notf_data: Option<Vec<u8>>,
