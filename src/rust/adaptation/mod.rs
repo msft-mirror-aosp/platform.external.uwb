@@ -104,7 +104,7 @@ pub struct UwbAdaptationImpl {
 impl UwbAdaptationImpl {
     pub async fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self> {
         let hal = get_hal_service().await?;
-        let logger = UciLoggerImpl::new(UciLogMode::Filtered).await;
+        let logger = UciLoggerImpl::new(UciLogMode::Disabled).await;
         Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger) })
     }
 }
