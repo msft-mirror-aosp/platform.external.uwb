@@ -248,6 +248,9 @@ impl UciLogger for UciLoggerImpl {
     }
 
     async fn close_file(&self) {
+        if self.config.mode == UciLogMode::Disabled {
+            return;
+        }
         info!("UCI log file closing");
         let mut buf_file = self.buf_file.lock().await;
         let buffer = buf_file.buffer.clone();
