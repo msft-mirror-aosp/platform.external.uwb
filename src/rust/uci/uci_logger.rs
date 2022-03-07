@@ -42,6 +42,7 @@ const FILE_NAME: &str = "uwb_uci.log";
 pub enum UciLogMode {
     Disabled,
     Filtered,
+    Enabled,
 }
 
 #[derive(Clone)]
@@ -76,6 +77,41 @@ struct BufferedFile {
     file: Option<File>,
     size_count: usize,
     buffer: BytesMut,
+}
+
+impl BufferedFile {
+    async fn open_next_file(&mut self, path: &str) -> Result<(), UwbErr> {
+        info!("Open next file");
+        self.close_file().await;
+        if create_dir(LOG_DIR).await.is_err() {
+            error!("Failed to create dir");
+        }
+        if rename(path, path.to_owned() + ".last").await.is_err() {
+            error!("Failed to rename the file");
+        }
+        let mut file = File::create(path).await?;
+        file.write_all(b"ucilogging").await?;
+        if file.flush().await.is_err() {
+            error!("Failed to flush");
+        }
+        self.file = Some(file);
+        Ok(())
+    }
+
+    async fn close_file(&mut self) {
+        if let Some(file) = &mut self.file {
+            info!("UCI log file closing");
+            if file.write_all(&self.buffer).await.is_err() {
+                error!("Failed to write");
+            }
+            if file.flush().await.is_err() {
+                error!("Failed to flush");
+            }
+            self.file = None;
+            self.buffer.clear();
+        }
+        self.size_count = 0;
+    }
 }
 
 pub struct UciLoggerImpl {
@@ -147,7 +183,7 @@ impl UciLoggerImpl {
         // Check whether exceeded the size limit
         let mut buf_file = self.buf_file.lock().await;
         if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > self.config.max_file_size {
-            match self.open_next_file().await {
+            match buf_file.open_next_file(&self.config.path).await {
                 Ok(()) => info!("New file created"),
                 Err(e) => error!("Open next file failed: {:?}", e),
             }
@@ -161,82 +197,84 @@ impl UciLoggerImpl {
         buf_file.buffer.put_slice(&bytes); // full packet.
         buf_file.size_count += bytes.len() + PKT_LOG_HEADER_SIZE;
     }
-
-    async fn open_next_file(&self) -> Result<(), UwbErr> {
-        info!("Open next file");
-        self.close_file().await;
-        if create_dir(LOG_DIR).await.is_err() {
-            error!("Failed to create dir");
-        }
-        if rename(&self.config.path, self.config.path.clone() + ".last").await.is_err() {
-            error!("Failed to rename the file");
-        }
-        let mut file = File::create(&self.config.path).await?;
-        file.write_all(b"ucilogging").await?;
-        if file.flush().await.is_err() {
-            error!("Failed to flush");
-        }
-        self.buf_file.lock().await.file = Some(file);
-        Ok(())
-    }
 }
 
 #[async_trait]
 impl UciLogger for UciLoggerImpl {
     async fn log_uci_command(&self, cmd: UciCommandPacket) {
-        if let UciLogMode::Disabled = self.config.mode {
-            return;
-        }
-        // Only filter SET_APP_CONFIG_CMD
-        let filtered_cmd: UciCommandPacket = match cmd.specialize() {
-            UciCommandChild::SessionCommand(session_cmd) => match session_cmd.specialize() {
-                SessionCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
-                    let session_id = set_config_cmd.get_session_id();
-                    let tlvs = set_config_cmd.get_tlvs();
-                    let mut filtered_tlvs = Vec::new();
-                    for tlv in tlvs {
-                        if VENDOR_ID == tlv.cfg_id as u64 || STATIC_STS_IV == tlv.cfg_id as u64 {
-                            filtered_tlvs
-                                .push(AppConfigTlv { cfg_id: tlv.cfg_id, v: vec![0; tlv.v.len()] });
-                        } else {
-                            filtered_tlvs.push(tlv.clone());
+        match self.config.mode {
+            UciLogMode::Disabled => return,
+            UciLogMode::Enabled => self.log_uci_packet(cmd.into()).await,
+            UciLogMode::Filtered => {
+                let filtered_cmd: UciCommandPacket = match cmd.specialize() {
+                    UciCommandChild::SessionCommand(session_cmd) => {
+                        match session_cmd.specialize() {
+                            SessionCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
+                                let session_id = set_config_cmd.get_session_id();
+                                let tlvs = set_config_cmd.get_tlvs();
+                                let mut filtered_tlvs = Vec::new();
+                                for tlv in tlvs {
+                                    if VENDOR_ID == tlv.cfg_id as u64
+                                        || STATIC_STS_IV == tlv.cfg_id as u64
+                                    {
+                                        filtered_tlvs.push(AppConfigTlv {
+                                            cfg_id: tlv.cfg_id,
+                                            v: vec![0; tlv.v.len()],
+                                        });
+                                    } else {
+                                        filtered_tlvs.push(tlv.clone());
+                                    }
+                                }
+                                SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }
+                                    .build()
+                                    .into()
+                            }
+                            _ => session_cmd.into(),
                         }
                     }
-                    SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
-                }
-                _ => session_cmd.into(),
-            },
-            _ => cmd,
-        };
-        self.log_uci_packet(filtered_cmd.into()).await;
+                    _ => cmd,
+                };
+                self.log_uci_packet(filtered_cmd.into()).await;
+            }
+        }
     }
 
     async fn log_uci_response(&self, rsp: UciResponsePacket) {
-        if let UciLogMode::Disabled = self.config.mode {
-            return;
-        }
-        // Only filter GET_APP_CONFIG_RSP
-        let filtered_rsp: UciResponsePacket = match rsp.specialize() {
-            UciResponseChild::SessionResponse(session_rsp) => match session_rsp.specialize() {
-                SessionResponseChild::SessionGetAppConfigRsp(rsp) => {
-                    let status = rsp.get_status();
-                    let tlvs = rsp.get_tlvs();
-                    let mut filtered_tlvs = Vec::new();
-                    for tlv in tlvs {
-                        if VENDOR_ID == tlv.cfg_id as u64 || STATIC_STS_IV == tlv.cfg_id as u64 {
-                            filtered_tlvs
-                                .push(AppConfigTlv { cfg_id: tlv.cfg_id, v: vec![0; tlv.v.len()] });
-                        } else {
-                            filtered_tlvs.push(tlv.clone());
+        match self.config.mode {
+            UciLogMode::Disabled => return,
+            UciLogMode::Enabled => self.log_uci_packet(rsp.into()).await,
+            UciLogMode::Filtered => {
+                let filtered_rsp: UciResponsePacket = match rsp.specialize() {
+                    UciResponseChild::SessionResponse(session_rsp) => {
+                        match session_rsp.specialize() {
+                            SessionResponseChild::SessionGetAppConfigRsp(rsp) => {
+                                let status = rsp.get_status();
+                                let tlvs = rsp.get_tlvs();
+                                let mut filtered_tlvs = Vec::new();
+                                for tlv in tlvs {
+                                    if VENDOR_ID == tlv.cfg_id as u64
+                                        || STATIC_STS_IV == tlv.cfg_id as u64
+                                    {
+                                        filtered_tlvs.push(AppConfigTlv {
+                                            cfg_id: tlv.cfg_id,
+                                            v: vec![0; tlv.v.len()],
+                                        });
+                                    } else {
+                                        filtered_tlvs.push(tlv.clone());
+                                    }
+                                }
+                                SessionGetAppConfigRspBuilder { status, tlvs: filtered_tlvs }
+                                    .build()
+                                    .into()
+                            }
+                            _ => session_rsp.into(),
                         }
                     }
-                    SessionGetAppConfigRspBuilder { status, tlvs: filtered_tlvs }.build().into()
-                }
-                _ => session_rsp.into(),
-            },
-            _ => rsp,
-        };
-        self.log_uci_packet(filtered_rsp.into()).await;
+                    _ => rsp,
+                };
+                self.log_uci_packet(filtered_rsp.into()).await;
+            }
+        }
     }
 
     async fn log_uci_notification(&self, ntf: UciNotificationPacket) {
@@ -251,20 +289,7 @@ impl UciLogger for UciLoggerImpl {
         if self.config.mode == UciLogMode::Disabled {
             return;
         }
-        info!("UCI log file closing");
-        let mut buf_file = self.buf_file.lock().await;
-        let buffer = buf_file.buffer.clone();
-        if let Some(file) = &mut buf_file.file {
-            if file.write_all(&buffer).await.is_err() {
-                error!("Failed to write");
-            }
-            if file.flush().await.is_err() {
-                error!("Failed to flush");
-            }
-            buf_file.file = None;
-            buf_file.buffer.clear();
-        }
-        buf_file.size_count = 0;
+        self.buf_file.lock().await.close_file().await;
     }
 }
 
