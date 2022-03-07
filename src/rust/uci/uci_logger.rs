@@ -19,9 +19,10 @@ use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use log::{error, info};
 use std::time::SystemTime;
-use tokio::fs::{create_dir, rename, File, OpenOptions};
+use tokio::fs::{create_dir, remove_file, rename, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
+use tokio::{task, time};
 use uwb_uci_packets::{
     AppConfigTlv, AppConfigTlvType, MessageType, Packet, SessionCommandChild,
     SessionGetAppConfigRspBuilder, SessionResponseChild, SessionSetAppConfigCmdBuilder,
@@ -31,7 +32,8 @@ use uwb_uci_packets::{
 
 // micros since 0000-01-01
 const UCI_EPOCH_DELTA: u64 = 0x00dcddb30f2f8000;
-const MAX_FILE_SIZE: usize = 4096;
+const UCI_LOG_LAST_FILE_STORE_TIME_SEC: u64 = 86400; // 24 hours
+const MAX_FILE_SIZE: usize = 102400; // 100 kb
 const PKT_LOG_HEADER_SIZE: usize = 25;
 const VENDOR_ID: u64 = AppConfigTlvType::VendorId as u64;
 const STATIC_STS_IV: u64 = AppConfigTlvType::StaticStsIv as u64;
@@ -77,6 +79,7 @@ struct BufferedFile {
     file: Option<File>,
     size_count: usize,
     buffer: BytesMut,
+    deleter_handle: Option<task::JoinHandle<()>>,
 }
 
 impl BufferedFile {
@@ -89,6 +92,16 @@ impl BufferedFile {
         if rename(path, path.to_owned() + ".last").await.is_err() {
             error!("Failed to rename the file");
         }
+        if let Some(deleter_handle) = self.deleter_handle.take() {
+            deleter_handle.abort();
+        }
+        let last_file_path = path.to_owned() + ".last";
+        self.deleter_handle = Some(task::spawn(async {
+            time::sleep(time::Duration::from_secs(UCI_LOG_LAST_FILE_STORE_TIME_SEC)).await;
+            if remove_file(last_file_path).await.is_err() {
+                error!("Failed to remove file!");
+            };
+        }));
         let mut file = File::create(path).await?;
         file.write_all(b"ucilogging").await?;
         if file.flush().await.is_err() {
@@ -123,28 +136,32 @@ impl UciLoggerImpl {
     pub async fn new(mode: UciLogMode) -> Self {
         let config = UciLogConfig::new(mode);
         let file = match OpenOptions::new().append(true).open(&config.path).await.ok() {
-            Some(f) => Some(f),
-            None => {
-                if create_dir(LOG_DIR).await.is_err() {
-                    error!("Failed to create dir");
-                }
-                let new_file = match File::create(&config.path).await {
-                    Ok(mut f) => {
-                        if f.write_all(b"ucilogging").await.is_err() {
-                            error!("failed to write");
+            Some(f) => match f.metadata().await {
+                Ok(md) => match md.modified() {
+                    Ok(modified_date) => match SystemTime::now().duration_since(modified_date) {
+                        Ok(duration) => {
+                            if duration.as_secs() > UCI_LOG_LAST_FILE_STORE_TIME_SEC {
+                                Self::create_file(&config.path).await
+                            } else {
+                                Some(f)
+                            }
                         }
-                        if f.flush().await.is_err() {
-                            error!("Failed to flush");
+                        Err(e) => {
+                            error!("Failed to convert to duration {:?}", e);
+                            Some(f)
                         }
+                    },
+                    Err(e) => {
+                        error!("Failed to get modified date {:?}", e);
                         Some(f)
                     }
-                    Err(e) => {
-                        error!("Failed to create file {:?}", e);
-                        None
-                    }
-                };
-                new_file
-            }
+                },
+                Err(e) => {
+                    error!("Failed to get metadata {:?}", e);
+                    Some(f)
+                }
+            },
+            None => Self::create_file(&config.path).await,
         };
         let buf_file = BufferedFile {
             size_count: match file {
@@ -153,6 +170,7 @@ impl UciLoggerImpl {
             },
             file,
             buffer: BytesMut::new(),
+            deleter_handle: None,
         };
         let ret = Self { config, buf_file: Mutex::new(buf_file) };
         info!("UCI logger created");
@@ -196,6 +214,26 @@ impl UciLoggerImpl {
         buf_file.buffer.put_u8(mt_byte); // type
         buf_file.buffer.put_slice(&bytes); // full packet.
         buf_file.size_count += bytes.len() + PKT_LOG_HEADER_SIZE;
+    }
+    async fn create_file(path: &str) -> Option<File> {
+        if create_dir(LOG_DIR).await.is_err() {
+            error!("Failed to create dir");
+        }
+        match File::create(path).await {
+            Ok(mut f) => {
+                if f.write_all(b"ucilogging").await.is_err() {
+                    error!("failed to write");
+                }
+                if f.flush().await.is_err() {
+                    error!("Failed to flush");
+                }
+                Some(f)
+            }
+            Err(e) => {
+                error!("Failed to create file {:?}", e);
+                None
+            }
+        }
     }
 }
 
