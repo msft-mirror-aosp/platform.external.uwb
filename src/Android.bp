@@ -21,6 +21,7 @@ rust_defaults {
         "liblog_rust",
         "liblogger",
         "libnum_traits",
+        "librustutils",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
