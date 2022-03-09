@@ -14,7 +14,8 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
 use android_hardware_uwb::binder::{BinderFeatures, Interface, Result as BinderResult, Strong};
 use async_trait::async_trait;
 use binder_tokio::{Tokio, TokioRuntime};
-use log::error;
+use log::{error, warn};
+use rustutils::system_properties;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
@@ -22,6 +23,8 @@ use uwb_uci_packets::{Packet, UciCommandPacket, UciPacketChild, UciPacketPacket}
 
 type Result<T> = std::result::Result<T, UwbErr>;
 type SyncUciLogger = Arc<dyn UciLogger + Send + Sync>;
+
+const UCI_LOG_DEFAULT: UciLogMode = UciLogMode::Disabled;
 
 pub struct UwbClientCallback {
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
@@ -104,7 +107,23 @@ pub struct UwbAdaptationImpl {
 impl UwbAdaptationImpl {
     pub async fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self> {
         let hal = get_hal_service().await?;
-        let logger = UciLoggerImpl::new(UciLogMode::Filtered).await;
+        let mode = match system_properties::read("persist.uwb.uci_logger_mode") {
+            Ok(Some(logger_mode)) => match logger_mode.as_str() {
+                "disabled" => UciLogMode::Disabled,
+                "filtered" => UciLogMode::Filtered,
+                "enabled" => UciLogMode::Enabled,
+                str => {
+                    warn!("Logger mode not recognized! Value: {:?}", str);
+                    UCI_LOG_DEFAULT
+                }
+            },
+            Ok(None) => UCI_LOG_DEFAULT,
+            Err(e) => {
+                error!("Failed to get uci_logger_mode {:?}", e);
+                UCI_LOG_DEFAULT
+            }
+        };
+        let logger = UciLoggerImpl::new(mode).await;
         Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger) })
     }
 }
@@ -188,26 +207,26 @@ pub mod tests {
         }
 
         #[allow(dead_code)]
-        pub fn expect_finalize(&mut self, expected_exit_status: bool) {
+        pub fn expect_finalize(&self, expected_exit_status: bool) {
             self.expected_calls
                 .lock()
                 .unwrap()
                 .push_back(ExpectedCall::Finalize { expected_exit_status });
         }
         #[allow(dead_code)]
-        pub fn expect_hal_open(&mut self, out: Result<()>) {
+        pub fn expect_hal_open(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalOpen { out });
         }
         #[allow(dead_code)]
-        pub fn expect_hal_close(&mut self, out: Result<()>) {
+        pub fn expect_hal_close(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalClose { out });
         }
         #[allow(dead_code)]
-        pub fn expect_core_initialization(&mut self, out: Result<()>) {
+        pub fn expect_core_initialization(&self, out: Result<()>) {
             self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreInitialization { out });
         }
         #[allow(dead_code)]
-        pub fn expect_session_initialization(&mut self, expected_session_id: i32, out: Result<()>) {
+        pub fn expect_session_initialization(&self, expected_session_id: i32, out: Result<()>) {
             self.expected_calls
                 .lock()
                 .unwrap()
@@ -215,7 +234,7 @@ pub mod tests {
         }
         #[allow(dead_code)]
         pub fn expect_send_uci_message(
-            &mut self,
+            &self,
             expected_data: Vec<u8>,
             rsp_data: Option<Vec<u8>>,
             notf_data: Option<Vec<u8>>,
