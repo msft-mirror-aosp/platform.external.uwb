@@ -129,3 +129,22 @@ genrule {
         "rust/uwb_uci_packets/uci_packets.rs",
     ],
 }
+
+rust_defaults {
+    name: "libuwb_core_defaults",
+    srcs: ["rust/uwb_core/src/lib.rs"],
+    lints: "android",
+    clippy_lints: "android",
+    host_supported: true,
+}
+
+rust_library {
+    name: "libuwb_core",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
+}
+
+rust_test {
+    name: "libuwb_core_tests",
+    defaults: ["libuwb_core_defaults"],
+}
