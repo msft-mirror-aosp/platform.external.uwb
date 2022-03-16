@@ -21,6 +21,7 @@ rust_defaults {
         "liblog_rust",
         "liblogger",
         "libnum_traits",
+        "librustutils",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
@@ -63,11 +64,23 @@ rust_test {
     auto_gen_config: true,
 }
 
-rust_test {
-    name: "libuwb_uci_packet_tests",
+rust_defaults {
+    name: "libuwb_uci_packet_defaults",
     srcs: [
+        "rust/uwb_uci_packets/src/lib.rs",
         ":UwbGeneratedPackets_rust",
     ],
+    proc_macros: ["libnum_derive"],
+    rustlibs:[
+        "libbytes",
+        "libnum_traits",
+        "libthiserror",
+    ],
+}
+
+rust_test {
+    name: "libuwb_uci_packet_tests",
+    defaults: ["libuwb_uci_packet_defaults"],
     test_suites: [
         "general-tests",
         "mts-uwb"
@@ -86,27 +99,17 @@ rust_test {
         },
     },
     auto_gen_config: true,
-    proc_macros: ["libnum_derive"],
     rustlibs:[
         "android.hardware.uwb-V1-rust",
-        "libbytes",
         "liblog_rust",
-        "libnum_traits",
-        "libthiserror",
         "libuwb_uci_rust",
     ],
 }
 
 rust_library {
     name: "libuwb_uci_packets",
+    defaults: ["libuwb_uci_packet_defaults"],
     crate_name: "uwb_uci_packets",
-    srcs: [":UwbGeneratedPackets_rust"],
-    proc_macros: ["libnum_derive"],
-    rustlibs: [
-        "libbytes",
-        "libnum_traits",
-        "libthiserror",
-    ],
     apex_available: [
         "com.android.uwb",
     ],
@@ -120,9 +123,28 @@ genrule {
     ],
     cmd: "$(location bluetooth_packetgen) --include=external/uwb/src --out=$(genDir) $(in) --rust",
     srcs: [
-        "rust/uci_packets.pdl",
+        "rust/uwb_uci_packets/uci_packets.pdl",
     ],
     out: [
-        "rust/uci_packets.rs",
+        "rust/uwb_uci_packets/uci_packets.rs",
     ],
+}
+
+rust_defaults {
+    name: "libuwb_core_defaults",
+    srcs: ["rust/uwb_core/src/lib.rs"],
+    lints: "android",
+    clippy_lints: "android",
+    host_supported: true,
+}
+
+rust_library {
+    name: "libuwb_core",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
+}
+
+rust_test {
+    name: "libuwb_core_tests",
+    defaults: ["libuwb_core_defaults"],
 }

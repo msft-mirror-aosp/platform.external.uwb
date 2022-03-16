@@ -16,6 +16,7 @@
 
 pub mod uci_hmsgs;
 pub mod uci_hrcv;
+pub mod uci_logger;
 
 use crate::adaptation::{UwbAdaptation, UwbAdaptationImpl};
 use crate::error::UwbErr;
@@ -33,17 +34,17 @@ use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoRspPacket, Packet, RangeStartCmdBuilder, RangeStopCmdBuilder,
-    SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder,
-    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
+    GetDeviceInfoRspPacket, RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
+    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
+    SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
-type SyncUwbAdaptation = Box<dyn UwbAdaptation + std::marker::Send + std::marker::Sync>;
+type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 
 // Commands sent from JNI.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum JNICommand {
     // Blocking UCI commands
     UciGetCapsInfo,
@@ -150,11 +151,11 @@ impl Retryer {
         self.failed.notify_one()
     }
 
-    fn send_with_retry(self, adaptation: Arc<SyncUwbAdaptation>, bytes: Vec<u8>) {
+    fn send_with_retry(self, adaptation: SyncUwbAdaptation, cmd: UciCommandPacket) {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                adaptation.send_uci_message(&bytes).await.unwrap_or_else(|e| {
+                adaptation.send_uci_message(cmd.clone()).await.unwrap_or_else(|e| {
                     error!("Sending UCI message failed: {:?}", e);
                 });
                 select! {
@@ -187,7 +188,7 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
 }
 
 struct Driver<T: EventManager> {
-    adaptation: Arc<SyncUwbAdaptation>,
+    adaptation: SyncUwbAdaptation,
     event_manager: T,
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -202,15 +203,15 @@ async fn drive<T: EventManager + Send + Sync>(
     cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
     rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
 ) -> Result<()> {
-    Driver::new(Arc::new(adaptation), event_manager, cmd_receiver, rsp_receiver).drive().await
+    Driver::new(adaptation, event_manager, cmd_receiver, rsp_receiver).await.drive().await
 }
 
-const MAX_RETRIES: usize = 10;
-const RETRY_DELAY_MS: u64 = 300;
+const MAX_RETRIES: usize = 5;
+const RETRY_DELAY_MS: u64 = 800;
 
 impl<T: EventManager> Driver<T> {
-    fn new(
-        adaptation: Arc<SyncUwbAdaptation>,
+    async fn new(
+        adaptation: SyncUwbAdaptation,
         event_manager: T,
         cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
         rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
@@ -314,7 +315,7 @@ impl<T: EventManager> Driver<T> {
 
         let retryer = Retryer::new();
         self.response_channel = Some((tx, retryer.clone()));
-        retryer.send_with_retry(self.adaptation.clone(), command.to_vec());
+        retryer.send_with_retry(self.adaptation.clone(), command);
         self.set_state(UwbState::W4UciResp);
         Ok(())
     }
@@ -454,19 +455,27 @@ impl<T: EventManager> Driver<T> {
     }
 }
 
+pub trait Dispatcher {
+    fn send_jni_command(&self, cmd: JNICommand) -> Result<()>;
+    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse>;
+    fn exit(&mut self) -> Result<()>;
+    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket>;
+    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>);
+}
+
 // Controller for sending tasks for the native thread to handle.
-pub struct Dispatcher {
+pub struct DispatcherImpl {
     cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
-    pub device_info: Option<GetDeviceInfoRspPacket>,
+    device_info: Option<GetDeviceInfoRspPacket>,
 }
 
-impl Dispatcher {
+impl DispatcherImpl {
     pub fn new<T: 'static + EventManager + Send + Sync>(event_manager: T) -> Result<Self> {
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         // TODO when simplifying constructors, avoid spare runtime
-        let adaptation: SyncUwbAdaptation = Box::new(
+        let adaptation: SyncUwbAdaptation = Arc::new(
             Builder::new_current_thread().build()?.block_on(UwbAdaptationImpl::new(rsp_sender))?,
         );
 
@@ -500,17 +509,19 @@ impl Dispatcher {
             .build()?;
         let join_handle =
             runtime.spawn(drive(adaptation, event_manager, cmd_receiver, rsp_receiver));
-        Ok(Dispatcher { cmd_sender, join_handle, runtime, device_info: None })
+        Ok(DispatcherImpl { cmd_sender, join_handle, runtime, device_info: None })
     }
+}
 
-    pub fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
+impl Dispatcher for DispatcherImpl {
+    fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
         self.cmd_sender.send((cmd, None))?;
         Ok(())
     }
 
     // TODO: Consider implementing these separate for different commands so we can have more
     // specific return types.
-    pub fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse> {
+    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse> {
         let (tx, rx) = oneshot::channel();
         self.cmd_sender.send((cmd, Some(tx)))?;
         let ret = self.runtime.block_on(rx)?;
@@ -518,7 +529,7 @@ impl Dispatcher {
         Ok(ret)
     }
 
-    pub fn exit(&mut self) -> Result<()> {
+    fn exit(&mut self) -> Result<()> {
         self.send_jni_command(JNICommand::Exit)?;
         match self.runtime.block_on(&mut self.join_handle) {
             Err(err) if err.is_panic() => {
@@ -528,30 +539,37 @@ impl Dispatcher {
             _ => Ok(()),
         }
     }
+
+    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket> {
+        &self.device_info
+    }
+    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>) {
+        self.device_info = device_info;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adaptation::MockUwbAdaptation;
+    use crate::adaptation::tests::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
-    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder};
+    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet};
 
     fn setup_dispatcher(
-        config_fn: fn(&mut Box<MockUwbAdaptation>, &mut MockEventManager),
-    ) -> Result<Dispatcher> {
+        config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
+    ) -> Result<DispatcherImpl> {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let mut mock_adaptation = Box::new(MockUwbAdaptation::new(rsp_sender));
+        let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender));
         let mut mock_event_manager = MockEventManager::new();
 
         config_fn(&mut mock_adaptation, &mut mock_event_manager);
 
-        Dispatcher::new_for_testing(
+        DispatcherImpl::new_for_testing(
             mock_event_manager,
             mock_adaptation as SyncUwbAdaptation,
             rsp_receiver,
