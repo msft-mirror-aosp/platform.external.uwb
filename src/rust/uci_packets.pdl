@@ -94,6 +94,10 @@ enum StatusCode : 8 {
     // UWB Data Session Specific Status Codes
     UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
     UCI_STATUS_DATA_RX_CRC_ERROR = 0x31,
+
+    // Vendor Specific Status Codes
+    UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
+    UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
 }
 
 enum ResetConfig : 8 {
