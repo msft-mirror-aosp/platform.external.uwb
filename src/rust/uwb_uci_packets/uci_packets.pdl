@@ -616,7 +616,7 @@ test SessionUpdateControllerMulticastListRsp {
 struct ControleeStatus {
     mac_address: 16,
     subsession_id: 32,
-    status: 8,
+    status: MulticastUpdateStatusCode,
 }
 
 packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST

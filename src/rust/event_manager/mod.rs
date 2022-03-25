@@ -595,7 +595,10 @@ impl EventManagerImpl {
         for iter in controlee_status {
             mac_address_list.push(iter.mac_address.into());
             subsession_id_list.push(iter.subsession_id.into());
-            status_list.push(iter.status.into());
+            status_list.push(iter.status.to_i32().ok_or_else(|| {
+                error!("Failed to convert controlee_status's status field: {:?}", iter.status);
+                Error::JavaException
+            })?);
         }
 
         let mac_address_jintarray = env.new_int_array(count)?;
