@@ -44,12 +44,16 @@
 #define ONE_WAY_MEASUREMENT_LENGTH 36
 #define RANGING_DATA_LENGTH 25
 
+#define VENDOR_SPEC_INFO_LEN 2
+
 uint8_t last_cmd_buff[UCI_MAX_PAYLOAD_SIZE];
 uint8_t last_data_buff[4096];
 static uint8_t device_info_buffer[MAX_NUM_OF_TDOA_MEASURES]
                                  [UCI_MAX_PAYLOAD_SIZE];
 static uint8_t blink_payload_buffer[MAX_NUM_OF_TDOA_MEASURES]
                                    [UCI_MAX_PAYLOAD_SIZE];
+static uint8_t range_data_ntf_buffer[2048];
+static uint8_t range_data_ntf_len =0;
 
 struct chained_uci_packet {
   uint8_t buffer[4192];
@@ -380,10 +384,24 @@ bool uwb_ucif_process_event(UWB_HDR* p_msg) {
             uci_proc_session_management_ntf(oid, pp, payload_length);
             break;
           case UCI_GID_RANGE_MANAGE: /* 0011b UCI Range management group */
+            range_data_ntf_len = p_msg->len;
+            for (int i=0; i<p_msg->len;i++) {
+                 range_data_ntf_buffer[i] = p[i];
+            }
             uci_proc_rang_management_ntf(oid, pp, payload_length);
             break;
           case UCI_GID_TEST: /* 1101b test group */
-            uci_proc_test_management_ntf(oid, pp, payload_length);
+            //uci_proc_test_management_ntf(oid, pp, payload_length);
+            //send vendor specific ntf as it is handled by vendor extension
+            uci_proc_vendor_specific_ntf(gid, p, (payload_length + UCI_MSG_HDR_SIZE));
+            break;
+          case UCI_GID_VENDOR_SPECIFIC_0x09:
+          case UCI_GID_VENDOR_SPECIFIC_0x0A:
+          case UCI_GID_VENDOR_SPECIFIC_0x0B:
+          case UCI_GID_VENDOR_SPECIFIC_0x0C:
+          case UCI_GID_VENDOR_SPECIFIC_0x0E:
+          case UCI_GID_VENDOR_SPECIFIC_0x0F:
+            uci_proc_vendor_specific_ntf(gid, p, (payload_length + UCI_MSG_HDR_SIZE));
             break;
           default:
             UCI_TRACE_E("uwb_ucif_process_event: UWB Unknown gid:%d", gid);
@@ -934,6 +952,24 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
   uwb_response.sRange_data = sRange_data;
 
   (*uwb_cb.p_resp_cback)(UWB_RANGE_DATA_REVT, &uwb_response);
+
+  UCI_TRACE_I("%s: ranging_measures_length = %d range_data_ntf_len = %d", __func__,ranging_measures_length,range_data_ntf_len);
+  if (ranging_measures_length >= VENDOR_SPEC_INFO_LEN) {
+     uint16_t vendor_specific_length =0;
+     STREAM_TO_UINT16(vendor_specific_length, p);
+     if (vendor_specific_length > 0) {
+        if (vendor_specific_length > MAX_VENDOR_INFO_LENGTH) {
+            UCI_TRACE_E("%s: Invalid Range_data vendor_specific_length = %x",
+                           __func__, vendor_specific_length);
+            return;
+        }
+
+        uint8_t *range_data_with_vendor_info =  range_data_ntf_buffer;
+        uwb_response.sVendor_specific_ntf.len = range_data_ntf_len;
+        STREAM_TO_ARRAY(uwb_response.sVendor_specific_ntf.data, range_data_with_vendor_info, range_data_ntf_len);
+        (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &uwb_response);
+     }
+  }
 }
 
 /*******************************************************************************
