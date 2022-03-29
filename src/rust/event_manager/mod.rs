@@ -179,8 +179,10 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: DeviceStatusNtfPacket,
     ) -> Result<()> {
-        let state =
-            data.get_device_state().to_i32().expect("Failed converting device_state to i32");
+        let state = data.get_device_state().to_i32().ok_or_else(|| {
+            error!("Failed converting device_state to i32");
+            Error::JniCall(JniError::Unknown)
+        })?;
         env.call_method(
             self.obj.as_obj(),
             "onDeviceStatusNotificationReceived",
@@ -195,12 +197,18 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: SessionStatusNtfPacket,
     ) -> Result<()> {
-        let session_id =
-            data.get_session_id().to_i64().expect("Failed converting session_id to i64");
-        let state =
-            data.get_session_state().to_i32().expect("Failed converting session_state to i32");
-        let reason_code =
-            data.get_reason_code().to_i32().expect("Failed converting reason_code to i32");
+        let session_id = data.get_session_id().to_i64().ok_or_else(|| {
+            error!("Failed converting session_id to i64");
+            Error::JniCall(JniError::Unknown)
+        })?;
+        let state = data.get_session_state().to_i32().ok_or_else(|| {
+            error!("Failed converting session_state to i32");
+            Error::JniCall(JniError::Unknown)
+        })?;
+        let reason_code = data.get_reason_code().to_i32().ok_or_else(|| {
+            error!("Failed converting reason_code to i32");
+            Error::JniCall(JniError::Unknown)
+        })?;
         env.call_method(
             self.obj.as_obj(),
             "onSessionStatusNotificationReceived",
@@ -215,7 +223,10 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: GenericErrorPacket,
     ) -> Result<()> {
-        let status = data.get_status().to_i32().expect("Failed converting status to i32");
+        let status = data.get_status().to_i32().ok_or_else(|| {
+            error!("Failed converting status to i32");
+            Error::JniCall(JniError::Unknown)
+        })?;
         env.call_method(
             self.obj.as_obj(),
             "onCoreGenericErrorNotificationReceived",
@@ -257,9 +268,11 @@ impl EventManagerImpl {
         two_way_measurement: &'a ShortAddressTwoWayRangingMeasurement,
     ) -> Result<JObject<'a>> {
         let mac_address_arr = two_way_measurement.mac_address.to_ne_bytes();
-        let mac_address_java = env.new_byte_array(
-            SHORT_MAC_ADDRESS_LEN.to_i32().expect("Failed converting mac address len to i32"),
-        )?;
+        let mac_address_java =
+            env.new_byte_array(SHORT_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                error!("Failed converting mac address len to i32");
+                Error::JniCall(JniError::Unknown)
+            })?)?;
         // Convert from [u8] to [i8] since java does not support unsigned byte.
         let mac_address_arr_i8 = mac_address_arr.map(|x| x as i8);
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
@@ -268,72 +281,64 @@ impl EventManagerImpl {
             "([BIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
+                JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
+                    error!("Failed converting status to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.nlos.to_i32().ok_or_else(|| {
+                    error!("Failed converting nlos to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.distance.to_i32().ok_or_else(|| {
+                    error!("Failed converting distance to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_azimuth.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa azimuth to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_azimuth_fom.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa azimuth fom to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_elevation.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa elevation to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_elevation_fom.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa elevation fom to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_destination_azimuth.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa azimuth to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
+                JValue::Int(two_way_measurement.aoa_destination_azimuth_fom.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa azimuth fom to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
+                JValue::Int(two_way_measurement.aoa_destination_elevation.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa elevation to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
                 JValue::Int(
-                    two_way_measurement.status.to_i32().expect("Failed converting status to i32"),
+                    two_way_measurement.aoa_destination_elevation_fom.to_i32().ok_or_else(
+                        || {
+                            error!("Failed converting dest aoa elevation azimuth to i32");
+                            Error::JniCall(JniError::Unknown)
+                        },
+                    )?,
                 ),
-                JValue::Int(
-                    two_way_measurement.nlos.to_i32().expect("Failed converting nlos to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .distance
-                        .to_i32()
-                        .expect("Failed converting distance to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_azimuth
-                        .to_i32()
-                        .expect("Failed converting aoa azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_azimuth_fom
-                        .to_i32()
-                        .expect("Failed converting aoa azimuth fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_elevation
-                        .to_i32()
-                        .expect("Failed converting aoa elevation to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_elevation_fom
-                        .to_i32()
-                        .expect("Failed converting aoa elevation fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_azimuth
-                        .to_i32()
-                        .expect("Failed converting dest aoa azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_azimuth_fom
-                        .to_i32()
-                        .expect("Failed converting dest aoa azimuth fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_elevation
-                        .to_i32()
-                        .expect("Failed converting dest aoa elevation to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_elevation_fom
-                        .to_i32()
-                        .expect("Failed converting dest aoa elevation azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .slot_index
-                        .to_i32()
-                        .expect("Failed converting slot index to i32"),
-                ),
+                JValue::Int(two_way_measurement.slot_index.to_i32().ok_or_else(|| {
+                    error!("Failed converting slot index to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
             ],
         )
     }
@@ -344,9 +349,11 @@ impl EventManagerImpl {
         two_way_measurement: &'a ExtendedAddressTwoWayRangingMeasurement,
     ) -> Result<JObject<'a>> {
         let mac_address_arr = two_way_measurement.mac_address.to_ne_bytes();
-        let mac_address_java = env.new_byte_array(
-            EXTENDED_MAC_ADDRESS_LEN.to_i32().expect("Failed converting mac address len to i32"),
-        )?;
+        let mac_address_java =
+            env.new_byte_array(EXTENDED_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                error!("Failed converting mac address len to i32");
+                Error::JniCall(JniError::Unknown)
+            })?)?;
         // Convert from [u8] to [i8] since java does not support unsigned byte.
         let mac_address_arr_i8 = mac_address_arr.map(|x| x as i8);
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
@@ -355,72 +362,64 @@ impl EventManagerImpl {
             "([BIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
+                JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
+                    error!("Failed converting status to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.nlos.to_i32().ok_or_else(|| {
+                    error!("Failed converting nlos to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.distance.to_i32().ok_or_else(|| {
+                    error!("Failed converting distance to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_azimuth.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa azimuth to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_azimuth_fom.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa azimuth fom to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_elevation.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa elevation to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_elevation_fom.to_i32().ok_or_else(|| {
+                    error!("Failed converting aoa elevation fom to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.aoa_destination_azimuth.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa azimuth to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
+                JValue::Int(two_way_measurement.aoa_destination_azimuth_fom.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa azimuth fom to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
+                JValue::Int(two_way_measurement.aoa_destination_elevation.to_i32().ok_or_else(
+                    || {
+                        error!("Failed converting dest aoa elevation to i32");
+                        Error::JniCall(JniError::Unknown)
+                    },
+                )?),
                 JValue::Int(
-                    two_way_measurement.status.to_i32().expect("Failed converting status to i32"),
+                    two_way_measurement.aoa_destination_elevation_fom.to_i32().ok_or_else(
+                        || {
+                            error!("Failed converting dest aoa elevation azimuth to i32");
+                            Error::JniCall(JniError::Unknown)
+                        },
+                    )?,
                 ),
-                JValue::Int(
-                    two_way_measurement.nlos.to_i32().expect("Failed converting nlos to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .distance
-                        .to_i32()
-                        .expect("Failed converting distance to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_azimuth
-                        .to_i32()
-                        .expect("Failed converting aoa azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_azimuth_fom
-                        .to_i32()
-                        .expect("Failed converting aoa azimuth fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_elevation
-                        .to_i32()
-                        .expect("Failed converting aoa elevation to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_elevation_fom
-                        .to_i32()
-                        .expect("Failed converting aoa elevation fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_azimuth
-                        .to_i32()
-                        .expect("Failed converting dest aoa azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_azimuth_fom
-                        .to_i32()
-                        .expect("Failed converting dest aoa azimuth fom to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_elevation
-                        .to_i32()
-                        .expect("Failed converting dest aoa elevation to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .aoa_destination_elevation_fom
-                        .to_i32()
-                        .expect("Failed converting dest aoa elevation azimuth to i32"),
-                ),
-                JValue::Int(
-                    two_way_measurement
-                        .slot_index
-                        .to_i32()
-                        .expect("Failed converting slot index to i32"),
-                ),
+                JValue::Int(two_way_measurement.slot_index.to_i32().ok_or_else(|| {
+                    error!("Failed converting slot index to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
             ],
         )
     }
@@ -437,32 +436,30 @@ impl EventManagerImpl {
             ranging_data_class,
             "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;)V",
             &[
-                JValue::Long(
-                    data.get_sequence_number().to_i64().expect("Failed converting seq num to i64"),
-                ),
-                JValue::Long(
-                    data.get_session_id().to_i64().expect("Failed converting session id to i64"),
-                ),
-                JValue::Int(
-                    data.get_rcr_indicator()
-                        .to_i32()
-                        .expect("Failed converting rcr indicator to i32"),
-                ),
-                JValue::Long(
-                    data.get_current_ranging_interval()
-                        .to_i64()
-                        .expect("Failed converting current ranging interval to i32"),
-                ),
-                JValue::Int(
-                    data.get_ranging_measurement_type()
-                        .to_i32()
-                        .expect("Failed converting ranging measurement type to i32"),
-                ),
-                JValue::Int(
-                    data.get_mac_address_indicator()
-                        .to_i32()
-                        .expect("Failed converting mac address indicator to i32"),
-                ),
+                JValue::Long(data.get_sequence_number().to_i64().ok_or_else(|| {
+                    error!("Failed converting seq num to i64");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Long(data.get_session_id().to_i64().ok_or_else(|| {
+                    error!("Failed converting session id to i64");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(data.get_rcr_indicator().to_i32().ok_or_else(|| {
+                    error!("Failed converting rcr indicator to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Long(data.get_current_ranging_interval().to_i64().ok_or_else(|| {
+                    error!("Failed converting current ranging interval to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(data.get_ranging_measurement_type().to_i32().ok_or_else(|| {
+                    error!("Failed converting ranging measurement type to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(data.get_mac_address_indicator().to_i32().ok_or_else(|| {
+                    error!("Failed converting mac address indicator to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
                 JValue::Int(num_two_way_measurements),
                 JValue::Object(JObject::from(two_way_measurements_java)),
             ],
@@ -479,17 +476,16 @@ impl EventManagerImpl {
             EventManagerImpl::create_zeroed_two_way_measurement_java(
                 env,
                 two_way_measurement_class,
-                env.new_byte_array(
-                    EXTENDED_MAC_ADDRESS_LEN
-                        .to_i32()
-                        .expect("Failed converting mac address len to i32"),
-                )?,
+                env.new_byte_array(EXTENDED_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                    error!("Failed converting mac address len to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?)?,
             )?;
-        let num_two_way_measurements: i32 = data
-            .get_two_way_ranging_measurements()
-            .len()
-            .to_i32()
-            .expect("Failed converting len to i32");
+        let num_two_way_measurements: i32 =
+            data.get_two_way_ranging_measurements().len().to_i32().ok_or_else(|| {
+                error!("Failed converting len to i32");
+                Error::JniCall(JniError::Unknown)
+            })?;
         let two_way_measurements_java = env.new_object_array(
             num_two_way_measurements,
             two_way_measurement_class,
@@ -504,7 +500,10 @@ impl EventManagerImpl {
                 )?;
             env.set_object_array_element(
                 two_way_measurements_java,
-                i.to_i32().expect("Failed converting idx to i32"),
+                i.to_i32().ok_or_else(|| {
+                    error!("Failed converting idx to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?,
                 two_way_measurement_java,
             )?
         }
@@ -533,17 +532,16 @@ impl EventManagerImpl {
             EventManagerImpl::create_zeroed_two_way_measurement_java(
                 env,
                 two_way_measurement_class,
-                env.new_byte_array(
-                    EXTENDED_MAC_ADDRESS_LEN
-                        .to_i32()
-                        .expect("Failed converting mac address len to i32"),
-                )?,
+                env.new_byte_array(EXTENDED_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                    error!("Failed converting mac address len to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?)?,
             )?;
-        let num_two_way_measurements: i32 = data
-            .get_two_way_ranging_measurements()
-            .len()
-            .to_i32()
-            .expect("Failed converting len to i32");
+        let num_two_way_measurements: i32 =
+            data.get_two_way_ranging_measurements().len().to_i32().ok_or_else(|| {
+                error!("Failed converting len to i32");
+                Error::JniCall(JniError::Unknown)
+            })?;
         let two_way_measurements_java = env.new_object_array(
             num_two_way_measurements,
             two_way_measurement_class,
@@ -558,7 +556,10 @@ impl EventManagerImpl {
                 )?;
             env.set_object_array_element(
                 two_way_measurements_java,
-                i.to_i32().expect("Failed converting idx to i32"),
+                i.to_i32().ok_or_else(|| {
+                    error!("Failed converting idx to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?,
                 two_way_measurement_java,
             )?;
         }
@@ -586,8 +587,10 @@ impl EventManagerImpl {
             self.find_class(env, MULTICAST_LIST_UPDATE_STATUS_CLASS)?;
 
         let controlee_status = data.get_controlee_status();
-        let count: i32 =
-            controlee_status.len().try_into().expect("Failed to convert controlee status length");
+        let count: i32 = controlee_status.len().try_into().map_err(|_| {
+            error!("Failed to convert controlee status length");
+            Error::JniCall(JniError::Unknown)
+        })?;
         let mut mac_address_list: Vec<i32> = Vec::new();
         let mut subsession_id_list: Vec<i64> = Vec::new();
         let mut status_list: Vec<i32> = Vec::new();
@@ -597,7 +600,7 @@ impl EventManagerImpl {
             subsession_id_list.push(iter.subsession_id.into());
             status_list.push(iter.status.to_i32().ok_or_else(|| {
                 error!("Failed to convert controlee_status's status field: {:?}", iter.status);
-                Error::JavaException
+                Error::JniCall(JniError::Unknown)
             })?);
         }
 
@@ -612,14 +615,14 @@ impl EventManagerImpl {
             uwb_multicast_update_class,
             "(JII[I[J[I)V",
             &[
-                JValue::Long(
-                    data.get_session_id().try_into().expect("Could not convert session_id"),
-                ),
-                JValue::Int(
-                    data.get_remaining_multicast_list_size()
-                        .try_into()
-                        .expect("Could not convert remaining multicast list size"),
-                ),
+                JValue::Long(data.get_session_id().try_into().map_err(|_| {
+                    error!("Could not convert session_id");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(data.get_remaining_multicast_list_size().try_into().map_err(|_| {
+                    error!("Could not convert remaining multicast list size");
+                    Error::JniCall(JniError::Unknown)
+                })?),
                 JValue::Int(count),
                 JValue::Object(JObject::from(mac_address_jintarray)),
                 JValue::Object(JObject::from(subsession_id_jlongarray)),
@@ -670,8 +673,14 @@ impl EventManagerImpl {
         env: &JNIEnv,
         data: UciNotificationPacket,
     ) -> Result<()> {
-        let gid: i32 = data.get_group_id().to_i32().expect("Failed to convert gid");
-        let oid: i32 = data.get_opcode().to_i32().expect("Failed to convert gid");
+        let gid: i32 = data.get_group_id().to_i32().ok_or_else(|| {
+            error!("Failed to convert gid");
+            Error::JniCall(JniError::Unknown)
+        })?;
+        let oid: i32 = data.get_opcode().to_i32().ok_or_else(|| {
+            error!("Failed to convert gid");
+            Error::JniCall(JniError::Unknown)
+        })?;
         let payload: Vec<u8> = EventManagerImpl::get_vendor_uci_payload(data)?;
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
 
