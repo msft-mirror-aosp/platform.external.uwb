@@ -83,4 +83,6 @@ extern void uci_proc_test_management_rsp(uint8_t op_code, uint8_t* p_buf,
                                          uint16_t len);
 extern void uci_proc_raw_cmd_rsp(uint8_t* p_buf, uint16_t len);
 
+
+extern void uci_proc_vendor_specific_ntf(uint8_t gid, uint8_t* p_buf, uint16_t len);
 #endif /* UWB_UCI_MSGS_H */
