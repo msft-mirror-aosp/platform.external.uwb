@@ -75,10 +75,10 @@ enum StatusCode : 8 {
     UCI_STATUS_COMMAND_RETRY = 0x0A,
 
     // UWB Session Specific Status Codes
-    UCI_STATUS_SESSSION_NOT_EXIST = 0x11,
-    UCI_STATUS_SESSSION_DUPLICATE = 0x12,
-    UCI_STATUS_SESSSION_ACTIVE = 0x13,
-    UCI_STATUS_MAX_SESSSIONS_EXCEEDED = 0x14,
+    UCI_STATUS_SESSION_NOT_EXIST = 0x11,
+    UCI_STATUS_SESSION_DUPLICATE = 0x12,
+    UCI_STATUS_SESSION_ACTIVE = 0x13,
+    UCI_STATUS_MAX_SESSIONS_EXCEEDED = 0x14,
     UCI_STATUS_SESSION_NOT_CONFIGURED = 0x15,
 
     // UWB Ranging Session Specific Status Codes
@@ -94,6 +94,10 @@ enum StatusCode : 8 {
     // UWB Data Session Specific Status Codes
     UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
     UCI_STATUS_DATA_RX_CRC_ERROR = 0x31,
+
+    // Vendor Specific Status Codes
+    UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
+    UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
 }
 
 enum ResetConfig : 8 {
@@ -401,7 +405,7 @@ test GetCapsInfoRsp {
     "\x40\x03\x00\x05\x00\x01\x00\x01\x01",
 }
 
-struct DeviceConfigTLV {
+struct DeviceConfigTlv {
     cfg_id: DeviceConfigId,
     _count_(v): 8,
     v: 8[],
@@ -409,7 +413,7 @@ struct DeviceConfigTLV {
 
 packet SetConfigCmd : CoreCommand (opcode = 0x4) { //CORE_SET_CONFIG
     _count_(tlvs): 8,
-    tlvs: DeviceConfigTLV[],
+    tlvs: DeviceConfigTlv[],
 }
 
 test SetConfigCmd {
@@ -443,7 +447,7 @@ test GetConfigCmd {
 packet GetConfigRsp : CoreResponse (opcode = 0x5) { //CORE_GET_CONFIG
     status: StatusCode,
     _count_(tlvs): 8,
-    tlvs: DeviceConfigTLV[]
+    tlvs: DeviceConfigTlv[]
 }
 
 test GetConfigRsp {
@@ -612,7 +616,7 @@ test SessionUpdateControllerMulticastListRsp {
 struct ControleeStatus {
     mac_address: 16,
     subsession_id: 32,
-    status: 8,
+    status: MulticastUpdateStatusCode,
 }
 
 packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
