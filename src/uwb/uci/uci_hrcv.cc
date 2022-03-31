@@ -278,6 +278,35 @@ void uci_proc_android_rsp(uint8_t op_code, uint8_t* p_buf, uint16_t len) {
 
 /*******************************************************************************
  **
+ ** Function         uci_proc_proprietary_ntf
+ **
+ ** Description      Process UCI notifications in the proprietary Management group
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uci_proc_vendor_specific_ntf(uint8_t gid, uint8_t* p_buf, uint16_t len) {
+   tUWB_RESPONSE evt_data;
+   UNUSED(gid);
+  if (len > 0) {
+
+    if (uwb_cb.p_resp_cback == NULL) {
+      UCI_TRACE_E("ext response callback is null");
+    } else {
+      evt_data.sVendor_specific_ntf.len = len;
+      if (evt_data.sVendor_specific_ntf.len > 0) {
+      STREAM_TO_ARRAY(evt_data.sVendor_specific_ntf.data, p_buf,
+                    len);
+      }
+      (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &evt_data);
+    }
+  } else {
+    UCI_TRACE_E("%s: len is zero", __func__);
+  }
+}
+
+/*******************************************************************************
+ **
  ** Function         uci_proc_raw_cmd_rsp
  **
  ** Description      Process RAW CMD responses
