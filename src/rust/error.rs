@@ -53,6 +53,8 @@ pub enum UwbErr {
     Exit,
     #[error("Could not connect to HAL")]
     HalUnavailable(#[from] binder::StatusCode),
+    #[error("Could not convert")]
+    ConvertToEnum(#[from] std::num::TryFromIntError),
     #[error("Unknown error")]
     Undefined,
 }
