@@ -135,7 +135,18 @@ rust_defaults {
     srcs: ["rust/uwb_core/src/lib.rs"],
     lints: "android",
     clippy_lints: "android",
-    host_supported: true,
+    rustlibs: [
+        "libbytes",
+        "libnum_traits",
+        "liblog_rust",
+        "libthiserror",
+        "libtokio",
+        "libuwb_uci_packets",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+    min_sdk_version: "Tiramisu",
 }
 
 rust_library {
@@ -147,4 +158,7 @@ rust_library {
 rust_test {
     name: "libuwb_core_tests",
     defaults: ["libuwb_core_defaults"],
+    rustlibs: [
+        "libenv_logger",
+    ],
 }
