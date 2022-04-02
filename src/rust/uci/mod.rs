@@ -247,7 +247,7 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
             JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
-                uci_hmsgs::build_session_init_cmd(session_id, session_type).build().into()
+                uci_hmsgs::build_session_init_cmd(session_id, session_type)?.build().into()
             }
             JNICommand::UciSessionDeinit(session_id) => {
                 SessionDeinitCmdBuilder { session_id }.build().into()
@@ -279,7 +279,7 @@ impl<T: EventManager> Driver<T> {
             .build()
             .into(),
             JNICommand::UciSetCountryCode { ref code } => {
-                uci_hmsgs::build_set_country_code_cmd(code).build().into()
+                uci_hmsgs::build_set_country_code_cmd(code)?.build().into()
             }
             JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
                 uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
@@ -295,7 +295,7 @@ impl<T: EventManager> Driver<T> {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?
             }
             JNICommand::UciDeviceReset { reset_config } => {
-                uci_hmsgs::build_device_reset_cmd(reset_config).build().into()
+                uci_hmsgs::build_device_reset_cmd(reset_config)?.build().into()
             }
             JNICommand::Disable(_graceful) => {
                 self.adaptation.hal_close().await?;
