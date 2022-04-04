@@ -31,3 +31,5 @@ pub mod uci_hal;
 
 #[cfg(test)]
 pub(crate) mod mock_uci_hal;
+#[cfg(test)]
+pub(crate) mod mock_uci_manager;
