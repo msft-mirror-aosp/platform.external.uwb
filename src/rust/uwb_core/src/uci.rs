@@ -25,5 +25,6 @@ mod timeout_uci_hal;
 pub(crate) mod error;
 pub(crate) mod notification;
 pub(crate) mod params;
+pub(crate) mod uci_manager;
 
 pub mod uci_hal;
