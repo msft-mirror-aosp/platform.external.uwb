@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
-
-mod uci;
-pub(crate) mod utils;
+#[cfg(test)]
+pub fn init_test_logging() {
+    let _ = env_logger::builder().is_test(true).try_init();
+}
