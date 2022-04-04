@@ -17,9 +17,13 @@
 // TODO(akahuang): remove it after implementing the client of each component.
 #![allow(dead_code)]
 
+mod command;
+mod message;
+mod response;
 mod timeout_uci_hal;
 
 pub(crate) mod error;
+pub(crate) mod notification;
 pub(crate) mod params;
 
 pub mod uci_hal;
