@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use uwb_uci_packets::StatusCode;
+
 /// The error code for UCI module.
 #[derive(Debug, thiserror::Error)]
 pub enum UciError {
@@ -29,5 +31,8 @@ pub enum UciError {
     Specialize(Vec<u8>),
     #[error("Invalid args")]
     InvalidArgs,
+    #[error("Error UCI status code: {0:?}")]
+    Status(StatusCode),
 }
+
 pub type UciResult<T> = Result<T, UciError>;
