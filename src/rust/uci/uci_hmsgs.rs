@@ -26,15 +26,18 @@ use uwb_uci_packets::{
     UciVendor_F_CommandBuilder,
 };
 
-pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
-    SessionInitCmdBuilder {
+pub fn build_session_init_cmd(
+    session_id: u32,
+    session_type: u8,
+) -> Result<SessionInitCmdBuilder, UwbErr> {
+    Ok(SessionInitCmdBuilder {
         session_id,
-        session_type: SessionType::from_u8(session_type).expect("invalid session type"),
-    }
+        session_type: SessionType::from_u8(session_type).ok_or(UwbErr::InvalidArgs)?,
+    })
 }
 
-pub fn build_set_country_code_cmd(code: &[u8]) -> AndroidSetCountryCodeCmdBuilder {
-    AndroidSetCountryCodeCmdBuilder { country_code: code.try_into().expect("invalid country code") }
+pub fn build_set_country_code_cmd(code: &[u8]) -> Result<AndroidSetCountryCodeCmdBuilder, UwbErr> {
+    Ok(AndroidSetCountryCodeCmdBuilder { country_code: code.try_into()? })
 }
 
 pub fn build_multicast_list_update_cmd(
@@ -74,12 +77,12 @@ pub fn build_uci_vendor_cmd_packet(
     payload: Vec<u8>,
 ) -> Result<UciCommandPacket, UwbErr> {
     use GroupId::*;
-    let group_id: GroupId = GroupId::from_u32(gid).expect("invalid vendor gid");
+    let group_id: GroupId = GroupId::from_u32(gid).ok_or(UwbErr::InvalidArgs)?;
     let payload = match payload.is_empty() {
         true => Some(Bytes::from(payload)),
         false => None,
     };
-    let opcode: u8 = oid.try_into().expect("invalid vendor oid");
+    let opcode: u8 = oid.try_into()?;
     let packet: UciCommandPacket = match group_id {
         VendorReserved9 => UciVendor_9_CommandBuilder { opcode, payload }.build().into(),
         VendorReservedA => UciVendor_A_CommandBuilder { opcode, payload }.build().into(),
@@ -94,8 +97,8 @@ pub fn build_uci_vendor_cmd_packet(
     Ok(packet)
 }
 
-pub fn build_device_reset_cmd(reset_config: u8) -> DeviceResetCmdBuilder {
-    DeviceResetCmdBuilder {
-        reset_config: ResetConfig::from_u8(reset_config).expect("invalid reset config"),
-    }
+pub fn build_device_reset_cmd(reset_config: u8) -> Result<DeviceResetCmdBuilder, UwbErr> {
+    Ok(DeviceResetCmdBuilder {
+        reset_config: ResetConfig::from_u8(reset_config).ok_or(UwbErr::InvalidArgs)?,
+    })
 }
