@@ -28,3 +28,6 @@ pub(crate) mod params;
 pub(crate) mod uci_manager;
 
 pub mod uci_hal;
+
+#[cfg(test)]
+pub(crate) mod mock_uci_hal;

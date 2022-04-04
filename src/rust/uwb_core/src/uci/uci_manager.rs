@@ -629,3 +629,597 @@ enum UciManagerCmd {
     CloseHal,
     SendUciCommand { cmd: UciCommand },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bytes::Bytes;
+    use num_traits::ToPrimitive;
+
+    use crate::uci::error::StatusCode;
+    use crate::uci::mock_uci_hal::MockUciHal;
+    use crate::uci::params::{
+        app_config_tlv_eq, cap_tlv_eq, device_config_tlv_eq, power_stats_eq, CapTlvType,
+    };
+    use crate::utils::init_test_logging;
+
+    async fn setup_uci_manager_with_open_hal(
+        setup_hal_fn: fn(&mut MockUciHal),
+    ) -> (UciManagerImpl, mpsc::UnboundedReceiver<UciNotification>) {
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        let notf = uwb_uci_packets::DeviceStatusNtfBuilder {
+            device_state: uwb_uci_packets::DeviceState::DeviceStateReady,
+        }
+        .build()
+        .into();
+        hal.expected_open(Some(vec![notf]), Ok(()));
+        setup_hal_fn(&mut hal);
+
+        let (notf_sender, notf_receiver) = mpsc::unbounded_channel();
+        // Verify open_hal() is working.
+        let mut uci_manager = UciManagerImpl::new(hal);
+        let result = uci_manager.open_hal(notf_sender).await;
+        assert!(result.is_ok());
+
+        (uci_manager, notf_receiver)
+    }
+
+    #[tokio::test]
+    async fn test_close_hal_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            hal.expected_close(Ok(()));
+        })
+        .await;
+
+        let result = uci_manager.close_hal().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_close_hal_without_open_hal() {
+        init_test_logging();
+
+        let hal = MockUciHal::new();
+        let mut uci_manager = UciManagerImpl::new(hal);
+
+        let result = uci_manager.close_hal().await;
+        assert!(matches!(result, Err(UciError::WrongState)));
+    }
+
+    #[tokio::test]
+    async fn test_device_reset_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::DeviceResetCmdBuilder {
+                reset_config: uwb_uci_packets::ResetConfig::UwbsReset,
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::DeviceResetRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let result = uci_manager.device_reset(ResetConfig::UwbsReset).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_core_get_device_info_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into();
+            let resp = uwb_uci_packets::GetDeviceInfoRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                uci_version: 0x1234,
+                mac_version: 0x5678,
+                phy_version: 0x90ab,
+                uci_test_version: 0x1357,
+                vendor_spec_info: vec![0x1, 0x2],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let expected_result = GetDeviceInfoResponse {
+            uci_version: 0x1234,
+            mac_version: 0x5678,
+            phy_version: 0x90ab,
+            uci_test_version: 0x1357,
+            vendor_spec_info: vec![0x1, 0x2],
+        };
+        let result = uci_manager.core_get_device_info().await.unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[tokio::test]
+    async fn test_core_get_caps_info_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let tlv = uwb_uci_packets::CapTlv {
+                t: uwb_uci_packets::CapTlvType::SupportedFiraPhyVersionRange,
+                v: vec![0x12, 0x34, 0x56],
+            };
+            let cmd = uwb_uci_packets::GetCapsInfoCmdBuilder {}.build().into();
+            let resp = uwb_uci_packets::GetCapsInfoRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
+        let result = uci_manager.core_get_caps_info().await.unwrap();
+        assert!(cap_tlv_eq(&result[0], &tlv));
+    }
+
+    #[tokio::test]
+    async fn test_core_set_config_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let tlv = uwb_uci_packets::DeviceConfigTlv {
+                cfg_id: uwb_uci_packets::DeviceConfigId::DeviceState,
+                v: vec![0x12, 0x34, 0x56],
+            };
+            let cmd = uwb_uci_packets::SetConfigCmdBuilder { tlvs: vec![tlv] }.build().into();
+            let resp = uwb_uci_packets::SetConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                cfg_status: vec![],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let config_tlv =
+            DeviceConfigTlv { cfg_id: DeviceConfigId::DeviceState, v: vec![0x12, 0x34, 0x56] };
+        let expected_result =
+            CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
+        let result = uci_manager.core_set_config(vec![config_tlv]).await.unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[tokio::test]
+    async fn test_core_get_config_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cfg_id = uwb_uci_packets::DeviceConfigId::DeviceState;
+            let tlv = uwb_uci_packets::DeviceConfigTlv { cfg_id, v: vec![0x12, 0x34, 0x56] };
+            let cmd =
+                uwb_uci_packets::GetConfigCmdBuilder { cfg_id: vec![cfg_id.to_u8().unwrap()] }
+                    .build()
+                    .into();
+            let resp = uwb_uci_packets::GetConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let config_id = DeviceConfigId::DeviceState;
+        let expected_result =
+            DeviceConfigTlv { cfg_id: DeviceConfigId::DeviceState, v: vec![0x12, 0x34, 0x56] };
+        CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
+        let result = uci_manager.core_get_config(vec![config_id]).await.unwrap();
+        assert!(device_config_tlv_eq(&result[0], &expected_result));
+    }
+
+    #[tokio::test]
+    async fn test_session_init_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let session_id = 0x123;
+            let cmd = uwb_uci_packets::SessionInitCmdBuilder {
+                session_id,
+                session_type: uwb_uci_packets::SessionType::FiraRangingSession,
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::SessionInitRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+            let notf = uwb_uci_packets::SessionStatusNtfBuilder {
+                session_id,
+                session_state: uwb_uci_packets::SessionState::SessionStateInit,
+                reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp, notf], Ok(()));
+            hal.expected_notify_session_initialized(session_id, Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+        let result = uci_manager.session_init(session_id, session_type).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_session_deinit_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::SessionDeinitCmdBuilder { session_id: 0x123 }.build().into();
+            let resp = uwb_uci_packets::SessionDeinitRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let result = uci_manager.session_deinit(session_id).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_session_set_app_config_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let tlv = uwb_uci_packets::AppConfigTlv {
+                cfg_id: uwb_uci_packets::AppConfigTlvType::DeviceType,
+                v: vec![0x12, 0x34, 0x56],
+            };
+            let cmd = uwb_uci_packets::SessionSetAppConfigCmdBuilder {
+                session_id: 0x123,
+                tlvs: vec![tlv],
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::SessionSetAppConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                cfg_status: vec![],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let config_tlv =
+            AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let expected_result =
+            SetAppConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
+        let result =
+            uci_manager.session_set_app_config(session_id, vec![config_tlv]).await.unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[tokio::test]
+    async fn test_session_get_app_config_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cfg_id = uwb_uci_packets::AppConfigTlvType::DeviceType;
+            let tlv = uwb_uci_packets::AppConfigTlv { cfg_id, v: vec![0x12, 0x34, 0x56] };
+            let cmd = uwb_uci_packets::SessionGetAppConfigCmdBuilder {
+                session_id: 0x123,
+                app_cfg: vec![cfg_id.to_u8().unwrap()],
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::SessionGetAppConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv],
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let config_id = AppConfigTlvType::DeviceType;
+        let expected_result =
+            AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
+        assert!(app_config_tlv_eq(&result[0], &expected_result));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
+            let resp = uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_count: 5,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let result = uci_manager.session_get_count().await.unwrap();
+        assert_eq!(result, 5);
+    }
+
+    #[tokio::test]
+    async fn test_session_get_state_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd =
+                uwb_uci_packets::SessionGetStateCmdBuilder { session_id: 0x123 }.build().into();
+            let resp = uwb_uci_packets::SessionGetStateRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_state: uwb_uci_packets::SessionState::SessionStateActive,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let result = uci_manager.session_get_state(session_id).await.unwrap();
+        assert_eq!(result, SessionState::SessionStateActive);
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let controlee =
+                uwb_uci_packets::Controlee { short_address: 0x4567, subsession_id: 0x90ab };
+            let cmd = uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
+                session_id: 0x123,
+                action: UpdateMulticastListAction::Add.into(),
+                controlees: vec![controlee],
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let action = UpdateMulticastListAction::Add;
+        let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
+        let result = uci_manager
+            .session_update_controller_multicast_list(session_id, action, vec![controlee])
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_range_start_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::RangeStartCmdBuilder { session_id: 0x123 }.build().into();
+            let resp = uwb_uci_packets::RangeStartRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let result = uci_manager.range_start(session_id).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_range_stop_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::RangeStopCmdBuilder { session_id: 0x123 }.build().into();
+            let resp = uwb_uci_packets::RangeStopRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let result = uci_manager.range_stop(session_id).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_range_get_ranging_count_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::RangeGetRangingCountCmdBuilder { session_id: 0x123 }
+                .build()
+                .into();
+            let resp = uwb_uci_packets::RangeGetRangingCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                count: 3,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let session_id = 0x123;
+        let result = uci_manager.range_get_ranging_count(session_id).await.unwrap();
+        assert_eq!(result, 3);
+    }
+
+    #[tokio::test]
+    async fn test_android_set_country_code_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd =
+                uwb_uci_packets::AndroidSetCountryCodeCmdBuilder { country_code: b"US".to_owned() }
+                    .build()
+                    .into();
+            let resp = uwb_uci_packets::AndroidSetCountryCodeRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let country_code = CountryCode::new(b"US").unwrap();
+        let result = uci_manager.android_set_country_code(country_code).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_android_get_power_stats_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into();
+            let resp = uwb_uci_packets::AndroidGetPowerStatsRspBuilder {
+                stats: uwb_uci_packets::PowerStats {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    idle_time_ms: 123,
+                    tx_time_ms: 456,
+                    rx_time_ms: 789,
+                    total_wake_count: 5,
+                },
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let expected_result = PowerStats {
+            status: StatusCode::UciStatusOk,
+            idle_time_ms: 123,
+            tx_time_ms: 456,
+            rx_time_ms: 789,
+            total_wake_count: 5,
+        };
+        let result = uci_manager.android_get_power_stats().await.unwrap();
+        assert!(power_stats_eq(&result, &expected_result));
+    }
+
+    #[tokio::test]
+    async fn test_raw_vendor_cmd_ok() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = uwb_uci_packets::UciVendor_F_CommandBuilder {
+                opcode: 0x3,
+                payload: Some(Bytes::from(vec![0x11, 0x22, 0x33, 0x44])),
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::UciVendor_F_ResponseBuilder {
+                opcode: 0x3,
+                payload: Some(Bytes::from(vec![0x55, 0x66, 0x77, 0x88])),
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let gid = 0xF;
+        let oid = 0x3;
+        let payload = vec![0x11, 0x22, 0x33, 0x44];
+        let expected_result = RawVendorMessage { gid, oid, payload: vec![0x55, 0x66, 0x77, 0x88] };
+        let result = uci_manager.raw_vendor_cmd(gid, oid, payload).await.unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_retry_no_response() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
+
+            hal.expected_send_command(cmd, vec![], Ok(()));
+        })
+        .await;
+
+        let result = uci_manager.session_get_count().await;
+        assert!(matches!(result, Err(UciError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_timeout() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
+
+            hal.expected_send_command(cmd, vec![], Err(UciError::Timeout));
+        })
+        .await;
+
+        let result = uci_manager.session_get_count().await;
+        assert!(matches!(result, Err(UciError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_retry_too_many_times() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
+            let retry_resp: RawUciMessage = uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
+                session_count: 0,
+            }
+            .build()
+            .into();
+
+            for _ in 0..MAX_RETRY_COUNT {
+                hal.expected_send_command(cmd.clone(), vec![retry_resp.clone()], Ok(()));
+            }
+        })
+        .await;
+
+        let result = uci_manager.session_get_count().await;
+        assert!(matches!(result, Err(UciError::Timeout)));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_retry_notification() {
+        let (mut uci_manager, _) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
+            let retry_resp: RawUciMessage = uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
+                session_count: 0,
+            }
+            .build()
+            .into();
+            let resp = uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_count: 5,
+            }
+            .build()
+            .into();
+
+            hal.expected_send_command(cmd.clone(), vec![retry_resp.clone()], Ok(()));
+            hal.expected_send_command(cmd.clone(), vec![retry_resp], Ok(()));
+            hal.expected_send_command(cmd, vec![resp], Ok(()));
+        })
+        .await;
+
+        let result = uci_manager.session_get_count().await.unwrap();
+        assert_eq!(result, 5);
+    }
+}

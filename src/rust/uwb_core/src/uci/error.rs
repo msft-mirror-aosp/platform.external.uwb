@@ -33,6 +33,9 @@ pub enum UciError {
     InvalidArgs,
     #[error("Error UCI status code: {0:?}")]
     Status(StatusCode),
+    #[cfg(test)]
+    #[error("The result of the mock method is not assigned.")]
+    MockUndefined,
 }
 
 pub type UciResult<T> = Result<T, UciError>;
