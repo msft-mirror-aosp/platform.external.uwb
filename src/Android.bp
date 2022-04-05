@@ -112,9 +112,11 @@ rust_library {
     defaults: ["libuwb_uci_packet_defaults"],
     crate_name: "uwb_uci_packets",
     apex_available: [
+        "//apex_available:platform",
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
+    vendor_available: true,
 }
 
 genrule {
