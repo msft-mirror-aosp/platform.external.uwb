@@ -73,6 +73,7 @@ rust_defaults {
     proc_macros: ["libnum_derive"],
     rustlibs:[
         "libbytes",
+        "liblog_rust",
         "libnum_traits",
         "libthiserror",
     ],

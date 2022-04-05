@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 bytes = "*"
+log = "*"
 num-derive = "*"
 num-traits = "*"
 thiserror = "*"
