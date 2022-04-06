@@ -44,7 +44,7 @@ pub type UciResponseHandle = oneshot::Sender<UciResponse>;
 type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 
 // Commands sent from JNI.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum JNICommand {
     // Blocking UCI commands
     UciGetCapsInfo,
@@ -247,7 +247,7 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
             JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
-                uci_hmsgs::build_session_init_cmd(session_id, session_type).build().into()
+                uci_hmsgs::build_session_init_cmd(session_id, session_type)?.build().into()
             }
             JNICommand::UciSessionDeinit(session_id) => {
                 SessionDeinitCmdBuilder { session_id }.build().into()
@@ -279,7 +279,7 @@ impl<T: EventManager> Driver<T> {
             .build()
             .into(),
             JNICommand::UciSetCountryCode { ref code } => {
-                uci_hmsgs::build_set_country_code_cmd(code).build().into()
+                uci_hmsgs::build_set_country_code_cmd(code)?.build().into()
             }
             JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
                 uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
@@ -295,7 +295,7 @@ impl<T: EventManager> Driver<T> {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?
             }
             JNICommand::UciDeviceReset { reset_config } => {
-                uci_hmsgs::build_device_reset_cmd(reset_config).build().into()
+                uci_hmsgs::build_device_reset_cmd(reset_config)?.build().into()
             }
             JNICommand::Disable(_graceful) => {
                 self.adaptation.hal_close().await?;
@@ -455,15 +455,23 @@ impl<T: EventManager> Driver<T> {
     }
 }
 
+pub trait Dispatcher {
+    fn send_jni_command(&self, cmd: JNICommand) -> Result<()>;
+    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse>;
+    fn exit(&mut self) -> Result<()>;
+    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket>;
+    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>);
+}
+
 // Controller for sending tasks for the native thread to handle.
-pub struct Dispatcher {
+pub struct DispatcherImpl {
     cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
-    pub device_info: Option<GetDeviceInfoRspPacket>,
+    device_info: Option<GetDeviceInfoRspPacket>,
 }
 
-impl Dispatcher {
+impl DispatcherImpl {
     pub fn new<T: 'static + EventManager + Send + Sync>(event_manager: T) -> Result<Self> {
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
         // TODO when simplifying constructors, avoid spare runtime
@@ -501,17 +509,19 @@ impl Dispatcher {
             .build()?;
         let join_handle =
             runtime.spawn(drive(adaptation, event_manager, cmd_receiver, rsp_receiver));
-        Ok(Dispatcher { cmd_sender, join_handle, runtime, device_info: None })
+        Ok(DispatcherImpl { cmd_sender, join_handle, runtime, device_info: None })
     }
+}
 
-    pub fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
+impl Dispatcher for DispatcherImpl {
+    fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
         self.cmd_sender.send((cmd, None))?;
         Ok(())
     }
 
     // TODO: Consider implementing these separate for different commands so we can have more
     // specific return types.
-    pub fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse> {
+    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse> {
         let (tx, rx) = oneshot::channel();
         self.cmd_sender.send((cmd, Some(tx)))?;
         let ret = self.runtime.block_on(rx)?;
@@ -519,7 +529,7 @@ impl Dispatcher {
         Ok(ret)
     }
 
-    pub fn exit(&mut self) -> Result<()> {
+    fn exit(&mut self) -> Result<()> {
         self.send_jni_command(JNICommand::Exit)?;
         match self.runtime.block_on(&mut self.join_handle) {
             Err(err) if err.is_panic() => {
@@ -529,6 +539,13 @@ impl Dispatcher {
             _ => Ok(()),
         }
     }
+
+    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket> {
+        &self.device_info
+    }
+    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>) {
+        self.device_info = device_info;
+    }
 }
 
 #[cfg(test)]
@@ -536,11 +553,14 @@ mod tests {
     use super::*;
     use crate::adaptation::tests::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
-    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet};
+    use uwb_uci_packets::{
+        DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet, UciPacketHalPacket,
+        UciPacketPacket,
+    };
 
     fn setup_dispatcher(
         config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
-    ) -> Result<Dispatcher> {
+    ) -> Result<DispatcherImpl> {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
@@ -552,7 +572,7 @@ mod tests {
 
         config_fn(&mut mock_adaptation, &mut mock_event_manager);
 
-        Dispatcher::new_for_testing(
+        DispatcherImpl::new_for_testing(
             mock_event_manager,
             mock_adaptation as SyncUwbAdaptation,
             rsp_receiver,
@@ -561,7 +581,7 @@ mod tests {
 
     fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
         let cmd_data = GetDeviceInfoCmdBuilder {}.build().to_vec();
-        let rsp_data = GetDeviceInfoRspBuilder {
+        let rsp_packet: UciPacketPacket = GetDeviceInfoRspBuilder {
             status: StatusCode::UciStatusOk,
             uci_version: 0,
             mac_version: 0,
@@ -570,9 +590,20 @@ mod tests {
             vendor_spec_info: vec![],
         }
         .build()
-        .to_vec();
+        .into();
+        // Convert to UciPacketHalPacket
+        let mut rsp_frags: Vec<UciPacketHalPacket> = rsp_packet.into();
+        let rsp_data = rsp_frags.pop().unwrap().to_vec();
 
         (cmd_data, rsp_data)
+    }
+
+    fn generate_fake_ntf_data() -> Vec<u8> {
+        let ntf_packet: UciPacketPacket =
+            DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
+        // Convert to UciPacketHalPacket
+        let mut ntf_frags: Vec<UciPacketHalPacket> = ntf_packet.into();
+        ntf_frags.pop().unwrap().to_vec()
     }
 
     #[test]
@@ -639,13 +670,11 @@ mod tests {
     fn test_notification() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, mock_event_manager| {
             let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            let notf_data = DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }
-                .build()
-                .to_vec();
+            let ntf_data = generate_fake_ntf_data();
             mock_adaptation.expect_send_uci_message(
                 cmd_data,
                 Some(rsp_data),
-                Some(notf_data),
+                Some(ntf_data),
                 Ok(()),
             );
             mock_event_manager.expect_device_status_notification_received(Ok(()));
