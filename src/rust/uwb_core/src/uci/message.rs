@@ -19,7 +19,6 @@ use uwb_uci_packets::Packet;
 use crate::uci::error::UciError;
 use crate::uci::notification::UciNotification;
 use crate::uci::response::UciResponse;
-use crate::uci::uci_hal::RawUciMessage;
 
 #[derive(Debug)]
 pub(super) enum UciMessage {
@@ -27,10 +26,9 @@ pub(super) enum UciMessage {
     Notification(UciNotification),
 }
 
-impl TryFrom<RawUciMessage> for UciMessage {
+impl TryFrom<uwb_uci_packets::UciPacketPacket> for UciMessage {
     type Error = UciError;
-    fn try_from(msg: RawUciMessage) -> Result<Self, Self::Error> {
-        let packet = uwb_uci_packets::UciPacketPacket::parse(&msg)?;
+    fn try_from(packet: uwb_uci_packets::UciPacketPacket) -> Result<Self, Self::Error> {
         match packet.specialize() {
             uwb_uci_packets::UciPacketChild::UciResponse(evt) => {
                 Ok(UciMessage::Response(evt.try_into()?))
