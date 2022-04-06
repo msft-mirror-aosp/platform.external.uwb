@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+//! This module provides the functionalities related to UWB Command Interface (UCI).
 
-mod uci;
+// TODO(akahuang): remove it after implementing the client of each component.
+#![allow(dead_code)]
+
+pub(crate) mod error;
+pub(crate) mod params;
+
+pub mod uci_hal;
