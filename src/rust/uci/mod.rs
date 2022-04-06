@@ -247,7 +247,7 @@ impl<T: EventManager> Driver<T> {
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
             JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
-                uci_hmsgs::build_session_init_cmd(session_id, session_type).build().into()
+                uci_hmsgs::build_session_init_cmd(session_id, session_type)?.build().into()
             }
             JNICommand::UciSessionDeinit(session_id) => {
                 SessionDeinitCmdBuilder { session_id }.build().into()
@@ -279,7 +279,7 @@ impl<T: EventManager> Driver<T> {
             .build()
             .into(),
             JNICommand::UciSetCountryCode { ref code } => {
-                uci_hmsgs::build_set_country_code_cmd(code).build().into()
+                uci_hmsgs::build_set_country_code_cmd(code)?.build().into()
             }
             JNICommand::UciSetAppConfig { session_id, no_of_params, ref app_configs, .. } => {
                 uci_hmsgs::build_set_app_config_cmd(session_id, no_of_params, app_configs)?
@@ -295,7 +295,7 @@ impl<T: EventManager> Driver<T> {
                 uci_hmsgs::build_uci_vendor_cmd_packet(gid, oid, payload)?
             }
             JNICommand::UciDeviceReset { reset_config } => {
-                uci_hmsgs::build_device_reset_cmd(reset_config).build().into()
+                uci_hmsgs::build_device_reset_cmd(reset_config)?.build().into()
             }
             JNICommand::Disable(_graceful) => {
                 self.adaptation.hal_close().await?;
@@ -553,7 +553,10 @@ mod tests {
     use super::*;
     use crate::adaptation::tests::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
-    use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet};
+    use uwb_uci_packets::{
+        DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet, UciPacketHalPacket,
+        UciPacketPacket,
+    };
 
     fn setup_dispatcher(
         config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
@@ -578,7 +581,7 @@ mod tests {
 
     fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
         let cmd_data = GetDeviceInfoCmdBuilder {}.build().to_vec();
-        let rsp_data = GetDeviceInfoRspBuilder {
+        let rsp_packet: UciPacketPacket = GetDeviceInfoRspBuilder {
             status: StatusCode::UciStatusOk,
             uci_version: 0,
             mac_version: 0,
@@ -587,9 +590,20 @@ mod tests {
             vendor_spec_info: vec![],
         }
         .build()
-        .to_vec();
+        .into();
+        // Convert to UciPacketHalPacket
+        let mut rsp_frags: Vec<UciPacketHalPacket> = rsp_packet.into();
+        let rsp_data = rsp_frags.pop().unwrap().to_vec();
 
         (cmd_data, rsp_data)
+    }
+
+    fn generate_fake_ntf_data() -> Vec<u8> {
+        let ntf_packet: UciPacketPacket =
+            DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
+        // Convert to UciPacketHalPacket
+        let mut ntf_frags: Vec<UciPacketHalPacket> = ntf_packet.into();
+        ntf_frags.pop().unwrap().to_vec()
     }
 
     #[test]
@@ -656,13 +670,11 @@ mod tests {
     fn test_notification() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, mock_event_manager| {
             let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            let notf_data = DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }
-                .build()
-                .to_vec();
+            let ntf_data = generate_fake_ntf_data();
             mock_adaptation.expect_send_uci_message(
                 cmd_data,
                 Some(rsp_data),
-                Some(notf_data),
+                Some(ntf_data),
                 Ok(()),
             );
             mock_event_manager.expect_device_status_notification_received(Ok(()));
