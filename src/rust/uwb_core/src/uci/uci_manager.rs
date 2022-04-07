@@ -41,7 +41,7 @@ const MAX_RETRY_COUNT: usize = 3;
 /// The UciManager organizes the state machine of the UWB HAL, and provides the interface which
 /// abstracts the UCI commands, responses, and notifications.
 #[async_trait]
-pub(crate) trait UciManager: 'static + Send {
+pub(crate) trait UciManager: 'static + Send + Clone {
     // Open the UCI HAL.
     // All the other methods should be called after the open_hal() completes successfully.
     async fn open_hal(

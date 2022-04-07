@@ -31,7 +31,7 @@ use crate::uci::uci_manager::UciManager;
 use crate::uci::params::app_config_tlv_eq;
 use crate::uci::params::device_config_tlv_eq;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct MockUciManager {
     expected_calls: VecDeque<ExpectedCall>,
     notf_sender: Option<mpsc::UnboundedSender<UciNotification>>,
@@ -531,6 +531,7 @@ impl UciManager for MockUciManager {
     }
 }
 
+#[derive(Clone)]
 enum ExpectedCall {
     OpenHal {
         notfs: Vec<UciNotification>,

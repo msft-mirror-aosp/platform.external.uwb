@@ -12,10 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+//! Provide the error and result type for the UwbService.
 
-pub(crate) mod session;
-pub(crate) mod uci;
-pub(crate) mod utils;
+/// The error code for service module.
+#[derive(Debug)]
+pub enum UwbError {
+    /// Failed to transmit the message via tokio's channel.
+    TokioFailure,
+    /// Error occurs at the UCI stack.
+    UciError,
+}
 
-pub mod service;
+/// The result type returned by UwbService.
+pub type UwbResult<T> = Result<T, UwbError>;
