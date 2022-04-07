@@ -78,10 +78,7 @@ pub fn build_uci_vendor_cmd_packet(
 ) -> Result<UciCommandPacket, UwbErr> {
     use GroupId::*;
     let group_id: GroupId = GroupId::from_u32(gid).ok_or(UwbErr::InvalidArgs)?;
-    let payload = match payload.is_empty() {
-        true => Some(Bytes::from(payload)),
-        false => None,
-    };
+    let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
     let opcode: u8 = oid.try_into()?;
     let packet: UciCommandPacket = match group_id {
         VendorReserved9 => UciVendor_9_CommandBuilder { opcode, payload }.build().into(),
