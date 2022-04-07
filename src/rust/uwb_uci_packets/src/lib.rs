@@ -60,6 +60,7 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
             group_id: packets[0].get_group_id(),
             opcode: packets[0].get_opcode(),
         };
+
         let mut payload_buf = BytesMut::new();
         // Create the reassembled payload.
         for packet in packets {
@@ -131,5 +132,40 @@ impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
             }
         }
         fragments
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct PacketDefrager {
+    // Cache to store incoming fragmented packets in the middle of reassembly.
+    // Will be empty if there is no reassembly in progress.
+    fragment_cache: Vec<UciPacketHalPacket>,
+}
+
+impl PacketDefrager {
+    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciPacketPacket> {
+        match UciPacketHalPacket::parse(msg) {
+            Ok(packet) => {
+                let pbf = packet.get_packet_boundary_flag();
+                // Add the incoming fragment to the packet cache.
+                self.fragment_cache.push(packet);
+                if pbf == PacketBoundaryFlag::NotComplete {
+                    // Wait for remaining fragments.
+                    return None;
+                }
+                // All fragments received, defragment the packet.
+                match self.fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
+                    Ok(packet) => Some(packet),
+                    Err(e) => {
+                        error!("Failed to defragment packet: {:?}", e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to parse packet: {:?}", e);
+                None
+            }
+        }
     }
 }
