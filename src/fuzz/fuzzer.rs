@@ -6,12 +6,12 @@ use log::{error, info};
 use num_traits::cast::FromPrimitive;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{SessionInitRspBuilder, StatusCode};
+use uwb_uci_packets::{SessionInitRspBuilder, StatusCode, UciCommandPacket};
 use uwb_uci_rust::adaptation::MockUwbAdaptation;
 use uwb_uci_rust::error::UwbErr;
 use uwb_uci_rust::event_manager::MockEventManager;
 use uwb_uci_rust::uci::{
-    uci_hmsgs, Dispatcher, DispatcherImpl, HalCallback, JNICommand, SyncUwbAdaptation,
+    uci_hmsgs, uci_hrcv, Dispatcher, DispatcherImpl, HalCallback, JNICommand, SyncUwbAdaptation,
 };
 
 fn create_dispatcher_with_mock_adaptation(msgs: Vec<JNICommand>) -> Result<DispatcherImpl, UwbErr> {
@@ -40,11 +40,15 @@ fn create_dispatcher_with_mock_adaptation(msgs: Vec<JNICommand>) -> Result<Dispa
     )
 }
 
-fn generate_fake_cmd_rsp(msg: &JNICommand) -> Result<(Vec<u8>, Vec<u8>), UwbErr> {
+fn generate_fake_cmd_rsp(
+    msg: &JNICommand,
+) -> Result<(UciCommandPacket, uci_hrcv::UciResponse), UwbErr> {
     match msg {
         JNICommand::UciSessionInit(session_id, session_type) => Ok((
             uci_hmsgs::build_session_init_cmd(*session_id, *session_type)?.build().into(),
-            SessionInitRspBuilder { status: StatusCode::UciStatusOk }.build().into(),
+            uci_hrcv::UciResponse::SessionInitRsp(
+                SessionInitRspBuilder { status: StatusCode::UciStatusOk }.build(),
+            ),
         )),
         _ => Err(UwbErr::Undefined),
     }

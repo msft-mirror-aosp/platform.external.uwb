@@ -556,16 +556,16 @@ impl Dispatcher for DispatcherImpl {
 
 #[cfg(test)]
 mod tests {
+    use self::uci_hrcv::UciNotification;
+    use self::uci_hrcv::UciResponse;
+
     use super::*;
     use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         UwbEvent::UwbEvent, UwbStatus::UwbStatus,
     };
-    use uwb_uci_packets::{
-        DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet, UciPacketHalPacket,
-        UciPacketPacket,
-    };
+    use uwb_uci_packets::*;
 
     fn setup_dispatcher(
         config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
@@ -609,9 +609,9 @@ mod tests {
         Ok((dispatcher, rsp_sender))
     }
 
-    fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
-        let cmd_data = GetDeviceInfoCmdBuilder {}.build().to_vec();
-        let rsp_packet: UciPacketPacket = GetDeviceInfoRspBuilder {
+    fn generate_fake_get_device_cmd_rsp() -> (GetDeviceInfoCmdPacket, GetDeviceInfoRspPacket) {
+        let cmd = GetDeviceInfoCmdBuilder {}.build();
+        let rsp = GetDeviceInfoRspBuilder {
             status: StatusCode::UciStatusOk,
             uci_version: 0,
             mac_version: 0,
@@ -619,21 +619,12 @@ mod tests {
             uci_test_version: 0,
             vendor_spec_info: vec![],
         }
-        .build()
-        .into();
-        // Convert to UciPacketHalPacket
-        let mut rsp_frags: Vec<UciPacketHalPacket> = rsp_packet.into();
-        let rsp_data = rsp_frags.pop().unwrap().to_vec();
-
-        (cmd_data, rsp_data)
+        .build();
+        (cmd, rsp)
     }
 
-    fn generate_fake_ntf_data() -> Vec<u8> {
-        let ntf_packet: UciPacketPacket =
-            DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
-        // Convert to UciPacketHalPacket
-        let mut ntf_frags: Vec<UciPacketHalPacket> = ntf_packet.into();
-        ntf_frags.pop().unwrap().to_vec()
+    fn generate_fake_device_status_ntf() -> DeviceStatusNtfPacket {
+        DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build()
     }
 
     #[test]
@@ -674,10 +665,15 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message() -> Result<()> {
+    fn test_get_device_info() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), None, Ok(()));
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                None,
+                Ok(()),
+            );
         })?;
 
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
@@ -685,14 +681,19 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message_with_retry() -> Result<()> {
+    fn test_get_device_info_with_uci_retry() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
 
             // Let the first 2 tries not response data, then the 3rd tries response successfully.
-            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, None, Ok(()));
-            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, None, Ok(()));
-            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd.clone().into(), None, None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd.clone().into(), None, None, Ok(()));
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                None,
+                Ok(()),
+            );
         })?;
 
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
@@ -700,10 +701,10 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message_failed() -> Result<()> {
+    fn test_get_device_info_send_uci_message_failed() -> Result<()> {
         let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, _rsp_data) = generate_fake_cmd_rsp_data();
-            mock_adaptation.expect_send_uci_message(cmd_data, None, None, Err(UwbErr::failed()));
+            let (cmd, _rsp) = generate_fake_get_device_cmd_rsp();
+            mock_adaptation.expect_send_uci_message(cmd.into(), None, None, Err(UwbErr::failed()));
         })?;
 
         dispatcher
@@ -713,14 +714,14 @@ mod tests {
     }
 
     #[test]
-    fn test_notification() -> Result<()> {
+    fn test_device_status_notification() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            let ntf_data = generate_fake_ntf_data();
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
+            let ntf = generate_fake_device_status_ntf();
             mock_adaptation.expect_send_uci_message(
-                cmd_data,
-                Some(rsp_data),
-                Some(ntf_data),
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                Some(UciNotification::DeviceStatusNtf(ntf)),
                 Ok(()),
             );
             mock_event_manager.expect_device_status_notification_received(Ok(()));
