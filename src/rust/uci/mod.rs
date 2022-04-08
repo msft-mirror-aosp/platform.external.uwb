@@ -33,10 +33,10 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
-    AndroidGetPowerStatsCmdBuilder, GetCapsInfoCmdBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoRspPacket, RangeStartCmdBuilder, RangeStopCmdBuilder, SessionDeinitCmdBuilder,
-    SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder, SessionGetStateCmdBuilder,
-    SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
+    AndroidGetPowerStatsCmdBuilder, DeviceState, DeviceStatusNtfBuilder, GetCapsInfoCmdBuilder,
+    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, RangeStartCmdBuilder, RangeStopCmdBuilder,
+    SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder,
+    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -406,7 +406,13 @@ impl<T: EventManager> Driver<T> {
                             UwbEvent::CLOSE_CPLT => {
                                 self.set_state(UwbState::None);
                             }
-                            _ => (),
+                            UwbEvent::ERROR => {
+                                // Send device status notification with error state.
+                                let device_status_ntf = DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateError}.build();
+                                self.event_manager.device_status_notification_received(device_status_ntf)?;
+                                self.set_state(UwbState::None);
+                            }
+                            _ => ()
                         }
                     },
                     HalCallback::UciRsp(response) => {
@@ -553,6 +559,9 @@ mod tests {
     use super::*;
     use crate::adaptation::tests::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
+    use android_hardware_uwb::aidl::android::hardware::uwb::{
+        UwbEvent::UwbEvent, UwbStatus::UwbStatus,
+    };
     use uwb_uci_packets::{
         DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet, UciPacketHalPacket,
         UciPacketPacket,
@@ -577,6 +586,27 @@ mod tests {
             mock_adaptation as SyncUwbAdaptation,
             rsp_receiver,
         )
+    }
+
+    fn setup_dispatcher_and_return_hal_cb_sender(
+        config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
+    ) -> Result<(DispatcherImpl, mpsc::UnboundedSender<HalCallback>)> {
+        // TODO: Remove this once we call it somewhere real.
+        logger::init(
+            logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
+        );
+
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender.clone()));
+        let mut mock_event_manager = MockEventManager::new();
+
+        config_fn(&mut mock_adaptation, &mut mock_event_manager);
+        let dispatcher = DispatcherImpl::new_for_testing(
+            mock_event_manager,
+            mock_adaptation as SyncUwbAdaptation,
+            rsp_receiver,
+        )?;
+        Ok((dispatcher, rsp_sender))
     }
 
     fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
@@ -614,6 +644,22 @@ mod tests {
         })?;
 
         dispatcher.send_jni_command(JNICommand::Enable)?;
+        dispatcher.exit()
+    }
+
+    #[test]
+    fn test_hal_error_event() -> Result<()> {
+        let (mut dispatcher, hal_sender) =
+            setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, mock_event_manager| {
+                mock_adaptation.expect_hal_open(Ok(()));
+                mock_adaptation.expect_core_initialization(Ok(()));
+                mock_event_manager.expect_device_status_notification_received(Ok(()));
+            })?;
+
+        dispatcher.send_jni_command(JNICommand::Enable)?;
+        hal_sender
+            .send(HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED })
+            .unwrap();
         dispatcher.exit()
     }
 
