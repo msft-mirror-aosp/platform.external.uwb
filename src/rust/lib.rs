@@ -17,7 +17,7 @@
 // moves into packages/modules/Uwb
 #![allow(missing_docs)]
 
-mod adaptation;
+pub mod adaptation;
 pub mod error;
 pub mod event_manager;
 pub mod uci;
