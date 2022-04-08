@@ -17,7 +17,7 @@
 use log::{debug, error};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::service::error::{UwbError, UwbResult};
+use crate::service::error::{Error, Result};
 use crate::session::session_manager::SessionManager;
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
@@ -29,7 +29,7 @@ use crate::uci::mock_uci_manager::MockUciManager;
 /// client, and delegates the requests to other components. It should provide the
 /// backward-compatible interface for the client of the library.
 pub struct UwbService {
-    cmd_sender: mpsc::UnboundedSender<(UwbCommand, oneshot::Sender<UwbResult<()>>)>,
+    cmd_sender: mpsc::UnboundedSender<(UwbCommand, oneshot::Sender<Result<()>>)>,
 }
 
 impl UwbService {
@@ -54,35 +54,35 @@ impl UwbService {
     }
 
     /// Enable the UWB service.
-    pub async fn enable(&mut self) -> UwbResult<()> {
+    pub async fn enable(&mut self) -> Result<()> {
         self.send_cmd(UwbCommand::Enable).await
     }
 
     /// Disable the UWB service.
-    pub async fn disable(&mut self) -> UwbResult<()> {
+    pub async fn disable(&mut self) -> Result<()> {
         self.send_cmd(UwbCommand::Disable).await
     }
 
     // Send the |cmd| to the SessionManagerActor.
-    async fn send_cmd(&self, cmd: UwbCommand) -> UwbResult<()> {
+    async fn send_cmd(&self, cmd: UwbCommand) -> Result<()> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
-            UwbError::TokioFailure
+            Error::TokioFailure
         })?;
-        result_receiver.await.unwrap_or(Err(UwbError::TokioFailure))
+        result_receiver.await.unwrap_or(Err(Error::TokioFailure))
     }
 }
 
 struct UwbServiceActor<U: UciManager> {
-    cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<UwbResult<()>>)>,
+    cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<Result<()>>)>,
     uci_manager: U,
     session_manager: Option<SessionManager>,
 }
 
 impl<U: UciManager> UwbServiceActor<U> {
     fn new(
-        cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<UwbResult<()>>)>,
+        cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<Result<()>>)>,
         uci_manager: U,
     ) -> Self {
         Self { cmd_receiver, uci_manager, session_manager: None }
@@ -107,7 +107,7 @@ impl<U: UciManager> UwbServiceActor<U> {
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: UwbCommand) -> UwbResult<()> {
+    async fn handle_cmd(&mut self, cmd: UwbCommand) -> Result<()> {
         match cmd {
             UwbCommand::Enable => {
                 if self.session_manager.is_some() {
@@ -118,7 +118,7 @@ impl<U: UciManager> UwbServiceActor<U> {
                 let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
                 self.uci_manager.open_hal(uci_notf_sender).await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
-                    UwbError::UciError
+                    Error::UciError
                 })?;
 
                 self.session_manager =
@@ -134,7 +134,7 @@ impl<U: UciManager> UwbServiceActor<U> {
                 self.session_manager = None;
                 self.uci_manager.close_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
-                    UwbError::UciError
+                    Error::UciError
                 })?;
                 Ok(())
             }

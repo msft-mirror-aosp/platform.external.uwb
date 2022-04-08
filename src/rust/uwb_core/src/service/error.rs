@@ -16,7 +16,7 @@
 
 /// The error code for service module.
 #[derive(Debug)]
-pub enum UwbError {
+pub enum Error {
     /// Failed to transmit the message via tokio's channel.
     TokioFailure,
     /// Error occurs at the UCI stack.
@@ -24,4 +24,4 @@ pub enum UwbError {
 }
 
 /// The result type returned by UwbService.
-pub type UwbResult<T> = Result<T, UwbError>;
+pub type Result<T> = std::result::Result<T, Error>;

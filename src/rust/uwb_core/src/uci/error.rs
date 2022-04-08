@@ -16,7 +16,7 @@ pub use uwb_uci_packets::StatusCode;
 
 /// The error code for UCI module.
 #[derive(Debug, thiserror::Error, Clone)]
-pub enum UciError {
+pub enum Error {
     #[error("Call the mothod in the wrong state")]
     WrongState,
     #[error("UCI response is mismatched with the pending command")]
@@ -38,12 +38,12 @@ pub enum UciError {
     MockUndefined,
 }
 
-// Because uwb_uci_packets::Error doesn't derive Clone trait, we convert it to UciError::Parse with
+// Because uwb_uci_packets::Error doesn't derive Clone trait, we convert it to Error::Parse with
 // the formatted string.
-impl From<uwb_uci_packets::Error> for UciError {
+impl From<uwb_uci_packets::Error> for Error {
     fn from(err: uwb_uci_packets::Error) -> Self {
-        UciError::Parse(format!("{:?}", err))
+        Error::Parse(format!("{:?}", err))
     }
 }
 
-pub type UciResult<T> = Result<T, UciError>;
+pub type Result<T> = std::result::Result<T, Error>;

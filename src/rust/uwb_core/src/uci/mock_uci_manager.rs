@@ -18,7 +18,7 @@ use std::iter::zip;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::uci::error::{UciError, UciResult};
+use crate::uci::error::{Error, Result};
 use crate::uci::notification::UciNotification;
 use crate::uci::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
@@ -48,30 +48,30 @@ impl MockUciManager {
         Default::default()
     }
 
-    pub fn expect_open_hal(&mut self, notfs: Vec<UciNotification>, out: UciResult<()>) {
+    pub fn expect_open_hal(&mut self, notfs: Vec<UciNotification>, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
-    pub fn expect_close_hal(&mut self, out: UciResult<()>) {
+    pub fn expect_close_hal(&mut self, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::CloseHal { out });
     }
 
-    pub fn expect_device_reset(&mut self, expected_reset_config: ResetConfig, out: UciResult<()>) {
+    pub fn expect_device_reset(&mut self, expected_reset_config: ResetConfig, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::DeviceReset { expected_reset_config, out });
     }
 
-    pub fn expect_core_get_device_info(&mut self, out: UciResult<GetDeviceInfoResponse>) {
+    pub fn expect_core_get_device_info(&mut self, out: Result<GetDeviceInfoResponse>) {
         self.expected_calls.push_back(ExpectedCall::CoreGetDeviceInfo { out });
     }
 
-    pub fn expect_core_get_caps_info(&mut self, out: UciResult<Vec<CapTlv>>) {
+    pub fn expect_core_get_caps_info(&mut self, out: Result<Vec<CapTlv>>) {
         self.expected_calls.push_back(ExpectedCall::CoreGetCapsInfo { out });
     }
 
     pub fn expect_core_set_config(
         &mut self,
         expected_config_tlvs: Vec<DeviceConfigTlv>,
-        out: UciResult<CoreSetConfigResponse>,
+        out: Result<CoreSetConfigResponse>,
     ) {
         self.expected_calls.push_back(ExpectedCall::CoreSetConfig { expected_config_tlvs, out });
     }
@@ -79,7 +79,7 @@ impl MockUciManager {
     pub fn expect_core_get_config(
         &mut self,
         expected_config_ids: Vec<DeviceConfigId>,
-        out: UciResult<Vec<DeviceConfigTlv>>,
+        out: Result<Vec<DeviceConfigTlv>>,
     ) {
         self.expected_calls.push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
     }
@@ -88,7 +88,7 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_session_type: SessionType,
-        out: UciResult<()>,
+        out: Result<()>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SessionInit {
             expected_session_id,
@@ -97,7 +97,7 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_deinit(&mut self, expected_session_id: SessionId, out: UciResult<()>) {
+    pub fn expect_session_deinit(&mut self, expected_session_id: SessionId, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::SessionDeinit { expected_session_id, out });
     }
 
@@ -105,7 +105,7 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_config_tlvs: Vec<AppConfigTlv>,
-        out: UciResult<SetAppConfigResponse>,
+        out: Result<SetAppConfigResponse>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SessionSetAppConfig {
             expected_session_id,
@@ -118,7 +118,7 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_config_ids: Vec<AppConfigTlvType>,
-        out: UciResult<Vec<AppConfigTlv>>,
+        out: Result<Vec<AppConfigTlv>>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SessionGetAppConfig {
             expected_session_id,
@@ -127,14 +127,14 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_get_count(&mut self, out: UciResult<usize>) {
+    pub fn expect_session_get_count(&mut self, out: Result<usize>) {
         self.expected_calls.push_back(ExpectedCall::SessionGetCount { out });
     }
 
     pub fn expect_session_get_state(
         &mut self,
         expected_session_id: SessionId,
-        out: UciResult<SessionState>,
+        out: Result<SessionState>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SessionGetState { expected_session_id, out });
     }
@@ -144,7 +144,7 @@ impl MockUciManager {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
         expected_controlees: Vec<Controlee>,
-        out: UciResult<()>,
+        out: Result<()>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SessionUpdateControllerMulticastList {
             expected_session_id,
@@ -154,18 +154,18 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_range_start(&mut self, expected_session_id: SessionId, out: UciResult<()>) {
+    pub fn expect_range_start(&mut self, expected_session_id: SessionId, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::RangeStart { expected_session_id, out });
     }
 
-    pub fn expect_range_stop(&mut self, expected_session_id: SessionId, out: UciResult<()>) {
+    pub fn expect_range_stop(&mut self, expected_session_id: SessionId, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::RangeStop { expected_session_id, out });
     }
 
     pub fn expect_range_get_ranging_count(
         &mut self,
         expected_session_id: SessionId,
-        out: UciResult<usize>,
+        out: Result<usize>,
     ) {
         self.expected_calls
             .push_back(ExpectedCall::RangeGetRangingCount { expected_session_id, out });
@@ -174,13 +174,13 @@ impl MockUciManager {
     pub fn expect_android_set_country_code(
         &mut self,
         expected_country_code: CountryCode,
-        out: UciResult<()>,
+        out: Result<()>,
     ) {
         self.expected_calls
             .push_back(ExpectedCall::AndroidSetCountryCode { expected_country_code, out });
     }
 
-    pub fn expect_android_get_power_stats(&mut self, out: UciResult<PowerStats>) {
+    pub fn expect_android_get_power_stats(&mut self, out: Result<PowerStats>) {
         self.expected_calls.push_back(ExpectedCall::AndroidGetPowerStats { out });
     }
 
@@ -189,7 +189,7 @@ impl MockUciManager {
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
-        out: UciResult<RawVendorMessage>,
+        out: Result<RawVendorMessage>,
     ) {
         self.expected_calls.push_back(ExpectedCall::RawVendorCmd {
             expected_gid,
@@ -205,7 +205,7 @@ impl UciManager for MockUciManager {
     async fn open_hal(
         &mut self,
         notf_sender: mpsc::UnboundedSender<UciNotification>,
-    ) -> UciResult<()> {
+    ) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::OpenHal { notfs, out }) => {
                 self.notf_sender = Some(notf_sender);
@@ -216,24 +216,24 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn close_hal(&mut self) -> UciResult<()> {
+    async fn close_hal(&mut self) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::CloseHal { out }) => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn device_reset(&mut self, reset_config: ResetConfig) -> UciResult<()> {
+    async fn device_reset(&mut self, reset_config: ResetConfig) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::DeviceReset { expected_reset_config, out })
                 if expected_reset_config == reset_config =>
@@ -242,38 +242,38 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn core_get_device_info(&mut self) -> UciResult<GetDeviceInfoResponse> {
+    async fn core_get_device_info(&mut self) -> Result<GetDeviceInfoResponse> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::CoreGetDeviceInfo { out }) => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn core_get_caps_info(&mut self) -> UciResult<Vec<CapTlv>> {
+    async fn core_get_caps_info(&mut self) -> Result<Vec<CapTlv>> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::CoreGetCapsInfo { out }) => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
     async fn core_set_config(
         &mut self,
         config_tlvs: Vec<DeviceConfigTlv>,
-    ) -> UciResult<CoreSetConfigResponse> {
+    ) -> Result<CoreSetConfigResponse> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::CoreSetConfig { expected_config_tlvs, out })
                 if zip(&expected_config_tlvs, &config_tlvs)
@@ -283,16 +283,16 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
     async fn core_get_config(
         &mut self,
         config_ids: Vec<DeviceConfigId>,
-    ) -> UciResult<Vec<DeviceConfigTlv>> {
+    ) -> Result<Vec<DeviceConfigTlv>> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::CoreGetConfig { expected_config_ids, out })
                 if expected_config_ids == config_ids =>
@@ -301,9 +301,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
@@ -311,7 +311,7 @@ impl UciManager for MockUciManager {
         &mut self,
         session_id: SessionId,
         session_type: SessionType,
-    ) -> UciResult<()> {
+    ) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionInit { expected_session_id, expected_session_type, out })
                 if expected_session_id == session_id && expected_session_type == session_type =>
@@ -320,13 +320,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn session_deinit(&mut self, session_id: SessionId) -> UciResult<()> {
+    async fn session_deinit(&mut self, session_id: SessionId) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionDeinit { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -335,9 +335,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
@@ -345,7 +345,7 @@ impl UciManager for MockUciManager {
         &mut self,
         session_id: SessionId,
         config_tlvs: Vec<AppConfigTlv>,
-    ) -> UciResult<SetAppConfigResponse> {
+    ) -> Result<SetAppConfigResponse> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionSetAppConfig {
                 expected_session_id,
@@ -359,9 +359,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
@@ -369,7 +369,7 @@ impl UciManager for MockUciManager {
         &mut self,
         session_id: SessionId,
         config_ids: Vec<AppConfigTlvType>,
-    ) -> UciResult<Vec<AppConfigTlv>> {
+    ) -> Result<Vec<AppConfigTlv>> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionGetAppConfig {
                 expected_session_id,
@@ -378,24 +378,24 @@ impl UciManager for MockUciManager {
             }) if expected_session_id == session_id && expected_config_ids == config_ids => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn session_get_count(&mut self) -> UciResult<usize> {
+    async fn session_get_count(&mut self) -> Result<usize> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionGetCount { out }) => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn session_get_state(&mut self, session_id: SessionId) -> UciResult<SessionState> {
+    async fn session_get_state(&mut self, session_id: SessionId) -> Result<SessionState> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionGetState { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -404,9 +404,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
@@ -415,7 +415,7 @@ impl UciManager for MockUciManager {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
-    ) -> UciResult<()> {
+    ) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SessionUpdateControllerMulticastList {
                 expected_session_id,
@@ -432,13 +432,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn range_start(&mut self, session_id: SessionId) -> UciResult<()> {
+    async fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::RangeStart { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -447,13 +447,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn range_stop(&mut self, session_id: SessionId) -> UciResult<()> {
+    async fn range_stop(&mut self, session_id: SessionId) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::RangeStop { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -462,13 +462,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn range_get_ranging_count(&mut self, session_id: SessionId) -> UciResult<usize> {
+    async fn range_get_ranging_count(&mut self, session_id: SessionId) -> Result<usize> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::RangeGetRangingCount { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -477,13 +477,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn android_set_country_code(&mut self, country_code: CountryCode) -> UciResult<()> {
+    async fn android_set_country_code(&mut self, country_code: CountryCode) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::AndroidSetCountryCode { expected_country_code, out })
                 if expected_country_code == country_code =>
@@ -492,20 +492,20 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
-    async fn android_get_power_stats(&mut self) -> UciResult<PowerStats> {
+    async fn android_get_power_stats(&mut self) -> Result<PowerStats> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::AndroidGetPowerStats { out }) => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 
@@ -514,7 +514,7 @@ impl UciManager for MockUciManager {
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
-    ) -> UciResult<RawVendorMessage> {
+    ) -> Result<RawVendorMessage> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::RawVendorCmd {
                 expected_gid,
@@ -524,9 +524,9 @@ impl UciManager for MockUciManager {
             }) if expected_gid == gid && expected_oid == oid && expected_payload == payload => out,
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::WrongState)
+                Err(Error::WrongState)
             }
-            None => Err(UciError::WrongState),
+            None => Err(Error::WrongState),
         }
     }
 }
@@ -535,84 +535,84 @@ impl UciManager for MockUciManager {
 enum ExpectedCall {
     OpenHal {
         notfs: Vec<UciNotification>,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     CloseHal {
-        out: UciResult<()>,
+        out: Result<()>,
     },
     DeviceReset {
         expected_reset_config: ResetConfig,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     CoreGetDeviceInfo {
-        out: UciResult<GetDeviceInfoResponse>,
+        out: Result<GetDeviceInfoResponse>,
     },
     CoreGetCapsInfo {
-        out: UciResult<Vec<CapTlv>>,
+        out: Result<Vec<CapTlv>>,
     },
     CoreSetConfig {
         expected_config_tlvs: Vec<DeviceConfigTlv>,
-        out: UciResult<CoreSetConfigResponse>,
+        out: Result<CoreSetConfigResponse>,
     },
     CoreGetConfig {
         expected_config_ids: Vec<DeviceConfigId>,
-        out: UciResult<Vec<DeviceConfigTlv>>,
+        out: Result<Vec<DeviceConfigTlv>>,
     },
     SessionInit {
         expected_session_id: SessionId,
         expected_session_type: SessionType,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     SessionDeinit {
         expected_session_id: SessionId,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     SessionSetAppConfig {
         expected_session_id: SessionId,
         expected_config_tlvs: Vec<AppConfigTlv>,
-        out: UciResult<SetAppConfigResponse>,
+        out: Result<SetAppConfigResponse>,
     },
     SessionGetAppConfig {
         expected_session_id: SessionId,
         expected_config_ids: Vec<AppConfigTlvType>,
-        out: UciResult<Vec<AppConfigTlv>>,
+        out: Result<Vec<AppConfigTlv>>,
     },
     SessionGetCount {
-        out: UciResult<usize>,
+        out: Result<usize>,
     },
     SessionGetState {
         expected_session_id: SessionId,
-        out: UciResult<SessionState>,
+        out: Result<SessionState>,
     },
     SessionUpdateControllerMulticastList {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
         expected_controlees: Vec<Controlee>,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     RangeStart {
         expected_session_id: SessionId,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     RangeStop {
         expected_session_id: SessionId,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     RangeGetRangingCount {
         expected_session_id: SessionId,
-        out: UciResult<usize>,
+        out: Result<usize>,
     },
     AndroidSetCountryCode {
         expected_country_code: CountryCode,
-        out: UciResult<()>,
+        out: Result<()>,
     },
     AndroidGetPowerStats {
-        out: UciResult<PowerStats>,
+        out: Result<PowerStats>,
     },
     RawVendorCmd {
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
-        out: UciResult<RawVendorMessage>,
+        out: Result<RawVendorMessage>,
     },
 }

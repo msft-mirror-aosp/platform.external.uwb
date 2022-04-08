@@ -15,9 +15,9 @@
 use crate::uci::params::SessionId;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum SessionError {
+pub enum Error {
     #[error("Error occurs inside UciManager")]
-    UciError,
+    Uci,
     #[error("Failed to pass the message via tokio")]
     TokioFailure,
     #[error("Max session exceeded")]
@@ -28,4 +28,4 @@ pub enum SessionError {
     UnknownSessionId(SessionId),
 }
 
-pub type SessionResult<T> = Result<T, SessionError>;
+pub type Result<T> = std::result::Result<T, Error>;
