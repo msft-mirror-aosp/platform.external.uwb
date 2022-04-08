@@ -276,7 +276,7 @@ impl<T: EventManager> Driver<T> {
                 no_of_controlee,
                 address_list,
                 sub_session_id_list,
-            )
+            )?
             .build()
             .into(),
             JNICommand::UciSetCountryCode { ref code } => {
