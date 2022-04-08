@@ -27,6 +27,9 @@ rust_defaults {
         "libuwb_uci_packets",
 	"libbinder_tokio_rs",
     ],
+    rlibs: [
+        "libarbitrary",
+    ],
     proc_macros: [
         "libasync_trait",
     ],
@@ -164,4 +167,27 @@ rust_test {
     rustlibs: [
         "libenv_logger",
     ],
+}
+
+rust_fuzz {
+    name: "uwb_uci_rust_fuzzer",
+    srcs: [
+        "fuzz/fuzzer.rs",
+    ],
+    rustlibs: [
+        "libarbitrary",
+        "liblog_rust",
+        "libnum_traits",
+        "libtokio",
+        "libuwb_uci_packets",
+        "libuwb_uci_rust",
+    ],
+    fuzz_config: {
+        cc: [
+            "android-uwb-team@google.com",
+        ],
+        componentid: 1042770,
+        fuzz_on_haiku_device: true,
+        fuzz_on_haiku_host: true,
+    },
 }
