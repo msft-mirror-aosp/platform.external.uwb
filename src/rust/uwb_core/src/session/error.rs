@@ -12,8 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+use crate::uci::params::SessionId;
 
-mod session;
-mod uci;
-pub(crate) mod utils;
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum SessionError {
+    #[error("Error occurs inside UciManager")]
+    UciError,
+    #[error("Failed to pass the message via tokio")]
+    TokioFailure,
+    #[error("Max session exceeded")]
+    MaxSessionsExceeded,
+    #[error("Duplicated SessionId: {0}")]
+    DuplicatedSessionId(SessionId),
+    #[error("Unknown SessionId: {0}")]
+    UnknownSessionId(SessionId),
+}
+
+pub type SessionResult<T> = Result<T, SessionError>;
