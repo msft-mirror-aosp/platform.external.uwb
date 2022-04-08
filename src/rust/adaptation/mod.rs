@@ -11,8 +11,11 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent,
     UwbStatus::UwbStatus,
 };
-use android_hardware_uwb::binder::{BinderFeatures, Interface, Result as BinderResult, Strong};
+use android_hardware_uwb::binder::{
+    BinderFeatures, DeathRecipient, Interface, Result as BinderResult, Strong,
+};
 use async_trait::async_trait;
+use binder::IBinder;
 use binder_tokio::{Tokio, TokioRuntime};
 use log::{error, warn};
 use rustutils::system_properties;
@@ -20,12 +23,10 @@ use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_uci_packets::{
-    Error, Packet, PacketBoundaryFlag, UciCommandPacket, UciPacketChild, UciPacketHalPacket,
-    UciPacketPacket,
+    Packet, PacketDefrager, UciCommandPacket, UciPacketChild, UciPacketHalPacket, UciPacketPacket,
 };
 
 type Result<T> = std::result::Result<T, UwbErr>;
-type ParserResult<T> = std::result::Result<T, Error>;
 type SyncUciLogger = Arc<dyn UciLogger + Send + Sync>;
 
 const UCI_LOG_DEFAULT: UciLogMode = UciLogMode::Disabled;
@@ -33,14 +34,12 @@ const UCI_LOG_DEFAULT: UciLogMode = UciLogMode::Disabled;
 pub struct UwbClientCallback {
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
     logger: SyncUciLogger,
-    // Cache to store incoming fragmented packets in the middle of reassembly.
-    // Will be empty if there is no reassembly in progress.
-    fragment_cache: Mutex<Vec<UciPacketHalPacket>>,
+    defrager: Mutex<PacketDefrager>,
 }
 
 impl UwbClientCallback {
     fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>, logger: SyncUciLogger) -> Self {
-        UwbClientCallback { rsp_sender, logger, fragment_cache: Mutex::new(Vec::new()) }
+        UwbClientCallback { rsp_sender, logger, defrager: Default::default() }
     }
 
     async fn log_uci_packet(&self, packet: UciPacketPacket) {
@@ -48,35 +47,6 @@ impl UwbClientCallback {
             UciPacketChild::UciResponse(pkt) => self.logger.log_uci_response(pkt).await,
             UciPacketChild::UciNotification(pkt) => self.logger.log_uci_notification(pkt).await,
             _ => {}
-        }
-    }
-
-    async fn defragment_packet(&self, data: &[u8]) -> Option<UciPacketPacket> {
-        match UciPacketHalPacket::parse(data) {
-            Ok(packet) => {
-                let pbf = packet.get_packet_boundary_flag();
-                let mut fragment_cache = self.fragment_cache.lock().await;
-                // Add the incoming fragment to the packet cache.
-                fragment_cache.push(packet);
-                if pbf == PacketBoundaryFlag::NotComplete {
-                    // Wait for remaining fragments.
-                    return None;
-                }
-                // All fragments received, defragment the packet.
-                let defragmented_packet: ParserResult<UciPacketPacket> =
-                    fragment_cache.drain(..).collect::<Vec<UciPacketHalPacket>>().try_into();
-                match defragmented_packet {
-                    Ok(packet) => Some(packet),
-                    _ => {
-                        error!("Failed to defragment packet");
-                        None
-                    }
-                }
-            }
-            _ => {
-                error!("Failed to parse packet: {:?}", data);
-                None
-            }
         }
     }
 }
@@ -93,7 +63,7 @@ impl IUwbClientCallbackAsyncServer for UwbClientCallback {
     }
 
     async fn onUciMessage(&self, data: &[u8]) -> BinderResult<()> {
-        if let Some(packet) = self.defragment_packet(data).await {
+        if let Some(packet) = self.defrager.lock().await.defragment_packet(data) {
             // all fragments for the packet received.
             self.log_uci_packet(packet.clone()).await;
             let packet_msg = uci_hrcv::uci_message(packet);
@@ -134,6 +104,9 @@ pub trait UwbAdaptation {
 #[derive(Clone)]
 pub struct UwbAdaptationImpl {
     hal: Strong<dyn IUwbChipAsync<Tokio>>,
+    #[allow(dead_code)]
+    // Need to store the death recipient since link_to_death stores a weak pointer.
+    hal_death_recipient: Arc<Mutex<DeathRecipient>>,
     rsp_sender: mpsc::UnboundedSender<HalCallback>,
     logger: SyncUciLogger,
 }
@@ -142,6 +115,7 @@ impl UwbAdaptationImpl {
     async fn new_with_args(
         rsp_sender: mpsc::UnboundedSender<HalCallback>,
         hal: Strong<dyn IUwbChipAsync<Tokio>>,
+        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
     ) -> Result<Self> {
         let mode = match system_properties::read("persist.uwb.uci_logger_mode") {
             Ok(Some(logger_mode)) => match logger_mode.as_str() {
@@ -160,12 +134,25 @@ impl UwbAdaptationImpl {
             }
         };
         let logger = UciLoggerImpl::new(mode).await;
-        Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger) })
+        Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger), hal_death_recipient })
     }
 
     pub async fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self> {
         let hal = get_hal_service().await?;
-        Self::new_with_args(rsp_sender, hal).await
+        let rsp_sender_clone = rsp_sender.clone();
+        let mut hal_death_recipient = DeathRecipient::new(move || {
+            error!("UWB HAL died. Resetting stack...");
+            // Send error HAL event to trigger stack recovery.
+            rsp_sender_clone
+                .send(HalCallback::Event {
+                    event: UwbEvent::ERROR,
+                    event_status: UwbStatus::FAILED,
+                })
+                .unwrap_or_else(|e| error!("Error sending error evt callback: {:?}", e));
+        });
+        // Register for death notification.
+        hal.as_binder().link_to_death(&mut hal_death_recipient)?;
+        Self::new_with_args(rsp_sender, hal, Arc::new(Mutex::new(hal_death_recipient))).await
     }
 }
 
@@ -216,7 +203,7 @@ pub mod tests {
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         IUwbChip::IUwbChipAsync, IUwbClientCallback::IUwbClientCallback,
     };
-    use android_hardware_uwb::binder::Result as BinderResult;
+    use android_hardware_uwb::binder::{DeathRecipient, Result as BinderResult};
     use binder::{SpIBinder, StatusCode};
     use bytes::Bytes;
     use log::warn;
@@ -773,10 +760,13 @@ pub mod tests {
         let cmd_frag_data_len = cmd_frag_data.len();
 
         mock_hal.expect_send_uci_message(cmd_frag_data, Ok(cmd_frag_data_len.try_into().unwrap()));
-        let adaptation_impl =
-            UwbAdaptationImpl::new_with_args(rsp_sender, binder::Strong::new(Box::new(mock_hal)))
-                .await
-                .unwrap();
+        let adaptation_impl = UwbAdaptationImpl::new_with_args(
+            rsp_sender,
+            binder::Strong::new(Box::new(mock_hal)),
+            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+        )
+        .await
+        .unwrap();
         adaptation_impl.send_uci_message(cmd).await.unwrap();
     }
 
@@ -869,10 +859,13 @@ pub mod tests {
             cmd_frag_data_2.to_vec(),
             Ok(cmd_frag_data_len_2.try_into().unwrap()),
         );
-        let adaptation_impl =
-            UwbAdaptationImpl::new_with_args(rsp_sender, binder::Strong::new(Box::new(mock_hal)))
-                .await
-                .unwrap();
+        let adaptation_impl = UwbAdaptationImpl::new_with_args(
+            rsp_sender,
+            binder::Strong::new(Box::new(mock_hal)),
+            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+        )
+        .await
+        .unwrap();
         adaptation_impl.send_uci_message(cmd).await.unwrap();
     }
 }
