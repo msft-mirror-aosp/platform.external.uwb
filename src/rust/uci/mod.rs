@@ -25,6 +25,7 @@ use crate::uci::uci_hrcv::UciResponse;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
+use arbitrary::Arbitrary;
 use log::{debug, error, info, warn};
 use std::future::Future;
 use std::option::Option;
@@ -41,10 +42,10 @@ use uwb_uci_packets::{
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
 pub type UciResponseHandle = oneshot::Sender<UciResponse>;
-type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
+pub type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 
 // Commands sent from JNI.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Arbitrary, Clone, Debug, PartialEq, Eq)]
 pub enum JNICommand {
     // Blocking UCI commands
     UciGetCapsInfo,
@@ -488,7 +489,6 @@ impl DispatcherImpl {
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
     }
 
-    #[cfg(test)]
     pub fn new_for_testing<T: 'static + EventManager + Send + Sync>(
         event_manager: T,
         adaptation: SyncUwbAdaptation,
@@ -557,7 +557,7 @@ impl Dispatcher for DispatcherImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adaptation::tests::MockUwbAdaptation;
+    use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         UwbEvent::UwbEvent, UwbStatus::UwbStatus,
