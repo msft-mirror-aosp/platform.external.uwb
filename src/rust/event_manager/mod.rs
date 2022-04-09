@@ -712,14 +712,10 @@ impl EventManagerImpl {
     }
 }
 
-#[cfg(test)]
 use log::warn;
-#[cfg(test)]
 use std::collections::VecDeque;
-#[cfg(test)]
 use std::sync::Mutex;
 
-#[cfg(test)]
 enum ExpectedCall {
     DeviceStatus { out: Result<()> },
     CoreGenericError { out: Result<()> },
@@ -730,13 +726,11 @@ enum ExpectedCall {
     VendorUci { out: Result<()> },
 }
 
-#[cfg(test)]
 #[derive(Default)]
 pub struct MockEventManager {
     expected_calls: Mutex<VecDeque<ExpectedCall>>,
 }
 
-#[cfg(test)]
 impl MockEventManager {
     pub fn new() -> Self {
         Default::default()
@@ -792,14 +786,11 @@ impl MockEventManager {
     }
 }
 
-#[cfg(test)]
 impl Drop for MockEventManager {
     fn drop(&mut self) {
         assert!(self.expected_calls.lock().unwrap().is_empty());
     }
 }
-
-#[cfg(test)]
 impl EventManager for MockEventManager {
     fn device_status_notification_received(&self, _data: DeviceStatusNtfPacket) -> Result<()> {
         let out = {
