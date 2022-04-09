@@ -2,6 +2,7 @@
 
 use crate::error::UwbErr;
 use crate::uci::uci_hrcv;
+use crate::uci::uci_logger::MockUciLogger;
 use crate::uci::uci_logger::{UciLogMode, UciLogger, UciLoggerImpl};
 use crate::uci::HalCallback;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
@@ -19,7 +20,9 @@ use binder::IBinder;
 use binder_tokio::{Tokio, TokioRuntime};
 use log::{error, warn};
 use rustutils::system_properties;
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_uci_packets::{
@@ -195,283 +198,81 @@ impl UwbAdaptation for UwbAdaptationImpl {
     }
 }
 
-#[cfg(test)]
-pub mod tests {
-    #![allow(non_snake_case)]
-    use super::*;
-    use crate::uci::uci_logger::MockUciLogger;
-    use android_hardware_uwb::aidl::android::hardware::uwb::{
-        IUwbChip::IUwbChipAsync, IUwbClientCallback::IUwbClientCallback,
-    };
-    use android_hardware_uwb::binder::{DeathRecipient, Result as BinderResult};
-    use binder::{SpIBinder, StatusCode};
-    use bytes::Bytes;
-    use log::warn;
-    use std::collections::VecDeque;
-    use std::sync::Mutex as StdMutex;
-    use uwb_uci_packets::{
-        GetDeviceInfoCmdBuilder, UciPacketHalPacket, UciPacketPacket, UciVendor_9_CommandBuilder,
-    };
+enum ExpectedCall {
+    Finalize {
+        expected_exit_status: bool,
+    },
+    HalOpen {
+        out: Result<()>,
+    },
+    HalClose {
+        out: Result<()>,
+    },
+    CoreInitialization {
+        out: Result<()>,
+    },
+    SessionInitialization {
+        expected_session_id: i32,
+        out: Result<()>,
+    },
+    SendUciMessage {
+        expected_data: Vec<u8>,
+        rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
+        out: Result<()>,
+    },
+}
 
-    enum ExpectedCall {
-        Finalize {
-            expected_exit_status: bool,
-        },
-        HalOpen {
-            out: Result<()>,
-        },
-        HalClose {
-            out: Result<()>,
-        },
-        CoreInitialization {
-            out: Result<()>,
-        },
-        SessionInitialization {
-            expected_session_id: i32,
-            out: Result<()>,
-        },
-        SendUciMessage {
-            expected_data: Vec<u8>,
-            rsp_data: Option<Vec<u8>>,
-            notf_data: Option<Vec<u8>>,
-            out: Result<()>,
-        },
+pub struct MockUwbAdaptation {
+    rsp_sender: mpsc::UnboundedSender<HalCallback>,
+    expected_calls: StdMutex<VecDeque<ExpectedCall>>,
+}
+
+impl MockUwbAdaptation {
+    pub fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Self {
+        Self { rsp_sender, expected_calls: StdMutex::new(VecDeque::new()) }
     }
 
-    pub struct MockUwbAdaptation {
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-        expected_calls: StdMutex<VecDeque<ExpectedCall>>,
+    #[allow(dead_code)]
+    pub fn expect_finalize(&self, expected_exit_status: bool) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::Finalize { expected_exit_status });
     }
-
-    impl MockUwbAdaptation {
-        pub fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Self {
-            Self { rsp_sender, expected_calls: StdMutex::new(VecDeque::new()) }
-        }
-
-        #[allow(dead_code)]
-        pub fn expect_finalize(&self, expected_exit_status: bool) {
-            self.expected_calls
-                .lock()
-                .unwrap()
-                .push_back(ExpectedCall::Finalize { expected_exit_status });
-        }
-        #[allow(dead_code)]
-        pub fn expect_hal_open(&self, out: Result<()>) {
-            self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalOpen { out });
-        }
-        #[allow(dead_code)]
-        pub fn expect_hal_close(&self, out: Result<()>) {
-            self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalClose { out });
-        }
-        #[allow(dead_code)]
-        pub fn expect_core_initialization(&self, out: Result<()>) {
-            self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreInitialization { out });
-        }
-        #[allow(dead_code)]
-        pub fn expect_session_initialization(&self, expected_session_id: i32, out: Result<()>) {
-            self.expected_calls
-                .lock()
-                .unwrap()
-                .push_back(ExpectedCall::SessionInitialization { expected_session_id, out });
-        }
-        #[allow(dead_code)]
-        pub fn expect_send_uci_message(
-            &self,
-            expected_data: Vec<u8>,
-            rsp_data: Option<Vec<u8>>,
-            notf_data: Option<Vec<u8>>,
-            out: Result<()>,
-        ) {
-            self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendUciMessage {
-                expected_data,
-                rsp_data,
-                notf_data,
-                out,
-            });
-        }
-
-        fn create_uwb_client_callback(
-            rsp_sender: mpsc::UnboundedSender<HalCallback>,
-        ) -> UwbClientCallback {
-            // Add tests for the mock logger.
-            UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
-        }
-
-        async fn send_client_event(&self, event: UwbEvent, status: UwbStatus) {
-            let uwb_client_callback =
-                MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
-            let _ = uwb_client_callback.onHalEvent(event, status).await;
-        }
-
-        async fn send_client_message(&self, rsp_data: Vec<u8>) {
-            let uwb_client_callback =
-                MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
-            let _ = uwb_client_callback.onUciMessage(&rsp_data).await;
-        }
+    #[allow(dead_code)]
+    pub fn expect_hal_open(&self, out: Result<()>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalOpen { out });
     }
-
-    impl Drop for MockUwbAdaptation {
-        fn drop(&mut self) {
-            assert!(self.expected_calls.lock().unwrap().is_empty());
-        }
+    #[allow(dead_code)]
+    pub fn expect_hal_close(&self, out: Result<()>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::HalClose { out });
     }
-
-    #[async_trait]
-    impl UwbAdaptation for MockUwbAdaptation {
-        async fn finalize(&mut self, exit_status: bool) {
-            let mut expected_calls = self.expected_calls.lock().unwrap();
-            match expected_calls.pop_front() {
-                Some(ExpectedCall::Finalize { expected_exit_status })
-                    if expected_exit_status == exit_status =>
-                {
-                    return;
-                }
-                Some(call) => {
-                    expected_calls.push_front(call);
-                }
-                None => {}
-            }
-            warn!("unpected finalize() called");
-        }
-
-        async fn hal_open(&self) -> Result<()> {
-            let expected_out = {
-                let mut expected_calls = self.expected_calls.lock().unwrap();
-                match expected_calls.pop_front() {
-                    Some(ExpectedCall::HalOpen { out }) => Some(out),
-                    Some(call) => {
-                        expected_calls.push_front(call);
-                        None
-                    }
-                    None => None,
-                }
-            };
-
-            match expected_out {
-                Some(out) => {
-                    let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                    self.send_client_event(UwbEvent::OPEN_CPLT, status).await;
-                    out
-                }
-                None => {
-                    warn!("unpected hal_open() called");
-                    Err(UwbErr::Undefined)
-                }
-            }
-        }
-
-        async fn hal_close(&self) -> Result<()> {
-            let expected_out = {
-                let mut expected_calls = self.expected_calls.lock().unwrap();
-                match expected_calls.pop_front() {
-                    Some(ExpectedCall::HalClose { out }) => Some(out),
-                    Some(call) => {
-                        expected_calls.push_front(call);
-                        None
-                    }
-                    None => None,
-                }
-            };
-
-            match expected_out {
-                Some(out) => {
-                    let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                    self.send_client_event(UwbEvent::CLOSE_CPLT, status).await;
-                    out
-                }
-                None => {
-                    warn!("unpected hal_close() called");
-                    Err(UwbErr::Undefined)
-                }
-            }
-        }
-
-        async fn core_initialization(&self) -> Result<()> {
-            let expected_out = {
-                let mut expected_calls = self.expected_calls.lock().unwrap();
-                match expected_calls.pop_front() {
-                    Some(ExpectedCall::CoreInitialization { out }) => Some(out),
-                    Some(call) => {
-                        expected_calls.push_front(call);
-                        None
-                    }
-                    None => None,
-                }
-            };
-
-            match expected_out {
-                Some(out) => {
-                    let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                    self.send_client_event(UwbEvent::POST_INIT_CPLT, status).await;
-                    out
-                }
-                None => {
-                    warn!("unpected core_initialization() called");
-                    Err(UwbErr::Undefined)
-                }
-            }
-        }
-
-        async fn session_initialization(&self, session_id: i32) -> Result<()> {
-            let expected_out = {
-                let mut expected_calls = self.expected_calls.lock().unwrap();
-                match expected_calls.pop_front() {
-                    Some(ExpectedCall::SessionInitialization { expected_session_id, out })
-                        if expected_session_id == session_id =>
-                    {
-                        Some(out)
-                    }
-                    Some(call) => {
-                        expected_calls.push_front(call);
-                        None
-                    }
-                    None => None,
-                }
-            };
-
-            match expected_out {
-                Some(out) => out,
-                None => {
-                    warn!("unpected session_initialization() called");
-                    Err(UwbErr::Undefined)
-                }
-            }
-        }
-
-        async fn send_uci_message(&self, cmd: UciCommandPacket) -> Result<()> {
-            let expected_out = {
-                let mut expected_calls = self.expected_calls.lock().unwrap();
-                match expected_calls.pop_front() {
-                    Some(ExpectedCall::SendUciMessage {
-                        expected_data,
-                        rsp_data,
-                        notf_data,
-                        out,
-                    }) if expected_data == cmd.to_vec() => Some((rsp_data, notf_data, out)),
-                    Some(call) => {
-                        expected_calls.push_front(call);
-                        None
-                    }
-                    None => None,
-                }
-            };
-
-            match expected_out {
-                Some((rsp_data, notf_data, out)) => {
-                    if let Some(rsp) = rsp_data {
-                        self.send_client_message(rsp).await;
-                    }
-                    if let Some(notf) = notf_data {
-                        self.send_client_message(notf).await;
-                    }
-                    out
-                }
-                None => {
-                    warn!("unpected send_uci_message() called");
-                    Err(UwbErr::Undefined)
-                }
-            }
-        }
+    #[allow(dead_code)]
+    pub fn expect_core_initialization(&self, out: Result<()>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreInitialization { out });
+    }
+    #[allow(dead_code)]
+    pub fn expect_session_initialization(&self, expected_session_id: i32, out: Result<()>) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::SessionInitialization { expected_session_id, out });
+    }
+    #[allow(dead_code)]
+    pub fn expect_send_uci_message(
+        &self,
+        expected_data: Vec<u8>,
+        rsp_data: Option<Vec<u8>>,
+        notf_data: Option<Vec<u8>>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendUciMessage {
+            expected_data,
+            rsp_data,
+            notf_data,
+            out,
+        });
     }
 
     fn create_uwb_client_callback(
@@ -481,6 +282,196 @@ pub mod tests {
         UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
     }
 
+    async fn send_client_event(&self, event: UwbEvent, status: UwbStatus) {
+        let uwb_client_callback =
+            MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
+        let _ = uwb_client_callback.onHalEvent(event, status).await;
+    }
+
+    async fn send_client_message(&self, rsp_data: Vec<u8>) {
+        let uwb_client_callback =
+            MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
+        let _ = uwb_client_callback.onUciMessage(&rsp_data).await;
+    }
+}
+
+impl Drop for MockUwbAdaptation {
+    fn drop(&mut self) {
+        assert!(self.expected_calls.lock().unwrap().is_empty());
+    }
+}
+
+#[async_trait]
+impl UwbAdaptation for MockUwbAdaptation {
+    async fn finalize(&mut self, exit_status: bool) {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::Finalize { expected_exit_status })
+                if expected_exit_status == exit_status =>
+            {
+                return;
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+            }
+            None => {}
+        }
+        warn!("unpected finalize() called");
+    }
+
+    async fn hal_open(&self) -> Result<()> {
+        let expected_out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::HalOpen { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        match expected_out {
+            Some(out) => {
+                let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
+                self.send_client_event(UwbEvent::OPEN_CPLT, status).await;
+                out
+            }
+            None => {
+                warn!("unpected hal_open() called");
+                Err(UwbErr::Undefined)
+            }
+        }
+    }
+
+    async fn hal_close(&self) -> Result<()> {
+        let expected_out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::HalClose { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        match expected_out {
+            Some(out) => {
+                let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
+                self.send_client_event(UwbEvent::CLOSE_CPLT, status).await;
+                out
+            }
+            None => {
+                warn!("unpected hal_close() called");
+                Err(UwbErr::Undefined)
+            }
+        }
+    }
+
+    async fn core_initialization(&self) -> Result<()> {
+        let expected_out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::CoreInitialization { out }) => Some(out),
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        match expected_out {
+            Some(out) => {
+                let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
+                self.send_client_event(UwbEvent::POST_INIT_CPLT, status).await;
+                out
+            }
+            None => {
+                warn!("unpected core_initialization() called");
+                Err(UwbErr::Undefined)
+            }
+        }
+    }
+
+    async fn session_initialization(&self, session_id: i32) -> Result<()> {
+        let expected_out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::SessionInitialization { expected_session_id, out })
+                    if expected_session_id == session_id =>
+                {
+                    Some(out)
+                }
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        match expected_out {
+            Some(out) => out,
+            None => {
+                warn!("unpected session_initialization() called");
+                Err(UwbErr::Undefined)
+            }
+        }
+    }
+
+    async fn send_uci_message(&self, cmd: UciCommandPacket) -> Result<()> {
+        let expected_out = {
+            let mut expected_calls = self.expected_calls.lock().unwrap();
+            match expected_calls.pop_front() {
+                Some(ExpectedCall::SendUciMessage { expected_data, rsp_data, notf_data, out })
+                    if expected_data == cmd.to_vec() =>
+                {
+                    Some((rsp_data, notf_data, out))
+                }
+                Some(call) => {
+                    expected_calls.push_front(call);
+                    None
+                }
+                None => None,
+            }
+        };
+
+        match expected_out {
+            Some((rsp_data, notf_data, out)) => {
+                if let Some(rsp) = rsp_data {
+                    self.send_client_message(rsp).await;
+                }
+                if let Some(notf) = notf_data {
+                    self.send_client_message(notf).await;
+                }
+                out
+            }
+            None => {
+                warn!("unpected send_uci_message() called");
+                Err(UwbErr::Undefined)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+fn create_uwb_client_callback(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> UwbClientCallback {
+    // Add tests for the mock logger.
+    UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
+}
+
+#[cfg(test)]
+pub mod tests {
+    #![allow(non_snake_case)]
+    use super::*;
+    use android_hardware_uwb::aidl::android::hardware::uwb::IUwbClientCallback::IUwbClientCallback;
+    use binder::{SpIBinder, StatusCode};
+    use bytes::Bytes;
+    use uwb_uci_packets::{GetDeviceInfoCmdBuilder, UciVendor_9_CommandBuilder};
     enum ExpectedHalCall {
         Open { out: BinderResult<()> },
         Close { out: BinderResult<()> },
@@ -529,6 +520,11 @@ pub mod tests {
     impl Drop for MockHal {
         fn drop(&mut self) {
             assert!(self.expected_calls.lock().unwrap().is_empty());
+        }
+    }
+    impl Default for MockHal {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
@@ -649,7 +645,6 @@ pub mod tests {
                     None => None,
                 }
             };
-
             match expected_out {
                 Some(out) => Box::pin(std::future::ready(out)),
                 None => Box::pin(std::future::ready(Err(StatusCode::UNKNOWN_ERROR.into()))),

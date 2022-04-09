@@ -331,24 +331,20 @@ impl UciLogger for UciLoggerImpl {
     }
 }
 
-#[cfg(test)]
 pub struct MockUciLogger {}
 
-#[cfg(test)]
 impl MockUciLogger {
     pub fn new() -> Self {
         MockUciLogger {}
     }
 }
 
-#[cfg(test)]
 impl Default for MockUciLogger {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(test)]
 #[async_trait]
 impl UciLogger for MockUciLogger {
     async fn log_uci_command(&self, _cmd: UciCommandPacket) {}
