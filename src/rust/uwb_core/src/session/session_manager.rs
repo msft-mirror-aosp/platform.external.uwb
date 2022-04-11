@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use log::{debug, error};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::session::error::{SessionError, SessionResult};
+use crate::session::error::{Error, Result};
 use crate::uci::notification::UciNotification;
 use crate::uci::params::{SessionId, SessionType};
 use crate::uci::uci_manager::UciManager;
@@ -29,7 +29,7 @@ const MAX_SESSION_COUNT: usize = 5;
 /// UciManager.
 /// Using the actor model, SessionManager delegates the requests to SessionManagerActor.
 pub(crate) struct SessionManager {
-    cmd_sender: mpsc::UnboundedSender<(SessionCommand, oneshot::Sender<SessionResult<()>>)>,
+    cmd_sender: mpsc::UnboundedSender<(SessionCommand, oneshot::Sender<Result<()>>)>,
 }
 
 impl SessionManager {
@@ -48,28 +48,28 @@ impl SessionManager {
         &mut self,
         session_id: SessionId,
         session_type: SessionType,
-    ) -> SessionResult<()> {
+    ) -> Result<()> {
         self.send_cmd(SessionCommand::InitSession { session_id, session_type }).await
     }
 
-    async fn deinit_session(&mut self, session_id: SessionId) -> SessionResult<()> {
+    async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
         self.send_cmd(SessionCommand::DeinitSession { session_id }).await
     }
 
     // Send the |cmd| to the SessionManagerActor.
-    async fn send_cmd(&self, cmd: SessionCommand) -> SessionResult<()> {
+    async fn send_cmd(&self, cmd: SessionCommand) -> Result<()> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
-            SessionError::TokioFailure
+            Error::TokioFailure
         })?;
-        result_receiver.await.unwrap_or(Err(SessionError::TokioFailure))
+        result_receiver.await.unwrap_or(Err(Error::TokioFailure))
     }
 }
 
 struct SessionManagerActor<T: UciManager> {
     // Receive the commands and the corresponding response senders from SessionManager.
-    cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<SessionResult<()>>)>,
+    cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<Result<()>>)>,
 
     // The UciManager for delegating UCI requests.
     uci_manager: T,
@@ -81,7 +81,7 @@ struct SessionManagerActor<T: UciManager> {
 
 impl<T: UciManager> SessionManagerActor<T> {
     fn new(
-        cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<SessionResult<()>>)>,
+        cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<Result<()>>)>,
         uci_manager: T,
         uci_notf_receiver: mpsc::UnboundedReceiver<UciNotification>,
     ) -> Self {
@@ -111,18 +111,18 @@ impl<T: UciManager> SessionManagerActor<T> {
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: SessionCommand) -> SessionResult<()> {
+    async fn handle_cmd(&mut self, cmd: SessionCommand) -> Result<()> {
         match cmd {
             SessionCommand::InitSession { session_id, session_type } => {
                 if self.active_sessions.len() == MAX_SESSION_COUNT {
-                    return Err(SessionError::MaxSessionsExceeded);
+                    return Err(Error::MaxSessionsExceeded);
                 }
                 if self.active_sessions.contains_key(&session_id) {
-                    return Err(SessionError::DuplicatedSessionId(session_id));
+                    return Err(Error::DuplicatedSessionId(session_id));
                 }
                 if let Err(e) = self.uci_manager.session_init(session_id, session_type).await {
                     error!("Failed to init session: {:?}", e);
-                    return Err(SessionError::UciError);
+                    return Err(Error::Uci);
                 }
 
                 self.active_sessions.insert(session_id, UwbSession {});
@@ -130,12 +130,12 @@ impl<T: UciManager> SessionManagerActor<T> {
 
             SessionCommand::DeinitSession { session_id } => {
                 if self.active_sessions.remove(&session_id).is_none() {
-                    return Err(SessionError::UnknownSessionId(session_id));
+                    return Err(Error::UnknownSessionId(session_id));
                 }
 
                 if let Err(e) = self.uci_manager.session_deinit(session_id).await {
                     error!("Failed to deinit session: {:?}", e);
-                    return Err(SessionError::UciError);
+                    return Err(Error::Uci);
                 }
             }
         }
@@ -187,7 +187,7 @@ mod tests {
         let result = session_manager.init_session(session_id, session_type).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.init_session(session_id, session_type).await;
-        assert_eq!(result, Err(SessionError::DuplicatedSessionId(session_id)));
+        assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
     }
 
     #[tokio::test]
@@ -204,12 +204,12 @@ mod tests {
         .await;
 
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(SessionError::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
         let result = session_manager.init_session(session_id, session_type).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(SessionError::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
     }
 }
