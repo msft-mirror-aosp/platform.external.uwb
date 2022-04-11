@@ -274,6 +274,11 @@ impl MockUwbAdaptation {
         });
     }
 
+    #[allow(dead_code)]
+    pub fn clear_expected_calls(&self) {
+        self.expected_calls.lock().unwrap().clear();
+    }
+
     async fn send_hal_event(&self, event: UwbEvent, event_status: UwbStatus) {
         self.rsp_sender.send(HalCallback::Event { event, event_status }).unwrap();
     }
