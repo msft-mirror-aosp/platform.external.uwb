@@ -618,15 +618,20 @@ struct Controlee {
     subsession_id: 32,
 }
 
+enum UpdateMulticastListAction: 8 {
+    ADD_CONTROLEE = 0,
+    REMOVE_CONTROLEE = 1,
+}
+
 packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_id: 32,
-    action: 8,
+    action: UpdateMulticastListAction,
     _count_(controlees): 8,
     controlees: Controlee[],
 }
 
 test SessionUpdateControllerMulticastListCmd {
-    "\x21\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
+    "\x21\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x01\x00",
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
