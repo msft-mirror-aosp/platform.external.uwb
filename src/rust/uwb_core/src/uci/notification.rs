@@ -17,7 +17,7 @@ use std::convert::{TryFrom, TryInto};
 use num_traits::ToPrimitive;
 use uwb_uci_packets::Packet;
 
-use crate::uci::error::{StatusCode, UciError, UciResult};
+use crate::uci::error::{Error, Result as UciResult, StatusCode};
 use crate::uci::params::{
     ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RawVendorMessage,
     ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
@@ -49,7 +49,7 @@ impl UciNotification {
 }
 
 impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::UciNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
         match evt.specialize() {
@@ -62,13 +62,13 @@ impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
             UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::CoreNotificationPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::CoreNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::CoreNotificationChild;
         match evt.specialize() {
@@ -78,13 +78,13 @@ impl TryFrom<uwb_uci_packets::CoreNotificationPacket> for UciNotification {
             CoreNotificationChild::GenericError(evt) => {
                 Ok(UciNotification::CoreGenericError(evt.get_status()))
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::SessionNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::SessionNotificationChild;
         match evt.specialize() {
@@ -100,24 +100,24 @@ impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for UciNotification {
                     status_list: evt.get_controlee_status().clone(),
                 })
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::RangingNotificationPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangingNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangingNotificationChild;
         match evt.specialize() {
             RangingNotificationChild::RangeDataNtf(evt) => evt.try_into(),
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangeDataNtfPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangeDataNtfChild;
         match evt.specialize() {
@@ -131,25 +131,22 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
                     evt.get_two_way_ranging_measurements().clone(),
                 ))
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::AndroidNotificationPacket) -> Result<Self, Self::Error> {
-        Err(UciError::Specialize(evt.to_vec()))
+        Err(Error::Specialize(evt.to_vec()))
     }
 }
 
 fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> UciResult<UciNotification> {
     Ok(UciNotification::RawVendor(RawVendorMessage {
-        gid: evt
-            .get_group_id()
-            .to_u32()
-            .ok_or_else(|| UciError::Specialize(evt.clone().to_vec()))?,
-        oid: evt.get_opcode().to_u32().ok_or_else(|| UciError::Specialize(evt.clone().to_vec()))?,
+        gid: evt.get_group_id().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
+        oid: evt.get_opcode().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
         payload: get_vendor_uci_payload(evt)?,
     }))
 }
@@ -196,6 +193,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> UciRes
                 uwb_uci_packets::UciVendor_F_NotificationChild::None => Ok(Vec::new()),
             }
         }
-        _ => Err(UciError::Specialize(evt.to_vec())),
+        _ => Err(Error::Specialize(evt.to_vec())),
     }
 }

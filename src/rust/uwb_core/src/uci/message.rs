@@ -16,7 +16,7 @@ use std::convert::{TryFrom, TryInto};
 
 use uwb_uci_packets::Packet;
 
-use crate::uci::error::UciError;
+use crate::uci::error::Error;
 use crate::uci::notification::UciNotification;
 use crate::uci::response::UciResponse;
 
@@ -27,7 +27,7 @@ pub(super) enum UciMessage {
 }
 
 impl TryFrom<uwb_uci_packets::UciPacketPacket> for UciMessage {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(packet: uwb_uci_packets::UciPacketPacket) -> Result<Self, Self::Error> {
         match packet.specialize() {
             uwb_uci_packets::UciPacketChild::UciResponse(evt) => {
@@ -36,7 +36,7 @@ impl TryFrom<uwb_uci_packets::UciPacketPacket> for UciMessage {
             uwb_uci_packets::UciPacketChild::UciNotification(evt) => {
                 Ok(UciMessage::Notification(evt.try_into()?))
             }
-            _ => Err(UciError::Specialize(packet.to_vec())),
+            _ => Err(Error::Specialize(packet.to_vec())),
         }
     }
 }
