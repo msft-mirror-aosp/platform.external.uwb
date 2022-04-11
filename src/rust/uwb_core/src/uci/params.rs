@@ -26,7 +26,7 @@ pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
     ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressTwoWayRangingMeasurement, PowerStats, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressTwoWayRangingMeasurement,
+    SessionType, ShortAddressTwoWayRangingMeasurement, UpdateMulticastListAction,
 };
 
 pub type SessionId = u32;
@@ -87,19 +87,6 @@ impl PartialEq for SetAppConfigResponse {
         self.status == other.status
             && zip(&self.config_status, &other.config_status)
                 .all(|(a, b)| app_config_status_eq(a, b))
-    }
-}
-
-// TODO(akahuang): Add the enum at uwb_uci_packets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateMulticastListAction {
-    Add = 0x00,
-    Delete = 0x01,
-}
-
-impl From<UpdateMulticastListAction> for u8 {
-    fn from(item: UpdateMulticastListAction) -> u8 {
-        item as u8
     }
 }
 
