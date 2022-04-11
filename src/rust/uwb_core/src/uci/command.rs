@@ -107,7 +107,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
                 uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
                     session_id,
-                    action: action.into(),
+                    action,
                     controlees,
                 }
                 .build()
