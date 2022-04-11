@@ -969,7 +969,7 @@ mod tests {
                 uwb_uci_packets::Controlee { short_address: 0x4567, subsession_id: 0x90ab };
             let cmd = uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
                 session_id: 0x123,
-                action: UpdateMulticastListAction::Add.into(),
+                action: UpdateMulticastListAction::AddControlee,
                 controlees: vec![controlee],
             }
             .build()
@@ -985,7 +985,7 @@ mod tests {
         .await;
 
         let session_id = 0x123;
-        let action = UpdateMulticastListAction::Add;
+        let action = UpdateMulticastListAction::AddControlee;
         let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
         let result = uci_manager
             .session_update_controller_multicast_list(session_id, action, vec![controlee])
