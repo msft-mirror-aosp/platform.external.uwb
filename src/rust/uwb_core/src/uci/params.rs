@@ -122,7 +122,7 @@ impl From<CountryCode> for [u8; 2] {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
     pub uci_version: u16,
     pub mac_version: u16,
