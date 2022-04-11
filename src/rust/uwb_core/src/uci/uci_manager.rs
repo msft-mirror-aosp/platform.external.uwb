@@ -406,7 +406,7 @@ impl<T: UciHal> UciManagerActor<T> {
                     match cmd {
                         None => {
                             debug!("UciManager is about to drop.");
-                            return;
+                            break;
                         },
                         Some((cmd, result_sender)) => {
                             self.handle_cmd(cmd, result_sender).await;
@@ -451,6 +451,12 @@ impl<T: UciHal> UciManagerActor<T> {
                     }
                 }
             }
+        }
+
+        if self.is_hal_opened {
+            debug!("The HAL is still opened when exit, close the HAL");
+            let _ = self.hal.close().await;
+            self.on_hal_closed();
         }
     }
 
@@ -676,7 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_close_hal_ok() {
+    async fn test_close_hal_explicitly() {
         let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             hal.expected_close(Ok(()));
         })
@@ -684,6 +690,18 @@ mod tests {
 
         let result = uci_manager.close_hal().await;
         assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_close_hal_when_exit() {
+        let (uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            // UciManager should close the hal if the hal is still opened when exit.
+            hal.expected_close(Ok(()));
+        })
+        .await;
+
+        drop(uci_manager);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
