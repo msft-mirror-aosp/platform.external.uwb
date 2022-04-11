@@ -556,16 +556,17 @@ impl Dispatcher for DispatcherImpl {
 
 #[cfg(test)]
 mod tests {
+    use self::uci_hrcv::UciNotification;
+    use self::uci_hrcv::UciResponse;
+
     use super::*;
     use crate::adaptation::MockUwbAdaptation;
     use crate::event_manager::MockEventManager;
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         UwbEvent::UwbEvent, UwbStatus::UwbStatus,
     };
-    use uwb_uci_packets::{
-        DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoRspBuilder, Packet, UciPacketHalPacket,
-        UciPacketPacket,
-    };
+    use num_traits::ToPrimitive;
+    use uwb_uci_packets::*;
 
     fn setup_dispatcher(
         config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
@@ -609,9 +610,9 @@ mod tests {
         Ok((dispatcher, rsp_sender))
     }
 
-    fn generate_fake_cmd_rsp_data() -> (Vec<u8>, Vec<u8>) {
-        let cmd_data = GetDeviceInfoCmdBuilder {}.build().to_vec();
-        let rsp_packet: UciPacketPacket = GetDeviceInfoRspBuilder {
+    fn generate_fake_get_device_cmd_rsp() -> (GetDeviceInfoCmdPacket, GetDeviceInfoRspPacket) {
+        let cmd = GetDeviceInfoCmdBuilder {}.build();
+        let rsp = GetDeviceInfoRspBuilder {
             status: StatusCode::UciStatusOk,
             uci_version: 0,
             mac_version: 0,
@@ -619,21 +620,12 @@ mod tests {
             uci_test_version: 0,
             vendor_spec_info: vec![],
         }
-        .build()
-        .into();
-        // Convert to UciPacketHalPacket
-        let mut rsp_frags: Vec<UciPacketHalPacket> = rsp_packet.into();
-        let rsp_data = rsp_frags.pop().unwrap().to_vec();
-
-        (cmd_data, rsp_data)
+        .build();
+        (cmd, rsp)
     }
 
-    fn generate_fake_ntf_data() -> Vec<u8> {
-        let ntf_packet: UciPacketPacket =
-            DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
-        // Convert to UciPacketHalPacket
-        let mut ntf_frags: Vec<UciPacketHalPacket> = ntf_packet.into();
-        ntf_frags.pop().unwrap().to_vec()
+    fn generate_fake_device_status_ntf() -> DeviceStatusNtfPacket {
+        DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build()
     }
 
     #[test]
@@ -674,10 +666,15 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message() -> Result<()> {
+    fn test_get_device_info() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), None, Ok(()));
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                None,
+                Ok(()),
+            );
         })?;
 
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
@@ -685,14 +682,19 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message_with_retry() -> Result<()> {
+    fn test_get_device_info_with_uci_retry() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
 
             // Let the first 2 tries not response data, then the 3rd tries response successfully.
-            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, None, Ok(()));
-            mock_adaptation.expect_send_uci_message(cmd_data.clone(), None, None, Ok(()));
-            mock_adaptation.expect_send_uci_message(cmd_data, Some(rsp_data), None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd.clone().into(), None, None, Ok(()));
+            mock_adaptation.expect_send_uci_message(cmd.clone().into(), None, None, Ok(()));
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                None,
+                Ok(()),
+            );
         })?;
 
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
@@ -700,10 +702,10 @@ mod tests {
     }
 
     #[test]
-    fn test_send_uci_message_failed() -> Result<()> {
+    fn test_get_device_info_send_uci_message_failed() -> Result<()> {
         let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
-            let (cmd_data, _rsp_data) = generate_fake_cmd_rsp_data();
-            mock_adaptation.expect_send_uci_message(cmd_data, None, None, Err(UwbErr::failed()));
+            let (cmd, _rsp) = generate_fake_get_device_cmd_rsp();
+            mock_adaptation.expect_send_uci_message(cmd.into(), None, None, Err(UwbErr::failed()));
         })?;
 
         dispatcher
@@ -713,14 +715,14 @@ mod tests {
     }
 
     #[test]
-    fn test_notification() -> Result<()> {
+    fn test_device_status_notification() -> Result<()> {
         let mut dispatcher = setup_dispatcher(|mock_adaptation, mock_event_manager| {
-            let (cmd_data, rsp_data) = generate_fake_cmd_rsp_data();
-            let ntf_data = generate_fake_ntf_data();
+            let (cmd, rsp) = generate_fake_get_device_cmd_rsp();
+            let ntf = generate_fake_device_status_ntf();
             mock_adaptation.expect_send_uci_message(
-                cmd_data,
-                Some(rsp_data),
-                Some(ntf_data),
+                cmd.into(),
+                Some(UciResponse::GetDeviceInfoRsp(rsp)),
+                Some(UciNotification::DeviceStatusNtf(ntf)),
                 Ok(()),
             );
             mock_event_manager.expect_device_status_notification_received(Ok(()));
@@ -728,5 +730,299 @@ mod tests {
 
         dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo)?;
         dispatcher.exit()
+    }
+
+    #[test]
+    fn test_get_caps_info() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = GetCapsInfoCmdBuilder {}.build();
+            let rsp =
+                GetCapsInfoRspBuilder { status: StatusCode::UciStatusOk, tlvs: Vec::new() }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::GetCapsInfoRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetCapsInfo)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_session_init() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionInitCmdBuilder {
+                session_id: 1,
+                session_type: SessionType::FiraRangingSession,
+            }
+            .build();
+            let rsp = SessionInitRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionInitRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSessionInit(
+            1,
+            SessionType::FiraRangingSession.to_u8().unwrap(),
+        ))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_session_deinit() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionDeinitCmdBuilder { session_id: 1 }.build();
+            let rsp = SessionDeinitRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionDeinitRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSessionDeinit(1))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_session_get_count() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionGetCountCmdBuilder {}.build();
+            let rsp =
+                SessionGetCountRspBuilder { status: StatusCode::UciStatusOk, session_count: 5 }
+                    .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionGetCountRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSessionGetCount)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_start_range() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = RangeStartCmdBuilder { session_id: 5 }.build();
+            let rsp = RangeStartRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::RangeStartRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciStartRange(5))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_stop_range() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = RangeStopCmdBuilder { session_id: 5 }.build();
+            let rsp = RangeStopRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::RangeStopRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciStopRange(5))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_session_state() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionGetStateCmdBuilder { session_id: 5 }.build();
+            let rsp = SessionGetStateRspBuilder {
+                status: StatusCode::UciStatusOk,
+                session_state: SessionState::SessionStateActive,
+            }
+            .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionGetStateRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetSessionState(5))?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_session_update_multicast_list() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionUpdateControllerMulticastListCmdBuilder {
+                session_id: 5,
+                action: UpdateMulticastListAction::AddControlee,
+                controlees: Vec::new(),
+            }
+            .build();
+            let rsp =
+                SessionUpdateControllerMulticastListRspBuilder { status: StatusCode::UciStatusOk }
+                    .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionUpdateControllerMulticastListRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSessionUpdateMulticastList {
+            session_id: 5,
+            action: UpdateMulticastListAction::AddControlee.to_u8().unwrap(),
+            no_of_controlee: 0,
+            address_list: Vec::new(),
+            sub_session_id_list: Vec::new(),
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_country_code() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = AndroidSetCountryCodeCmdBuilder { country_code: [45, 34] }.build();
+            let rsp = AndroidSetCountryCodeRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::AndroidSetCountryCodeRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSetCountryCode { code: vec![45, 34] })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_app_config() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionSetAppConfigCmdBuilder { session_id: 5, tlvs: Vec::new() }.build();
+            let rsp = SessionSetAppConfigRspBuilder {
+                status: StatusCode::UciStatusOk,
+                cfg_status: Vec::new(),
+            }
+            .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionSetAppConfigRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciSetAppConfig {
+            session_id: 5,
+            no_of_params: 0,
+            app_config_param_len: 0,
+            app_configs: Vec::new(),
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_app_config() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = SessionGetAppConfigCmdBuilder { session_id: 5, app_cfg: Vec::new() }.build();
+            let rsp =
+                SessionGetAppConfigRspBuilder { status: StatusCode::UciStatusOk, tlvs: Vec::new() }
+                    .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::SessionGetAppConfigRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetAppConfig {
+            session_id: 5,
+            no_of_params: 0,
+            app_config_param_len: 0,
+            app_configs: Vec::new(),
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_raw_vendor_cmd() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = UciVendor_9_CommandBuilder { opcode: 5, payload: None }.build();
+            let rsp = UciVendor_9_ResponseBuilder { opcode: 5, payload: None }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::RawVendorRsp(rsp.into())),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciRawVendorCmd {
+            gid: 9,
+            oid: 5,
+            payload: Vec::new(),
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_device_reset() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = DeviceResetCmdBuilder { reset_config: ResetConfig::UwbsReset }.build();
+            let rsp = DeviceResetRspBuilder { status: StatusCode::UciStatusOk }.build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::DeviceResetRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciDeviceReset { reset_config: 0 })?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_power_stats() -> Result<()> {
+        let dispatcher = setup_dispatcher(|mock_adaptation, _mock_event_manager| {
+            let cmd = AndroidGetPowerStatsCmdBuilder {}.build();
+            let rsp = AndroidGetPowerStatsRspBuilder {
+                stats: PowerStats {
+                    status: StatusCode::UciStatusOk,
+                    idle_time_ms: 0,
+                    tx_time_ms: 0,
+                    rx_time_ms: 0,
+                    total_wake_count: 0,
+                },
+            }
+            .build();
+            mock_adaptation.expect_send_uci_message(
+                cmd.into(),
+                Some(UciResponse::AndroidGetPowerStatsRsp(rsp)),
+                None,
+                Ok(()),
+            );
+        })?;
+
+        dispatcher.block_on_jni_command(JNICommand::UciGetPowerStats)?;
+        Ok(())
     }
 }
