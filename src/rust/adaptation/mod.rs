@@ -2,7 +2,6 @@
 
 use crate::error::UwbErr;
 use crate::uci::uci_hrcv;
-use crate::uci::uci_logger::MockUciLogger;
 use crate::uci::uci_logger::{UciLogMode, UciLogger, UciLoggerImpl};
 use crate::uci::HalCallback;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
@@ -216,9 +215,9 @@ enum ExpectedCall {
         out: Result<()>,
     },
     SendUciMessage {
-        expected_data: Vec<u8>,
-        rsp_data: Option<Vec<u8>>,
-        notf_data: Option<Vec<u8>>,
+        expected_cmd: UciCommandPacket,
+        rsp: Option<uci_hrcv::UciResponse>,
+        notf: Option<uci_hrcv::UciNotification>,
         out: Result<()>,
     },
 }
@@ -262,36 +261,29 @@ impl MockUwbAdaptation {
     #[allow(dead_code)]
     pub fn expect_send_uci_message(
         &self,
-        expected_data: Vec<u8>,
-        rsp_data: Option<Vec<u8>>,
-        notf_data: Option<Vec<u8>>,
+        expected_cmd: UciCommandPacket,
+        rsp: Option<uci_hrcv::UciResponse>,
+        notf: Option<uci_hrcv::UciNotification>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendUciMessage {
-            expected_data,
-            rsp_data,
-            notf_data,
+            expected_cmd,
+            rsp,
+            notf,
             out,
         });
     }
 
-    fn create_uwb_client_callback(
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-    ) -> UwbClientCallback {
-        // Add tests for the mock logger.
-        UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
+    async fn send_hal_event(&self, event: UwbEvent, event_status: UwbStatus) {
+        self.rsp_sender.send(HalCallback::Event { event, event_status }).unwrap();
     }
 
-    async fn send_client_event(&self, event: UwbEvent, status: UwbStatus) {
-        let uwb_client_callback =
-            MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
-        let _ = uwb_client_callback.onHalEvent(event, status).await;
+    async fn send_uci_response(&self, rsp: uci_hrcv::UciResponse) {
+        self.rsp_sender.send(HalCallback::UciRsp(rsp)).unwrap();
     }
 
-    async fn send_client_message(&self, rsp_data: Vec<u8>) {
-        let uwb_client_callback =
-            MockUwbAdaptation::create_uwb_client_callback(self.rsp_sender.clone());
-        let _ = uwb_client_callback.onUciMessage(&rsp_data).await;
+    async fn send_uci_notification(&self, ntf: uci_hrcv::UciNotification) {
+        self.rsp_sender.send(HalCallback::UciNtf(ntf)).unwrap();
     }
 }
 
@@ -335,7 +327,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_event(UwbEvent::OPEN_CPLT, status).await;
+                self.send_hal_event(UwbEvent::OPEN_CPLT, status).await;
                 out
             }
             None => {
@@ -361,7 +353,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_event(UwbEvent::CLOSE_CPLT, status).await;
+                self.send_hal_event(UwbEvent::CLOSE_CPLT, status).await;
                 out
             }
             None => {
@@ -387,7 +379,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         match expected_out {
             Some(out) => {
                 let status = if out.is_ok() { UwbStatus::OK } else { UwbStatus::FAILED };
-                self.send_client_event(UwbEvent::POST_INIT_CPLT, status).await;
+                self.send_hal_event(UwbEvent::POST_INIT_CPLT, status).await;
                 out
             }
             None => {
@@ -427,11 +419,13 @@ impl UwbAdaptation for MockUwbAdaptation {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedCall::SendUciMessage { expected_data, rsp_data, notf_data, out })
-                    if expected_data == cmd.to_vec() =>
-                {
-                    Some((rsp_data, notf_data, out))
-                }
+                Some(ExpectedCall::SendUciMessage {
+                    expected_cmd,
+                    rsp,
+                    notf,
+                    out,
+                    // PDL generated packets do not implement PartialEq, so use the raw bytes for comparison.
+                }) if expected_cmd.clone().to_bytes() == cmd.to_bytes() => Some((rsp, notf, out)),
                 Some(call) => {
                     expected_calls.push_front(call);
                     None
@@ -441,12 +435,12 @@ impl UwbAdaptation for MockUwbAdaptation {
         };
 
         match expected_out {
-            Some((rsp_data, notf_data, out)) => {
-                if let Some(rsp) = rsp_data {
-                    self.send_client_message(rsp).await;
+            Some((rsp, notf, out)) => {
+                if let Some(rsp) = rsp {
+                    self.send_uci_response(rsp).await;
                 }
-                if let Some(notf) = notf_data {
-                    self.send_client_message(notf).await;
+                if let Some(notf) = notf {
+                    self.send_uci_notification(notf).await;
                 }
                 out
             }
@@ -456,12 +450,6 @@ impl UwbAdaptation for MockUwbAdaptation {
             }
         }
     }
-}
-
-#[cfg(test)]
-fn create_uwb_client_callback(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> UwbClientCallback {
-    // Add tests for the mock logger.
-    UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
 }
 
 #[cfg(test)]
@@ -478,6 +466,15 @@ pub mod tests {
         CoreInit { out: BinderResult<()> },
         SessionInit { expected_session_id: i32, out: BinderResult<()> },
         SendUciMessage { expected_data: Vec<u8>, out: BinderResult<i32> },
+    }
+    use crate::uci::uci_logger::MockUciLogger;
+
+    #[cfg(test)]
+    fn create_uwb_client_callback(
+        rsp_sender: mpsc::UnboundedSender<HalCallback>,
+    ) -> UwbClientCallback {
+        // Add tests for the mock logger.
+        UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
     }
 
     pub struct MockHal {
