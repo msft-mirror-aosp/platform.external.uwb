@@ -18,7 +18,7 @@ use log::error;
 use num_traits::ToPrimitive;
 use uwb_uci_packets::Packet;
 
-use crate::uci::error::{StatusCode, UciError, UciResult};
+use crate::uci::error::{Error, Result as UciResult, StatusCode};
 use crate::uci::params::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse,
@@ -78,7 +78,7 @@ impl UciResponse {
     }
 
     fn matches_result_retry<T>(result: &UciResult<T>) -> bool {
-        matches!(result, Err(UciError::Status(StatusCode::UciStatusCommandRetry)))
+        matches!(result, Err(Error::Status(StatusCode::UciStatusCommandRetry)))
     }
     fn matches_status_retry(status: &StatusCode) -> bool {
         matches!(status, StatusCode::UciStatusCommandRetry)
@@ -86,7 +86,7 @@ impl UciResponse {
 }
 
 impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::UciResponsePacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
@@ -99,13 +99,13 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
             UciResponseChild::UciVendor_B_Response(evt) => vendor_response(evt.into()),
             UciResponseChild::UciVendor_E_Response(evt) => vendor_response(evt.into()),
             UciResponseChild::UciVendor_F_Response(evt) => vendor_response(evt.into()),
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::CoreResponsePacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::CoreResponseChild;
         match evt.specialize() {
@@ -136,13 +136,13 @@ impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
             CoreResponseChild::GetConfigRsp(evt) => Ok(UciResponse::CoreGetConfig(
                 into_uci_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
             )),
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::SessionResponsePacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::SessionResponseChild;
         match evt.specialize() {
@@ -174,13 +174,13 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
                     into_uci_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
                 ))
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::RangingResponsePacket> for UciResponse {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangingResponsePacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangingResponseChild;
         match evt.specialize() {
@@ -195,13 +195,13 @@ impl TryFrom<uwb_uci_packets::RangingResponsePacket> for UciResponse {
                     into_uci_result(evt.get_status()).map(|_| evt.get_count() as usize),
                 ))
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(evt: uwb_uci_packets::AndroidResponsePacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::AndroidResponseChild;
         match evt.specialize() {
@@ -213,18 +213,15 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
                     into_uci_result(evt.get_stats().status).map(|_| evt.get_stats().clone()),
                 ))
             }
-            _ => Err(UciError::Specialize(evt.to_vec())),
+            _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
 fn vendor_response(evt: uwb_uci_packets::UciResponsePacket) -> UciResult<UciResponse> {
     Ok(UciResponse::RawVendorCmd(Ok(RawVendorMessage {
-        gid: evt
-            .get_group_id()
-            .to_u32()
-            .ok_or_else(|| UciError::Specialize(evt.clone().to_vec()))?,
-        oid: evt.get_opcode().to_u32().ok_or_else(|| UciError::Specialize(evt.clone().to_vec()))?,
+        gid: evt.get_group_id().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
+        oid: evt.get_opcode().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
         payload: get_vendor_uci_payload(evt)?,
     })))
 }
@@ -253,7 +250,7 @@ fn get_vendor_uci_payload(data: uwb_uci_packets::UciResponsePacket) -> UciResult
         },
         _ => {
             error!("Invalid vendor response with gid {:?}", data.get_group_id());
-            Err(UciError::Specialize(data.to_vec()))
+            Err(Error::Specialize(data.to_vec()))
         }
     }
 }
@@ -261,6 +258,6 @@ fn get_vendor_uci_payload(data: uwb_uci_packets::UciResponsePacket) -> UciResult
 fn into_uci_result(status: uwb_uci_packets::StatusCode) -> UciResult<()> {
     match status {
         StatusCode::UciStatusOk => Ok(()),
-        status => Err(UciError::Status(status)),
+        status => Err(Error::Status(status)),
     }
 }
