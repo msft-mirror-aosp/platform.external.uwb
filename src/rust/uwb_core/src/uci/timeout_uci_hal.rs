@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use crate::uci::error::{UciError, UciResult};
+use crate::uci::error::{Error, Result};
 use crate::uci::params::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
@@ -32,29 +32,29 @@ impl<T: UciHal> TimeoutUciHal<T> {
         Self(hal)
     }
 
-    async fn call_with_timeout(future: impl Future<Output = UciResult<()>>) -> UciResult<()> {
+    async fn call_with_timeout(future: impl Future<Output = Result<()>>) -> Result<()> {
         match timeout(Duration::from_millis(HAL_API_TIMEOUT_MS), future).await {
             Ok(result) => result,
-            Err(_) => Err(UciError::Timeout),
+            Err(_) => Err(Error::Timeout),
         }
     }
 }
 
 #[async_trait]
 impl<T: UciHal> UciHal for TimeoutUciHal<T> {
-    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UciResult<()> {
+    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> Result<()> {
         Self::call_with_timeout(self.0.open(msg_sender)).await
     }
 
-    async fn close(&mut self) -> UciResult<()> {
+    async fn close(&mut self) -> Result<()> {
         Self::call_with_timeout(self.0.close()).await
     }
 
-    async fn notify_session_initialized(&mut self, session_id: SessionId) -> UciResult<()> {
+    async fn notify_session_initialized(&mut self, session_id: SessionId) -> Result<()> {
         Self::call_with_timeout(self.0.notify_session_initialized(session_id)).await
     }
 
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UciResult<()> {
+    async fn send_command(&mut self, cmd: RawUciMessage) -> Result<()> {
         Self::call_with_timeout(self.0.send_command(cmd)).await
     }
 }
@@ -73,13 +73,13 @@ mod tests {
 
     #[async_trait]
     impl UciHal for FakeUciHal {
-        async fn open(&mut self, _: mpsc::UnboundedSender<RawUciMessage>) -> UciResult<()> {
+        async fn open(&mut self, _: mpsc::UnboundedSender<RawUciMessage>) -> Result<()> {
             Ok(())
         }
-        async fn close(&mut self) -> UciResult<()> {
-            Err(UciError::HalFailed)
+        async fn close(&mut self) -> Result<()> {
+            Err(Error::HalFailed)
         }
-        async fn send_command(&mut self, _: RawUciMessage) -> UciResult<()> {
+        async fn send_command(&mut self, _: RawUciMessage) -> Result<()> {
             sleep(Duration::MAX).await;
             Ok(())
         }
@@ -102,7 +102,7 @@ mod tests {
     async fn test_fail() {
         let mut hal = setup_hal();
 
-        assert!(matches!(hal.close().await, Err(UciError::HalFailed)));
+        assert!(matches!(hal.close().await, Err(Error::HalFailed)));
     }
 
     #[tokio::test]
@@ -110,6 +110,6 @@ mod tests {
         let mut hal = setup_hal();
         let cmd = vec![];
 
-        assert!(matches!(hal.send_command(cmd).await, Err(UciError::Timeout)));
+        assert!(matches!(hal.send_command(cmd).await, Err(Error::Timeout)));
     }
 }
