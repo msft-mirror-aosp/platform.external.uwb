@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+//! This module provides the public interface of the UWB core library.
 
-pub(crate) mod session;
-pub(crate) mod uci;
-pub(crate) mod utils;
-
-pub mod service;
+pub mod error;
+pub mod uwb_service;
