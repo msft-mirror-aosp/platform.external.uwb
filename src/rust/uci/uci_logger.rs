@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+extern crate libc;
+
 use crate::uci::UwbErr;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -102,7 +104,7 @@ impl BufferedFile {
                 error!("Failed to remove file!");
             };
         }));
-        let mut file = File::create(path).await?;
+        let mut file = create_file_using_open_options(path).await?;
         file.write_all(b"ucilogging").await?;
         if file.flush().await.is_err() {
             error!("Failed to flush");
@@ -135,7 +137,13 @@ pub struct UciLoggerImpl {
 impl UciLoggerImpl {
     pub async fn new(mode: UciLogMode) -> Self {
         let config = UciLogConfig::new(mode);
-        let file = match OpenOptions::new().append(true).open(&config.path).await.ok() {
+        let file = match OpenOptions::new()
+            .append(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&config.path)
+            .await
+            .ok()
+        {
             Some(f) => match f.metadata().await {
                 Ok(md) => match md.modified() {
                     Ok(modified_date) => match SystemTime::now().duration_since(modified_date) {
@@ -219,7 +227,10 @@ impl UciLoggerImpl {
         if create_dir(LOG_DIR).await.is_err() {
             error!("Failed to create dir");
         }
-        match File::create(path).await {
+        if remove_file(path).await.is_err() {
+            error!("Failed to remove file!");
+        };
+        match create_file_using_open_options(path).await {
             Ok(mut f) => {
                 if f.write_all(b"ucilogging").await.is_err() {
                     error!("failed to write");
@@ -235,6 +246,10 @@ impl UciLoggerImpl {
             }
         }
     }
+}
+
+async fn create_file_using_open_options(path: &str) -> Result<File, UwbErr> {
+    Ok(OpenOptions::new().write(true).create_new(true).open(path).await?)
 }
 
 #[async_trait]
