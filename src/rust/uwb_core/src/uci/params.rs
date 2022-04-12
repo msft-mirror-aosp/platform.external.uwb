@@ -26,7 +26,7 @@ pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
     ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressTwoWayRangingMeasurement, PowerStats, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressTwoWayRangingMeasurement,
+    SessionType, ShortAddressTwoWayRangingMeasurement, UpdateMulticastListAction,
 };
 
 pub type SessionId = u32;
@@ -90,19 +90,6 @@ impl PartialEq for SetAppConfigResponse {
     }
 }
 
-// TODO(akahuang): Add the enum at uwb_uci_packets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateMulticastListAction {
-    Add = 0x00,
-    Delete = 0x01,
-}
-
-impl From<UpdateMulticastListAction> for u8 {
-    fn from(item: UpdateMulticastListAction) -> u8 {
-        item as u8
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountryCode([u8; 2]);
 
@@ -122,7 +109,7 @@ impl From<CountryCode> for [u8; 2] {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
     pub uci_version: u16,
     pub mac_version: u16,
