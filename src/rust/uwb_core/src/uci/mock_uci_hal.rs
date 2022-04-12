@@ -17,7 +17,7 @@ use std::collections::VecDeque;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::uci::error::{UciError, UciResult};
+use crate::uci::error::{Error, Result};
 use crate::uci::params::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
@@ -40,11 +40,11 @@ impl MockUciHal {
         Default::default()
     }
 
-    pub fn expected_open(&mut self, msgs: Option<Vec<RawUciMessage>>, out: UciResult<()>) {
+    pub fn expected_open(&mut self, msgs: Option<Vec<RawUciMessage>>, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::Open { msgs, out });
     }
 
-    pub fn expected_close(&mut self, out: UciResult<()>) {
+    pub fn expected_close(&mut self, out: Result<()>) {
         self.expected_calls.push_back(ExpectedCall::Close { out });
     }
 
@@ -52,7 +52,7 @@ impl MockUciHal {
         &mut self,
         expected_cmd: RawUciMessage,
         msgs: Vec<RawUciMessage>,
-        out: UciResult<()>,
+        out: Result<()>,
     ) {
         self.expected_calls.push_back(ExpectedCall::SendCommand { expected_cmd, msgs, out });
     }
@@ -60,7 +60,7 @@ impl MockUciHal {
     pub fn expected_notify_session_initialized(
         &mut self,
         expected_session_id: SessionId,
-        out: UciResult<()>,
+        out: Result<()>,
     ) {
         self.expected_calls
             .push_back(ExpectedCall::NotifySessionInitialized { expected_session_id, out });
@@ -69,7 +69,7 @@ impl MockUciHal {
 
 #[async_trait]
 impl UciHal for MockUciHal {
-    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UciResult<()> {
+    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::Open { msgs, out }) => {
                 if let Some(msgs) = msgs {
@@ -84,13 +84,13 @@ impl UciHal for MockUciHal {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::MockUndefined)
+                Err(Error::MockUndefined)
             }
-            None => Err(UciError::MockUndefined),
+            None => Err(Error::MockUndefined),
         }
     }
 
-    async fn close(&mut self) -> UciResult<()> {
+    async fn close(&mut self) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::Close { out }) => {
                 if out.is_ok() {
@@ -100,13 +100,13 @@ impl UciHal for MockUciHal {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::MockUndefined)
+                Err(Error::MockUndefined)
             }
-            None => Err(UciError::MockUndefined),
+            None => Err(Error::MockUndefined),
         }
     }
 
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UciResult<()> {
+    async fn send_command(&mut self, cmd: RawUciMessage) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::SendCommand { expected_cmd, msgs, out }) if expected_cmd == cmd => {
                 let msg_sender = self.msg_sender.as_mut().unwrap();
@@ -117,13 +117,13 @@ impl UciHal for MockUciHal {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::MockUndefined)
+                Err(Error::MockUndefined)
             }
-            None => Err(UciError::MockUndefined),
+            None => Err(Error::MockUndefined),
         }
     }
 
-    async fn notify_session_initialized(&mut self, session_id: SessionId) -> UciResult<()> {
+    async fn notify_session_initialized(&mut self, session_id: SessionId) -> Result<()> {
         match self.expected_calls.pop_front() {
             Some(ExpectedCall::NotifySessionInitialized { expected_session_id, out })
                 if expected_session_id == session_id =>
@@ -132,16 +132,16 @@ impl UciHal for MockUciHal {
             }
             Some(call) => {
                 self.expected_calls.push_front(call);
-                Err(UciError::MockUndefined)
+                Err(Error::MockUndefined)
             }
-            None => Err(UciError::MockUndefined),
+            None => Err(Error::MockUndefined),
         }
     }
 }
 
 enum ExpectedCall {
-    Open { msgs: Option<Vec<RawUciMessage>>, out: UciResult<()> },
-    Close { out: UciResult<()> },
-    SendCommand { expected_cmd: RawUciMessage, msgs: Vec<RawUciMessage>, out: UciResult<()> },
-    NotifySessionInitialized { expected_session_id: SessionId, out: UciResult<()> },
+    Open { msgs: Option<Vec<RawUciMessage>>, out: Result<()> },
+    Close { out: Result<()> },
+    SendCommand { expected_cmd: RawUciMessage, msgs: Vec<RawUciMessage>, out: Result<()> },
+    NotifySessionInitialized { expected_session_id: SessionId, out: Result<()> },
 }

@@ -15,7 +15,7 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::uci::error::UciResult;
+use crate::uci::error::Result;
 use crate::uci::params::SessionId;
 
 pub type RawUciMessage = Vec<u8>;
@@ -28,18 +28,18 @@ pub trait UciHal: 'static + Send {
     /// Initialize the UCI HAL and power on the UWB Subsystem. All the other API should
     /// be called after the open() completes successfully. The instance will send the messages to
     /// the client via |msg_sender|.
-    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UciResult<()>;
+    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> Result<()>;
 
     /// Close the UCI HAL. After calling this method, the instance would drop |msg_sender|
     /// received from open() method.
-    async fn close(&mut self) -> UciResult<()>;
+    async fn close(&mut self) -> Result<()>;
 
     /// Write the UCI command to the UWB Subsystem. Only process the method after the response of
     /// the previous send_uci_message() is received.
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UciResult<()>;
+    async fn send_command(&mut self, cmd: RawUciMessage) -> Result<()>;
 
     /// Notify the HAL that the UWB session is initialized successfully.
-    async fn notify_session_initialized(&mut self, _session_id: SessionId) -> UciResult<()> {
+    async fn notify_session_initialized(&mut self, _session_id: SessionId) -> Result<()> {
         Ok(())
     }
 }
