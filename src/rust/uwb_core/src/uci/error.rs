@@ -15,8 +15,8 @@
 pub use uwb_uci_packets::StatusCode;
 
 /// The error code for UCI module.
-#[derive(Debug, thiserror::Error)]
-pub enum UciError {
+#[derive(Debug, thiserror::Error, Clone)]
+pub enum Error {
     #[error("Call the mothod in the wrong state")]
     WrongState,
     #[error("UCI response is mismatched with the pending command")]
@@ -26,7 +26,7 @@ pub enum UciError {
     #[error("UCI response is not received in timeout")]
     Timeout,
     #[error("Could not parse: {0}")]
-    Parse(#[from] uwb_uci_packets::Error),
+    Parse(String),
     #[error("Could not specialize packet: {0:?}")]
     Specialize(Vec<u8>),
     #[error("Invalid args")]
@@ -38,4 +38,12 @@ pub enum UciError {
     MockUndefined,
 }
 
-pub type UciResult<T> = Result<T, UciError>;
+// Because uwb_uci_packets::Error doesn't derive Clone trait, we convert it to Error::Parse with
+// the formatted string.
+impl From<uwb_uci_packets::Error> for Error {
+    fn from(err: uwb_uci_packets::Error) -> Self {
+        Error::Parse(format!("{:?}", err))
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
