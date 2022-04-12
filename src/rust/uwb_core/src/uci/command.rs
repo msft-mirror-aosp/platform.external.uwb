@@ -18,7 +18,7 @@ use bytes::Bytes;
 use log::error;
 use num_traits::FromPrimitive;
 
-use crate::uci::error::{UciError, UciResult};
+use crate::uci::error::{Error, Result as UciResult};
 use crate::uci::params::{
     AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
@@ -82,7 +82,7 @@ pub(super) enum UciCommand {
 }
 
 impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
-    type Error = UciError;
+    type Error = Error;
     fn try_from(cmd: UciCommand) -> Result<Self, Self::Error> {
         let packet = match cmd {
             UciCommand::SessionInit { session_id, session_type } => {
@@ -107,7 +107,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
                 uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
                     session_id,
-                    action: action.into(),
+                    action,
                     controlees,
                 }
                 .build()
@@ -167,9 +167,9 @@ fn build_uci_vendor_cmd_packet(
     payload: Vec<u8>,
 ) -> UciResult<uwb_uci_packets::UciCommandPacket> {
     use uwb_uci_packets::GroupId;
-    let group_id = GroupId::from_u32(gid).ok_or(UciError::InvalidArgs)?;
+    let group_id = GroupId::from_u32(gid).ok_or(Error::InvalidArgs)?;
     let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
-    let opcode = oid.try_into().map_err(|_| UciError::InvalidArgs)?;
+    let opcode = oid.try_into().map_err(|_| Error::InvalidArgs)?;
     let packet = match group_id {
         GroupId::VendorReserved9 => {
             uwb_uci_packets::UciVendor_9_CommandBuilder { opcode, payload }.build().into()
@@ -188,7 +188,7 @@ fn build_uci_vendor_cmd_packet(
         }
         _ => {
             error!("Invalid vendor gid {:?}", gid);
-            return Err(UciError::InvalidArgs);
+            return Err(Error::InvalidArgs);
         }
     };
     Ok(packet)
