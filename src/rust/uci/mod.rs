@@ -573,7 +573,9 @@ mod tests {
     ) -> Result<DispatcherImpl> {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
-            logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
+            logger::Config::default()
+                .with_tag_on_device("uwb_test")
+                .with_min_level(log::Level::Debug),
         );
 
         let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
