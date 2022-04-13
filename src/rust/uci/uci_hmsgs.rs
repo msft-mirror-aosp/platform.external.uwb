@@ -47,6 +47,11 @@ pub fn build_multicast_list_update_cmd(
     address_list: &[i16],
     sub_session_id_list: &[i32],
 ) -> Result<SessionUpdateControllerMulticastListCmdBuilder, UwbErr> {
+    if usize::from(no_of_controlee) != address_list.len()
+        || usize::from(no_of_controlee) != sub_session_id_list.len()
+    {
+        return Err(UwbErr::InvalidArgs);
+    }
     let mut controlees = Vec::new();
     for i in 0..no_of_controlee {
         controlees.push(Controlee {
@@ -66,6 +71,9 @@ pub fn build_set_app_config_cmd(
     no_of_params: u32,
     mut app_configs: &[u8],
 ) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
+    if no_of_params != app_configs.len().try_into()? {
+        return Err(UwbErr::InvalidArgs);
+    }
     let mut tlvs = Vec::new();
     for _ in 0..no_of_params {
         let tlv = AppConfigTlv::parse(app_configs)?;
