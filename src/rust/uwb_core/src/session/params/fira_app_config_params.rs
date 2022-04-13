@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
+
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,12 +70,98 @@ pub struct FiraAppConfigParams {
     number_of_aoa_elevation_measurements: Option<u8>,
 }
 
+impl FiraAppConfigParams {
+    pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
+        let mut configs = vec![
+            (AppConfigTlvType::DeviceType, u8_to_bytes(self.device_type as u8)),
+            (AppConfigTlvType::RangingRoundUsage, u8_to_bytes(self.ranging_round_usage as u8)),
+            (AppConfigTlvType::StsConfig, u8_to_bytes(self.sts_config as u8)),
+            (AppConfigTlvType::MultiNodeMode, u8_to_bytes(self.multi_node_mode as u8)),
+            (AppConfigTlvType::ChannelNumber, u8_to_bytes(self.channel_number as u8)),
+            (AppConfigTlvType::NoOfControlee, u8_to_bytes(self.dst_mac_address.len() as u8)),
+            (AppConfigTlvType::DeviceMacAddress, self.device_mac_address.clone().into()),
+            (AppConfigTlvType::DstMacAddress, addresses_to_bytes(self.dst_mac_address.clone())),
+            (AppConfigTlvType::SlotDuration, u16_to_bytes(self.slot_duration_rstu)),
+            (AppConfigTlvType::RangingInterval, u32_to_bytes(self.ranging_interval_ms)),
+            (AppConfigTlvType::MacFcsType, u8_to_bytes(self.mac_fcs_type as u8)),
+            (
+                AppConfigTlvType::RangingRoundControl,
+                u8_to_bytes(self.ranging_round_control.as_u8()),
+            ),
+            (AppConfigTlvType::AoaResultReq, u8_to_bytes(self.aoa_result_request as u8)),
+            (AppConfigTlvType::RngDataNtf, u8_to_bytes(self.range_data_ntf_config as u8)),
+            (
+                AppConfigTlvType::RngDataNtfProximityNear,
+                u16_to_bytes(self.range_data_ntf_proximity_near_cm),
+            ),
+            (
+                AppConfigTlvType::RngDataNtfProximityFar,
+                u16_to_bytes(self.range_data_ntf_proximity_far_cm),
+            ),
+            (AppConfigTlvType::DeviceRole, u8_to_bytes(self.device_role as u8)),
+            (AppConfigTlvType::RframeConfig, u8_to_bytes(self.rframe_config as u8)),
+            (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(self.preamble_code_index)),
+            (AppConfigTlvType::SfdId, u8_to_bytes(self.sfd_id)),
+            (AppConfigTlvType::PsduDataRate, u8_to_bytes(self.psdu_data_rate as u8)),
+            (AppConfigTlvType::PreambleDuration, u8_to_bytes(self.preamble_duration as u8)),
+            (AppConfigTlvType::RangingTimeStruct, u8_to_bytes(self.ranging_time_struct as u8)),
+            (AppConfigTlvType::SlotsPerRr, u8_to_bytes(self.slots_per_rr)),
+            (
+                AppConfigTlvType::TxAdaptivePayloadPower,
+                u8_to_bytes(self.tx_adaptive_payload_power as u8),
+            ),
+            (AppConfigTlvType::ResponderSlotIndex, u8_to_bytes(self.responder_slot_index)),
+            (AppConfigTlvType::PrfMode, u8_to_bytes(self.prf_mode as u8)),
+            (AppConfigTlvType::ScheduledMode, u8_to_bytes(self.scheduled_mode as u8)),
+            (AppConfigTlvType::KeyRotation, u8_to_bytes(self.key_rotation as u8)),
+            (AppConfigTlvType::KeyRotationRate, u8_to_bytes(self.key_rotation_rate)),
+            (AppConfigTlvType::SessionPriority, u8_to_bytes(self.session_priority)),
+            (AppConfigTlvType::MacAddressMode, u8_to_bytes(self.mac_address_mode as u8)),
+            (AppConfigTlvType::VendorId, self.vendor_id.to_vec()),
+            (AppConfigTlvType::StaticStsIv, self.static_sts_iv.to_vec()),
+            (AppConfigTlvType::NumberOfStsSegments, u8_to_bytes(self.number_of_sts_segments)),
+            (AppConfigTlvType::MaxRrRetry, u16_to_bytes(self.max_rr_retry)),
+            (AppConfigTlvType::UwbInitiationTime, u32_to_bytes(self.uwb_initiation_time_ms)),
+            (AppConfigTlvType::HoppingMode, u8_to_bytes(self.hopping_mode as u8)),
+            (AppConfigTlvType::BlockStrideLength, u8_to_bytes(self.block_stride_length)),
+            (AppConfigTlvType::ResultReportConfig, u8_to_bytes(self.result_report_config.as_u8())),
+            (
+                AppConfigTlvType::InBandTerminationAttemptCount,
+                u8_to_bytes(self.in_band_termination_attempt_count),
+            ),
+            (AppConfigTlvType::BprfPhrDataRate, u8_to_bytes(self.bprf_phr_data_rate as u8)),
+            (
+                AppConfigTlvType::MaxNumberOfMeasurements,
+                u16_to_bytes(self.max_number_of_measurements),
+            ),
+            (AppConfigTlvType::StsLength, u8_to_bytes(self.sts_length as u8)),
+        ];
+
+        if let Some(value) = self.sub_session_id.as_ref() {
+            configs.push((AppConfigTlvType::SubSessionId, u32_to_bytes(*value)));
+        }
+        if let Some(value) = self.number_of_range_measurements.as_ref() {
+            configs.push((AppConfigTlvType::NbOfRangeMeasurements, u8_to_bytes(*value)));
+        }
+        if let Some(value) = self.number_of_aoa_azimuth_measurements.as_ref() {
+            configs.push((AppConfigTlvType::NbOfAzimuthMeasurements, u8_to_bytes(*value)));
+        }
+        if let Some(value) = self.number_of_aoa_elevation_measurements.as_ref() {
+            configs.push((AppConfigTlvType::NbOfElevationMeasurements, u8_to_bytes(*value)));
+        }
+
+        configs.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
+    }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceType {
     Controlee = 0,
     Controller = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangingRoundUsage {
     SsTwr = 1,
@@ -82,6 +170,7 @@ pub enum RangingRoundUsage {
     DsTwrNon = 4,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StsConfig {
     Static = 0,
@@ -89,6 +178,7 @@ pub enum StsConfig {
     DynamicForControleeIndividualKey = 2,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MultiNodeMode {
     Unicast = 0,
@@ -96,6 +186,7 @@ pub enum MultiNodeMode {
     ManyToMany = 2,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UwbChannel {
     Channel5 = 5,
@@ -114,6 +205,20 @@ pub enum UwbAddress {
     Extended([u8; 8]),
 }
 
+impl From<UwbAddress> for Vec<u8> {
+    fn from(item: UwbAddress) -> Self {
+        match item {
+            UwbAddress::Short(addr) => addr.to_vec(),
+            UwbAddress::Extended(addr) => addr.to_vec(),
+        }
+    }
+}
+
+fn addresses_to_bytes(addresses: Vec<UwbAddress>) -> Vec<u8> {
+    addresses.into_iter().flat_map(Into::<Vec<u8>>::into).collect()
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacFcsType {
     Crc16 = 0,
@@ -127,6 +232,27 @@ pub struct RangingRoundControl {
     pub measurement_report_message: bool,
 }
 
+impl RangingRoundControl {
+    const RANGING_RESULT_REPORT_MESSAGE_BIT_OFFSET: u8 = 0;
+    const CONTROL_MESSAGE_BIT_OFFSET: u8 = 1;
+    const MEASUREMENT_REPORT_MESSAGE_BIT_OFFSET: u8 = 7;
+
+    fn as_u8(&self) -> u8 {
+        let mut value = 0_u8;
+        if self.ranging_result_report_message {
+            value |= 1 << Self::RANGING_RESULT_REPORT_MESSAGE_BIT_OFFSET;
+        }
+        if self.control_message {
+            value |= 1 << Self::CONTROL_MESSAGE_BIT_OFFSET;
+        }
+        if self.measurement_report_message {
+            value |= 1 << Self::MEASUREMENT_REPORT_MESSAGE_BIT_OFFSET;
+        }
+        value
+    }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AoaResultRequest {
     NoAoaReport = 0,
@@ -136,6 +262,7 @@ pub enum AoaResultRequest {
     ReqAoaResultsInterleaved = 0xF0,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeDataNtfConfig {
     Disable = 0,
@@ -143,12 +270,14 @@ pub enum RangeDataNtfConfig {
     EnableProximity = 2,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangingDeviceRole {
     Responder = 0,
     Initiator = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RframeConfig {
     SP0 = 0,
@@ -156,6 +285,7 @@ pub enum RframeConfig {
     SP3 = 3,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PsduDataRate {
     Rate6m81 = 0,
@@ -164,24 +294,28 @@ pub enum PsduDataRate {
     Rate31m2 = 3,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreambleDuration {
     T32Symbols = 0,
     T64Symbols = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangingTimeStruct {
     IntervalBasedScheduling = 0,
     BlockBasedScheduling = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxAdaptivePayloadPower {
     Disable = 0,
     Enable = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrfMode {
     Bprf = 0,
@@ -189,17 +323,20 @@ pub enum PrfMode {
     HprfWith249_6MHz = 2,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledMode {
     TimeScheduledRanging = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyRotation {
     Disable = 0,
     Enable = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacAddressMode {
     MacAddress2Bytes = 0,
@@ -207,6 +344,7 @@ pub enum MacAddressMode {
     MacAddress8Bytes = 2,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoppingMode {
     Disable = 0,
@@ -221,15 +359,52 @@ pub struct ResultReportConfig {
     pub aoa_fom: bool,
 }
 
+impl ResultReportConfig {
+    const TOF_BIT_OFFSET: u8 = 0;
+    const AOA_AZIMUTH_BIT_OFFSET: u8 = 1;
+    const AOA_ELEVATION_BIT_OFFSET: u8 = 2;
+    const AOA_FOM_BIT_OFFSET: u8 = 3;
+
+    fn as_u8(&self) -> u8 {
+        let mut value = 0_u8;
+        if self.tof {
+            value |= 1 << Self::TOF_BIT_OFFSET;
+        }
+        if self.aoa_azimuth {
+            value |= 1 << Self::AOA_AZIMUTH_BIT_OFFSET;
+        }
+        if self.aoa_elevation {
+            value |= 1 << Self::AOA_ELEVATION_BIT_OFFSET;
+        }
+        if self.aoa_fom {
+            value |= 1 << Self::AOA_FOM_BIT_OFFSET;
+        }
+
+        value
+    }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BprfPhrDataRate {
     Rate850k = 0,
     Rate6m81 = 1,
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StsLength {
     Length32 = 0,
     Length64 = 1,
     Length128 = 2,
+}
+
+fn u8_to_bytes(value: u8) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
+}
+fn u16_to_bytes(value: u16) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
+}
+fn u32_to_bytes(value: u32) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
 }
