@@ -16,6 +16,49 @@ use log::{error, warn};
 
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
 
+// The default value of each parameters.
+const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
+const DEFAULT_STS_CONFIG: StsConfig = StsConfig::Static;
+const DEFAULT_CHANNEL_NUMBER: UwbChannel = UwbChannel::Channel9;
+const DEFAULT_SLOT_DURATION_RSTU: u16 = 2400;
+const DEFAULT_RANGING_INTERVAL_MS: u32 = 200;
+const DEFAULT_MAC_FCS_TYPE: MacFcsType = MacFcsType::Crc16;
+const DEFAULT_RANGING_ROUND_CONTROL: RangingRoundControl = RangingRoundControl {
+    ranging_result_report_message: true,
+    control_message: true,
+    measurement_report_message: false,
+};
+const DEFAULT_AOA_RESULT_REQUEST: AoaResultRequest = AoaResultRequest::ReqAoaResults;
+const DEFAULT_RANGE_DATA_NTF_CONFIG: RangeDataNtfConfig = RangeDataNtfConfig::Enable;
+const DEFAULT_RANGE_DATA_NTF_PROXIMITY_NEAR_CM: u16 = 0;
+const DEFAULT_RANGE_DATA_NTF_PROXIMITY_FAR_CM: u16 = 20000;
+const DEFAULT_RFRAME_CONFIG: RframeConfig = RframeConfig::SP3;
+const DEFAULT_PREAMBLE_CODE_INDEX: u8 = 10;
+const DEFAULT_SFD_ID: u8 = 2;
+const DEFAULT_PSDU_DATA_RATE: PsduDataRate = PsduDataRate::Rate6m81;
+const DEFAULT_PREAMBLE_DURATION: PreambleDuration = PreambleDuration::T64Symbols;
+const DEFAULT_RANGING_TIME_STRUCT: RangingTimeStruct = RangingTimeStruct::BlockBasedScheduling;
+const DEFAULT_SLOTS_PER_RR: u8 = 25;
+const DEFAULT_TX_ADAPTIVE_PAYLOAD_POWER: TxAdaptivePayloadPower = TxAdaptivePayloadPower::Disable;
+const DEFAULT_RESPONDER_SLOT_INDEX: u8 = 1;
+const DEFAULT_PRF_MODE: PrfMode = PrfMode::Bprf;
+const DEFAULT_SCHEDULED_MODE: ScheduledMode = ScheduledMode::TimeScheduledRanging;
+const DEFAULT_KEY_ROTATION: KeyRotation = KeyRotation::Disable;
+const DEFAULT_KEY_ROTATION_RATE: u8 = 0;
+const DEFAULT_SESSION_PRIORITY: u8 = 50;
+const DEFAULT_MAC_ADDRESS_MODE: MacAddressMode = MacAddressMode::MacAddress2Bytes;
+const DEFAULT_NUMBER_OF_STS_SEGMENTS: u8 = 1;
+const DEFAULT_MAX_RR_RETRY: u16 = 0;
+const DEFAULT_UWB_INITIATION_TIME_MS: u32 = 0;
+const DEFAULT_HOPPING_MODE: HoppingMode = HoppingMode::Disable;
+const DEFAULT_BLOCK_STRIDE_LENGTH: u8 = 0;
+const DEFAULT_RESULT_REPORT_CONFIG: ResultReportConfig =
+    ResultReportConfig { tof: true, aoa_azimuth: false, aoa_elevation: false, aoa_fom: false };
+const DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT: u8 = 1;
+const DEFAULT_BPRF_PHR_DATA_RATE: BprfPhrDataRate = BprfPhrDataRate::Rate850k;
+const DEFAULT_MAX_NUMBER_OF_MEASUREMENTS: u16 = 0;
+const DEFAULT_STS_LENGTH: StsLength = StsLength::Length64;
+
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +79,7 @@ pub struct FiraAppConfigParams {
     range_data_ntf_config: RangeDataNtfConfig,
     range_data_ntf_proximity_near_cm: u16,
     range_data_ntf_proximity_far_cm: u16,
-    device_role: RangingDeviceRole,
+    device_role: DeviceRole,
     rframe_config: RframeConfig,
     preamble_code_index: u8,
     sfd_id: u8,
@@ -314,7 +357,7 @@ pub struct FiraAppConfigParamsBuilder {
     range_data_ntf_config: RangeDataNtfConfig,
     range_data_ntf_proximity_near_cm: u16,
     range_data_ntf_proximity_far_cm: u16,
-    device_role: Option<RangingDeviceRole>,
+    device_role: Option<DeviceRole>,
     rframe_config: RframeConfig,
     preamble_code_index: u8,
     sfd_id: u8,
@@ -353,58 +396,49 @@ impl FiraAppConfigParamsBuilder {
     pub fn new() -> Self {
         Self {
             device_type: None,
-            ranging_round_usage: RangingRoundUsage::DsTwr,
-            sts_config: StsConfig::Static,
+            ranging_round_usage: DEFAULT_RANGING_ROUND_USAGE,
+            sts_config: DEFAULT_STS_CONFIG,
             multi_node_mode: None,
-            channel_number: UwbChannel::Channel9,
+            channel_number: DEFAULT_CHANNEL_NUMBER,
             device_mac_address: None,
             dst_mac_address: vec![],
-            slot_duration_rstu: 2400,
-            ranging_interval_ms: 200,
-            mac_fcs_type: MacFcsType::Crc16,
-            ranging_round_control: RangingRoundControl {
-                ranging_result_report_message: true,
-                control_message: true,
-                measurement_report_message: false,
-            },
-            aoa_result_request: AoaResultRequest::ReqAoaResults,
-            range_data_ntf_config: RangeDataNtfConfig::Enable,
-            range_data_ntf_proximity_near_cm: 0,
-            range_data_ntf_proximity_far_cm: 20000,
+            slot_duration_rstu: DEFAULT_SLOT_DURATION_RSTU,
+            ranging_interval_ms: DEFAULT_RANGING_INTERVAL_MS,
+            mac_fcs_type: DEFAULT_MAC_FCS_TYPE,
+            ranging_round_control: DEFAULT_RANGING_ROUND_CONTROL,
+            aoa_result_request: DEFAULT_AOA_RESULT_REQUEST,
+            range_data_ntf_config: DEFAULT_RANGE_DATA_NTF_CONFIG,
+            range_data_ntf_proximity_near_cm: DEFAULT_RANGE_DATA_NTF_PROXIMITY_NEAR_CM,
+            range_data_ntf_proximity_far_cm: DEFAULT_RANGE_DATA_NTF_PROXIMITY_FAR_CM,
             device_role: None,
-            rframe_config: RframeConfig::SP3,
-            preamble_code_index: 10,
-            sfd_id: 2,
-            psdu_data_rate: PsduDataRate::Rate6m81,
-            preamble_duration: PreambleDuration::T64Symbols,
-            ranging_time_struct: RangingTimeStruct::BlockBasedScheduling,
-            slots_per_rr: 25,
-            tx_adaptive_payload_power: TxAdaptivePayloadPower::Disable,
-            responder_slot_index: 1,
-            prf_mode: PrfMode::Bprf,
-            scheduled_mode: ScheduledMode::TimeScheduledRanging,
-            key_rotation: KeyRotation::Disable,
-            key_rotation_rate: 0,
-            session_priority: 50,
-            mac_address_mode: MacAddressMode::MacAddress2Bytes,
+            rframe_config: DEFAULT_RFRAME_CONFIG,
+            preamble_code_index: DEFAULT_PREAMBLE_CODE_INDEX,
+            sfd_id: DEFAULT_SFD_ID,
+            psdu_data_rate: DEFAULT_PSDU_DATA_RATE,
+            preamble_duration: DEFAULT_PREAMBLE_DURATION,
+            ranging_time_struct: DEFAULT_RANGING_TIME_STRUCT,
+            slots_per_rr: DEFAULT_SLOTS_PER_RR,
+            tx_adaptive_payload_power: DEFAULT_TX_ADAPTIVE_PAYLOAD_POWER,
+            responder_slot_index: DEFAULT_RESPONDER_SLOT_INDEX,
+            prf_mode: DEFAULT_PRF_MODE,
+            scheduled_mode: DEFAULT_SCHEDULED_MODE,
+            key_rotation: DEFAULT_KEY_ROTATION,
+            key_rotation_rate: DEFAULT_KEY_ROTATION_RATE,
+            session_priority: DEFAULT_SESSION_PRIORITY,
+            mac_address_mode: DEFAULT_MAC_ADDRESS_MODE,
             vendor_id: None,
             static_sts_iv: None,
-            number_of_sts_segments: 1,
-            max_rr_retry: 0,
-            uwb_initiation_time_ms: 0,
-            hopping_mode: HoppingMode::Disable,
-            block_stride_length: 0,
-            result_report_config: ResultReportConfig {
-                tof: true,
-                aoa_azimuth: false,
-                aoa_elevation: false,
-                aoa_fom: false,
-            },
-            in_band_termination_attempt_count: 1,
+            number_of_sts_segments: DEFAULT_NUMBER_OF_STS_SEGMENTS,
+            max_rr_retry: DEFAULT_MAX_RR_RETRY,
+            uwb_initiation_time_ms: DEFAULT_UWB_INITIATION_TIME_MS,
+            hopping_mode: DEFAULT_HOPPING_MODE,
+            block_stride_length: DEFAULT_BLOCK_STRIDE_LENGTH,
+            result_report_config: DEFAULT_RESULT_REPORT_CONFIG,
+            in_band_termination_attempt_count: DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT,
             sub_session_id: None,
-            bprf_phr_data_rate: BprfPhrDataRate::Rate850k,
-            max_number_of_measurements: 0,
-            sts_length: StsLength::Length64,
+            bprf_phr_data_rate: DEFAULT_BPRF_PHR_DATA_RATE,
+            max_number_of_measurements: DEFAULT_MAX_NUMBER_OF_MEASUREMENTS,
+            sts_length: DEFAULT_STS_LENGTH,
             number_of_range_measurements: None,
             number_of_aoa_azimuth_measurements: None,
             number_of_aoa_elevation_measurements: None,
@@ -528,7 +562,7 @@ impl FiraAppConfigParamsBuilder {
         self.range_data_ntf_proximity_far_cm = value;
         self
     }
-    pub fn device_role(&mut self, value: RangingDeviceRole) -> &mut Self {
+    pub fn device_role(&mut self, value: DeviceRole) -> &mut Self {
         self.device_role = Some(value);
         self
     }
@@ -592,12 +626,12 @@ impl FiraAppConfigParamsBuilder {
         self.mac_address_mode = value;
         self
     }
-    pub fn vendor_id(&mut self, value: Option<[u8; 2]>) -> &mut Self {
-        self.vendor_id = value;
+    pub fn vendor_id(&mut self, value: [u8; 2]) -> &mut Self {
+        self.vendor_id = Some(value);
         self
     }
-    pub fn static_sts_iv(&mut self, value: Option<[u8; 6]>) -> &mut Self {
-        self.static_sts_iv = value;
+    pub fn static_sts_iv(&mut self, value: [u8; 6]) -> &mut Self {
+        self.static_sts_iv = Some(value);
         self
     }
     pub fn number_of_sts_segments(&mut self, value: u8) -> &mut Self {
@@ -776,7 +810,7 @@ pub enum RangeDataNtfConfig {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RangingDeviceRole {
+pub enum DeviceRole {
     Responder = 0,
     Initiator = 1,
 }
@@ -920,5 +954,187 @@ fn validate(value: bool, err_msg: &str) -> Option<()> {
             error!("{}", err_msg);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::iter::zip;
+
+    use crate::uci::params::app_config_tlv_eq;
+    use crate::utils::init_test_logging;
+
+    #[test]
+    fn test_ok() {
+        init_test_logging();
+
+        let device_type = DeviceType::Controlee;
+        let ranging_round_usage = RangingRoundUsage::SsTwr;
+        let sts_config = StsConfig::DynamicForControleeIndividualKey;
+        let multi_node_mode = MultiNodeMode::ManyToMany;
+        let channel_number = UwbChannel::Channel10;
+        let device_mac_address = [1, 2, 3, 4, 5, 6, 7, 8];
+        let dst_mac_address1 = [2, 2, 3, 4, 5, 6, 7, 8];
+        let dst_mac_address2 = [3, 2, 3, 4, 5, 6, 7, 8];
+        let slot_duration_rstu = 0x0A28;
+        let ranging_interval_ms = 100;
+        let mac_fcs_type = MacFcsType::Crc32;
+        let ranging_round_control = RangingRoundControl {
+            ranging_result_report_message: false,
+            control_message: true,
+            measurement_report_message: false,
+        };
+        let aoa_result_request = AoaResultRequest::ReqAoaResultsInterleaved;
+        let range_data_ntf_config = RangeDataNtfConfig::EnableProximity;
+        let range_data_ntf_proximity_near_cm = 50;
+        let range_data_ntf_proximity_far_cm = 200;
+        let device_role = DeviceRole::Initiator;
+        let rframe_config = RframeConfig::SP1;
+        let preamble_code_index = 25;
+        let sfd_id = 3;
+        let psdu_data_rate = PsduDataRate::Rate7m80;
+        let preamble_duration = PreambleDuration::T32Symbols;
+        let slots_per_rr = 10;
+        let tx_adaptive_payload_power = TxAdaptivePayloadPower::Enable;
+        let prf_mode = PrfMode::HprfWith124_8MHz;
+        let key_rotation = KeyRotation::Enable;
+        let key_rotation_rate = 15;
+        let session_priority = 100;
+        let mac_address_mode = MacAddressMode::MacAddress8Bytes;
+        let vendor_id = [0xFE, 0xDC];
+        let static_sts_iv = [0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56];
+        let number_of_sts_segments = 2;
+        let max_rr_retry = 3;
+        let uwb_initiation_time_ms = 100;
+        let result_report_config =
+            ResultReportConfig { tof: true, aoa_azimuth: true, aoa_elevation: true, aoa_fom: true };
+        let in_band_termination_attempt_count = 8;
+        let sub_session_id = 24;
+        let sts_length = StsLength::Length128;
+        let number_of_range_measurements = 1;
+        let number_of_aoa_azimuth_measurements = 2;
+        let number_of_aoa_elevation_measurements = 3;
+
+        let params = FiraAppConfigParamsBuilder::new()
+            .device_type(device_type)
+            .ranging_round_usage(ranging_round_usage)
+            .sts_config(sts_config)
+            .multi_node_mode(multi_node_mode)
+            .channel_number(channel_number)
+            .device_mac_address(UwbAddress::Extended(device_mac_address))
+            .dst_mac_address(vec![
+                UwbAddress::Extended(dst_mac_address1),
+                UwbAddress::Extended(dst_mac_address2),
+            ])
+            .slot_duration_rstu(slot_duration_rstu)
+            .ranging_interval_ms(ranging_interval_ms)
+            .mac_fcs_type(mac_fcs_type)
+            .ranging_round_control(ranging_round_control.clone())
+            .aoa_result_request(aoa_result_request)
+            .range_data_ntf_config(range_data_ntf_config)
+            .range_data_ntf_proximity_near_cm(range_data_ntf_proximity_near_cm)
+            .range_data_ntf_proximity_far_cm(range_data_ntf_proximity_far_cm)
+            .device_role(device_role)
+            .rframe_config(rframe_config)
+            .preamble_code_index(preamble_code_index)
+            .sfd_id(sfd_id)
+            .psdu_data_rate(psdu_data_rate)
+            .preamble_duration(preamble_duration)
+            .slots_per_rr(slots_per_rr)
+            .tx_adaptive_payload_power(tx_adaptive_payload_power)
+            .prf_mode(prf_mode)
+            .key_rotation(key_rotation)
+            .key_rotation_rate(key_rotation_rate)
+            .session_priority(session_priority)
+            .mac_address_mode(mac_address_mode)
+            .vendor_id(vendor_id)
+            .static_sts_iv(static_sts_iv)
+            .number_of_sts_segments(number_of_sts_segments)
+            .max_rr_retry(max_rr_retry)
+            .uwb_initiation_time_ms(uwb_initiation_time_ms)
+            .result_report_config(result_report_config.clone())
+            .in_band_termination_attempt_count(in_band_termination_attempt_count)
+            .sub_session_id(sub_session_id)
+            .sts_length(sts_length)
+            .number_of_range_measurements(number_of_range_measurements)
+            .number_of_aoa_azimuth_measurements(number_of_aoa_azimuth_measurements)
+            .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements)
+            .build();
+        assert!(params.is_some());
+
+        let tlvs = params.unwrap().generate_tlvs();
+        let expected_tlvs = [
+            (AppConfigTlvType::DeviceType, vec![device_type as u8]),
+            (AppConfigTlvType::RangingRoundUsage, vec![ranging_round_usage as u8]),
+            (AppConfigTlvType::StsConfig, vec![sts_config as u8]),
+            (AppConfigTlvType::MultiNodeMode, vec![multi_node_mode as u8]),
+            (AppConfigTlvType::ChannelNumber, vec![channel_number as u8]),
+            (AppConfigTlvType::NoOfControlee, vec![2]),
+            (AppConfigTlvType::DeviceMacAddress, device_mac_address.to_vec()),
+            (
+                AppConfigTlvType::DstMacAddress,
+                [dst_mac_address1, dst_mac_address2].concat().to_vec(),
+            ),
+            (AppConfigTlvType::SlotDuration, slot_duration_rstu.to_le_bytes().to_vec()),
+            (AppConfigTlvType::RangingInterval, ranging_interval_ms.to_le_bytes().to_vec()),
+            (AppConfigTlvType::MacFcsType, vec![mac_fcs_type as u8]),
+            (AppConfigTlvType::RangingRoundControl, vec![ranging_round_control.as_u8()]),
+            (AppConfigTlvType::AoaResultReq, vec![aoa_result_request as u8]),
+            (AppConfigTlvType::RngDataNtf, vec![range_data_ntf_config as u8]),
+            (
+                AppConfigTlvType::RngDataNtfProximityNear,
+                range_data_ntf_proximity_near_cm.to_le_bytes().to_vec(),
+            ),
+            (
+                AppConfigTlvType::RngDataNtfProximityFar,
+                range_data_ntf_proximity_far_cm.to_le_bytes().to_vec(),
+            ),
+            (AppConfigTlvType::DeviceRole, vec![device_role as u8]),
+            (AppConfigTlvType::RframeConfig, vec![rframe_config as u8]),
+            (AppConfigTlvType::PreambleCodeIndex, vec![preamble_code_index as u8]),
+            (AppConfigTlvType::SfdId, vec![sfd_id as u8]),
+            (AppConfigTlvType::PsduDataRate, vec![psdu_data_rate as u8]),
+            (AppConfigTlvType::PreambleDuration, vec![preamble_duration as u8]),
+            (AppConfigTlvType::RangingTimeStruct, vec![DEFAULT_RANGING_TIME_STRUCT as u8]),
+            (AppConfigTlvType::SlotsPerRr, vec![slots_per_rr]),
+            (AppConfigTlvType::TxAdaptivePayloadPower, vec![tx_adaptive_payload_power as u8]),
+            (AppConfigTlvType::ResponderSlotIndex, vec![DEFAULT_RESPONDER_SLOT_INDEX]),
+            (AppConfigTlvType::PrfMode, vec![prf_mode as u8]),
+            (AppConfigTlvType::ScheduledMode, vec![DEFAULT_SCHEDULED_MODE as u8]),
+            (AppConfigTlvType::KeyRotation, vec![key_rotation as u8]),
+            (AppConfigTlvType::KeyRotationRate, vec![key_rotation_rate]),
+            (AppConfigTlvType::SessionPriority, vec![session_priority]),
+            (AppConfigTlvType::MacAddressMode, vec![mac_address_mode as u8]),
+            (AppConfigTlvType::VendorId, vendor_id.to_vec()),
+            (AppConfigTlvType::StaticStsIv, static_sts_iv.to_vec()),
+            (AppConfigTlvType::NumberOfStsSegments, vec![number_of_sts_segments]),
+            (AppConfigTlvType::MaxRrRetry, max_rr_retry.to_le_bytes().to_vec()),
+            (AppConfigTlvType::UwbInitiationTime, uwb_initiation_time_ms.to_le_bytes().to_vec()),
+            (AppConfigTlvType::HoppingMode, vec![DEFAULT_HOPPING_MODE as u8]),
+            (AppConfigTlvType::BlockStrideLength, vec![DEFAULT_BLOCK_STRIDE_LENGTH]),
+            (AppConfigTlvType::ResultReportConfig, vec![result_report_config.as_u8()]),
+            (
+                AppConfigTlvType::InBandTerminationAttemptCount,
+                vec![in_band_termination_attempt_count as u8],
+            ),
+            (AppConfigTlvType::BprfPhrDataRate, vec![DEFAULT_BPRF_PHR_DATA_RATE as u8]),
+            (
+                AppConfigTlvType::MaxNumberOfMeasurements,
+                DEFAULT_MAX_NUMBER_OF_MEASUREMENTS.to_le_bytes().to_vec(),
+            ),
+            (AppConfigTlvType::StsLength, vec![sts_length as u8]),
+            (AppConfigTlvType::SubSessionId, sub_session_id.to_le_bytes().to_vec()),
+            (AppConfigTlvType::NbOfRangeMeasurements, vec![number_of_range_measurements]),
+            (AppConfigTlvType::NbOfAzimuthMeasurements, vec![number_of_aoa_azimuth_measurements]),
+            (
+                AppConfigTlvType::NbOfElevationMeasurements,
+                vec![number_of_aoa_elevation_measurements],
+            ),
+        ]
+        .map(|(cfg_id, v)| AppConfigTlv { cfg_id, v });
+        assert_eq!(tlvs.len(), expected_tlvs.len());
+        assert!(zip(tlvs, expected_tlvs).all(|(a, b)| app_config_tlv_eq(&a, &b)));
     }
 }
