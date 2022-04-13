@@ -15,6 +15,7 @@
 use log::{error, warn};
 
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
+use crate::utils::builder_field;
 
 // The default value of each parameters.
 const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
@@ -500,196 +501,54 @@ impl FiraAppConfigParamsBuilder {
         Some(params)
     }
 
-    // Setter methods.
-    // TODO(akahuang): Use macro for these setter methods.
-    pub fn device_type(&mut self, value: DeviceType) -> &mut Self {
-        self.device_type = Some(value);
-        self
-    }
-    pub fn ranging_round_usage(&mut self, value: RangingRoundUsage) -> &mut Self {
-        self.ranging_round_usage = value;
-        self
-    }
-    pub fn sts_config(&mut self, value: StsConfig) -> &mut Self {
-        self.sts_config = value;
-        self
-    }
-    pub fn multi_node_mode(&mut self, value: MultiNodeMode) -> &mut Self {
-        self.multi_node_mode = Some(value);
-        self
-    }
-    pub fn channel_number(&mut self, value: UwbChannel) -> &mut Self {
-        self.channel_number = value;
-        self
-    }
-    pub fn device_mac_address(&mut self, value: UwbAddress) -> &mut Self {
-        self.device_mac_address = Some(value);
-        self
-    }
-    pub fn dst_mac_address(&mut self, value: Vec<UwbAddress>) -> &mut Self {
-        self.dst_mac_address = value;
-        self
-    }
-    pub fn slot_duration_rstu(&mut self, value: u16) -> &mut Self {
-        self.slot_duration_rstu = value;
-        self
-    }
-    pub fn ranging_interval_ms(&mut self, value: u32) -> &mut Self {
-        self.ranging_interval_ms = value;
-        self
-    }
-    pub fn mac_fcs_type(&mut self, value: MacFcsType) -> &mut Self {
-        self.mac_fcs_type = value;
-        self
-    }
-    pub fn ranging_round_control(&mut self, value: RangingRoundControl) -> &mut Self {
-        self.ranging_round_control = value;
-        self
-    }
-    pub fn aoa_result_request(&mut self, value: AoaResultRequest) -> &mut Self {
-        self.aoa_result_request = value;
-        self
-    }
-    pub fn range_data_ntf_config(&mut self, value: RangeDataNtfConfig) -> &mut Self {
-        self.range_data_ntf_config = value;
-        self
-    }
-    pub fn range_data_ntf_proximity_near_cm(&mut self, value: u16) -> &mut Self {
-        self.range_data_ntf_proximity_near_cm = value;
-        self
-    }
-    pub fn range_data_ntf_proximity_far_cm(&mut self, value: u16) -> &mut Self {
-        self.range_data_ntf_proximity_far_cm = value;
-        self
-    }
-    pub fn device_role(&mut self, value: DeviceRole) -> &mut Self {
-        self.device_role = Some(value);
-        self
-    }
-    pub fn rframe_config(&mut self, value: RframeConfig) -> &mut Self {
-        self.rframe_config = value;
-        self
-    }
-    pub fn preamble_code_index(&mut self, value: u8) -> &mut Self {
-        self.preamble_code_index = value;
-        self
-    }
-    pub fn sfd_id(&mut self, value: u8) -> &mut Self {
-        self.sfd_id = value;
-        self
-    }
-    pub fn psdu_data_rate(&mut self, value: PsduDataRate) -> &mut Self {
-        self.psdu_data_rate = value;
-        self
-    }
-    pub fn preamble_duration(&mut self, value: PreambleDuration) -> &mut Self {
-        self.preamble_duration = value;
-        self
-    }
-    pub fn ranging_time_struct(&mut self, value: RangingTimeStruct) -> &mut Self {
-        self.ranging_time_struct = value;
-        self
-    }
-    pub fn slots_per_rr(&mut self, value: u8) -> &mut Self {
-        self.slots_per_rr = value;
-        self
-    }
-    pub fn tx_adaptive_payload_power(&mut self, value: TxAdaptivePayloadPower) -> &mut Self {
-        self.tx_adaptive_payload_power = value;
-        self
-    }
-    pub fn responder_slot_index(&mut self, value: u8) -> &mut Self {
-        self.responder_slot_index = value;
-        self
-    }
-    pub fn prf_mode(&mut self, value: PrfMode) -> &mut Self {
-        self.prf_mode = value;
-        self
-    }
-    pub fn scheduled_mode(&mut self, value: ScheduledMode) -> &mut Self {
-        self.scheduled_mode = value;
-        self
-    }
-    pub fn key_rotation(&mut self, value: KeyRotation) -> &mut Self {
-        self.key_rotation = value;
-        self
-    }
-    pub fn key_rotation_rate(&mut self, value: u8) -> &mut Self {
-        self.key_rotation_rate = value;
-        self
-    }
-    pub fn session_priority(&mut self, value: u8) -> &mut Self {
-        self.session_priority = value;
-        self
-    }
-    pub fn mac_address_mode(&mut self, value: MacAddressMode) -> &mut Self {
-        self.mac_address_mode = value;
-        self
-    }
-    pub fn vendor_id(&mut self, value: [u8; 2]) -> &mut Self {
-        self.vendor_id = Some(value);
-        self
-    }
-    pub fn static_sts_iv(&mut self, value: [u8; 6]) -> &mut Self {
-        self.static_sts_iv = Some(value);
-        self
-    }
-    pub fn number_of_sts_segments(&mut self, value: u8) -> &mut Self {
-        self.number_of_sts_segments = value;
-        self
-    }
-    pub fn max_rr_retry(&mut self, value: u16) -> &mut Self {
-        self.max_rr_retry = value;
-        self
-    }
-    pub fn uwb_initiation_time_ms(&mut self, value: u32) -> &mut Self {
-        self.uwb_initiation_time_ms = value;
-        self
-    }
-    pub fn hopping_mode(&mut self, value: HoppingMode) -> &mut Self {
-        self.hopping_mode = value;
-        self
-    }
-    pub fn block_stride_length(&mut self, value: u8) -> &mut Self {
-        self.block_stride_length = value;
-        self
-    }
-    pub fn result_report_config(&mut self, value: ResultReportConfig) -> &mut Self {
-        self.result_report_config = value;
-        self
-    }
-    pub fn in_band_termination_attempt_count(&mut self, value: u8) -> &mut Self {
-        self.in_band_termination_attempt_count = value;
-        self
-    }
-    pub fn sub_session_id(&mut self, value: u32) -> &mut Self {
-        self.sub_session_id = Some(value);
-        self
-    }
-    pub fn bprf_phr_data_rate(&mut self, value: BprfPhrDataRate) -> &mut Self {
-        self.bprf_phr_data_rate = value;
-        self
-    }
-    pub fn max_number_of_measurements(&mut self, value: u16) -> &mut Self {
-        self.max_number_of_measurements = value;
-        self
-    }
-    pub fn sts_length(&mut self, value: StsLength) -> &mut Self {
-        self.sts_length = value;
-        self
-    }
-    pub fn number_of_range_measurements(&mut self, value: u8) -> &mut Self {
-        self.number_of_range_measurements = Some(value);
-        self
-    }
-    pub fn number_of_aoa_azimuth_measurements(&mut self, value: u8) -> &mut Self {
-        self.number_of_aoa_azimuth_measurements = Some(value);
-        self
-    }
-    pub fn number_of_aoa_elevation_measurements(&mut self, value: u8) -> &mut Self {
-        self.number_of_aoa_elevation_measurements = Some(value);
-        self
-    }
+    // Generate the setter methods for all the fields.
+    builder_field!(device_type, DeviceType, Some);
+    builder_field!(ranging_round_usage, RangingRoundUsage);
+    builder_field!(sts_config, StsConfig);
+    builder_field!(multi_node_mode, MultiNodeMode, Some);
+    builder_field!(channel_number, UwbChannel);
+    builder_field!(device_mac_address, UwbAddress, Some);
+    builder_field!(dst_mac_address, Vec<UwbAddress>);
+    builder_field!(slot_duration_rstu, u16);
+    builder_field!(ranging_interval_ms, u32);
+    builder_field!(mac_fcs_type, MacFcsType);
+    builder_field!(ranging_round_control, RangingRoundControl);
+    builder_field!(aoa_result_request, AoaResultRequest);
+    builder_field!(range_data_ntf_config, RangeDataNtfConfig);
+    builder_field!(range_data_ntf_proximity_near_cm, u16);
+    builder_field!(range_data_ntf_proximity_far_cm, u16);
+    builder_field!(device_role, DeviceRole, Some);
+    builder_field!(rframe_config, RframeConfig);
+    builder_field!(preamble_code_index, u8);
+    builder_field!(sfd_id, u8);
+    builder_field!(psdu_data_rate, PsduDataRate);
+    builder_field!(preamble_duration, PreambleDuration);
+    builder_field!(ranging_time_struct, RangingTimeStruct);
+    builder_field!(slots_per_rr, u8);
+    builder_field!(tx_adaptive_payload_power, TxAdaptivePayloadPower);
+    builder_field!(responder_slot_index, u8);
+    builder_field!(prf_mode, PrfMode);
+    builder_field!(scheduled_mode, ScheduledMode);
+    builder_field!(key_rotation, KeyRotation);
+    builder_field!(key_rotation_rate, u8);
+    builder_field!(session_priority, u8);
+    builder_field!(mac_address_mode, MacAddressMode);
+    builder_field!(vendor_id, [u8; 2], Some);
+    builder_field!(static_sts_iv, [u8; 6], Some);
+    builder_field!(number_of_sts_segments, u8);
+    builder_field!(max_rr_retry, u16);
+    builder_field!(uwb_initiation_time_ms, u32);
+    builder_field!(hopping_mode, HoppingMode);
+    builder_field!(block_stride_length, u8);
+    builder_field!(result_report_config, ResultReportConfig);
+    builder_field!(in_band_termination_attempt_count, u8);
+    builder_field!(sub_session_id, u32, Some);
+    builder_field!(bprf_phr_data_rate, BprfPhrDataRate);
+    builder_field!(max_number_of_measurements, u16);
+    builder_field!(sts_length, StsLength);
+    builder_field!(number_of_range_measurements, u8, Some);
+    builder_field!(number_of_aoa_azimuth_measurements, u8, Some);
+    builder_field!(number_of_aoa_elevation_measurements, u8, Some);
 }
 
 #[repr(u8)]
