@@ -191,6 +191,25 @@ impl FiraAppConfigParams {
             },
         }
 
+        match self.aoa_result_request {
+            AoaResultRequest::ReqAoaResultsInterleaved => {
+                validate(
+                    self.number_of_range_measurements.is_some()
+                        || self.number_of_aoa_azimuth_measurements.is_some()
+                        || self.number_of_aoa_elevation_measurements.is_some(),
+                    "At least one of the ratio params should be set for interleaving mode",
+                );
+            }
+            _ => {
+                validate(
+                    self.number_of_range_measurements.is_none()
+                        && self.number_of_aoa_azimuth_measurements.is_none()
+                        && self.number_of_aoa_elevation_measurements.is_none(),
+                    "All of the ratio params should not be set for non-interleaving mode",
+                );
+            }
+        }
+
         Some(())
     }
 
