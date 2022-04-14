@@ -351,25 +351,3 @@ impl UciLogger for UciLoggerImpl {
         self.buf_file.lock().await.close_file().await;
     }
 }
-
-pub struct MockUciLogger {}
-
-impl MockUciLogger {
-    pub fn new() -> Self {
-        MockUciLogger {}
-    }
-}
-
-impl Default for MockUciLogger {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl UciLogger for MockUciLogger {
-    async fn log_uci_command(&self, _cmd: UciCommandPacket) {}
-    async fn log_uci_response(&self, _rsp: UciResponsePacket) {}
-    async fn log_uci_notification(&self, _ntf: UciNotificationPacket) {}
-    async fn close_file(&self) {}
-}
