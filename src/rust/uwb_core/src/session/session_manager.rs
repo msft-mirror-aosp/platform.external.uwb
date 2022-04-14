@@ -160,7 +160,7 @@ mod tests {
 
     use crate::uci::mock_uci_manager::MockUciManager;
 
-    async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> SessionManager
+    async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)
     where
         F: FnOnce(&mut MockUciManager),
     {
@@ -169,7 +169,7 @@ mod tests {
         uci_manager.expect_open_hal(vec![], Ok(()));
         setup_uci_manager_fn(&mut uci_manager);
         let _ = uci_manager.open_hal(notf_sender).await;
-        SessionManager::new(uci_manager, notf_receiver)
+        (SessionManager::new(uci_manager.clone(), notf_receiver), uci_manager)
     }
 
     #[tokio::test]
@@ -179,15 +179,17 @@ mod tests {
 
         let session_id_clone = session_id;
         let session_type_clone = session_type;
-        let mut session_manager = setup_session_manager(move |uci_manager| {
-            uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
-        })
-        .await;
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
+            })
+            .await;
 
         let result = session_manager.init_session(session_id, session_type).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.init_session(session_id, session_type).await;
         assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
 
     #[tokio::test]
@@ -197,11 +199,12 @@ mod tests {
 
         let session_id_clone = session_id;
         let session_type_clone = session_type;
-        let mut session_manager = setup_session_manager(move |uci_manager| {
-            uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
-            uci_manager.expect_session_deinit(session_id_clone, Ok(()));
-        })
-        .await;
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
+                uci_manager.expect_session_deinit(session_id_clone, Ok(()));
+            })
+            .await;
 
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
@@ -211,5 +214,6 @@ mod tests {
         assert_eq!(result, Ok(()));
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
 }
