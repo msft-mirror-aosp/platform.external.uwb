@@ -12,11 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This module provides the functionalities related to the UWB ranging session.
-
-// TODO(akahuang): remove it after implementing the client of each component.
-#![allow(dead_code)]
-
-pub(crate) mod error;
-pub(crate) mod params;
-pub(crate) mod session_manager;
+mod fira_app_config_params;
