@@ -547,13 +547,16 @@ impl Dispatcher for DispatcherImpl {
 }
 
 #[cfg(test)]
+pub mod mock_uci_logger;
+
+#[cfg(test)]
 mod tests {
     use self::uci_hrcv::UciNotification;
     use self::uci_hrcv::UciResponse;
 
     use super::*;
-    use crate::adaptation::MockUwbAdaptation;
-    use crate::event_manager::MockEventManager;
+    use crate::adaptation::mock_adaptation::MockUwbAdaptation;
+    use crate::event_manager::mock_event_manager::MockEventManager;
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         UwbEvent::UwbEvent, UwbStatus::UwbStatus,
     };
