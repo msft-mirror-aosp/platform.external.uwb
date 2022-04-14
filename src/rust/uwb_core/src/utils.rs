@@ -36,6 +36,20 @@ impl Future for PinSleep {
     }
 }
 
+/// Generate the setter method for the field of the struct for the builder pattern.
+macro_rules! builder_field {
+    ($field:ident, $ty:ty, $wrap:expr) => {
+        pub fn $field(&mut self, value: $ty) -> &mut Self {
+            self.$field = $wrap(value);
+            self
+        }
+    };
+    ($field:ident, $ty:ty) => {
+        builder_field!($field, $ty, ::std::convert::identity);
+    };
+}
+pub(crate) use builder_field;
+
 #[cfg(test)]
 pub fn init_test_logging() {
     let _ = env_logger::builder().is_test(true).try_init();
