@@ -274,6 +274,11 @@ impl MockUwbAdaptation {
         });
     }
 
+    #[allow(dead_code)]
+    pub fn clear_expected_calls(&self) {
+        self.expected_calls.lock().unwrap().clear();
+    }
+
     async fn send_hal_event(&self, event: UwbEvent, event_status: UwbStatus) {
         self.rsp_sender.send(HalCallback::Event { event, event_status }).unwrap();
     }
@@ -436,11 +441,11 @@ impl UwbAdaptation for MockUwbAdaptation {
 
         match expected_out {
             Some((rsp, notf, out)) => {
-                if let Some(rsp) = rsp {
-                    self.send_uci_response(rsp).await;
-                }
                 if let Some(notf) = notf {
                     self.send_uci_notification(notf).await;
+                }
+                if let Some(rsp) = rsp {
+                    self.send_uci_response(rsp).await;
                 }
                 out
             }
@@ -454,12 +459,11 @@ impl UwbAdaptation for MockUwbAdaptation {
 
 #[cfg(test)]
 pub mod tests {
-    #![allow(non_snake_case)]
     use super::*;
     use android_hardware_uwb::aidl::android::hardware::uwb::IUwbClientCallback::IUwbClientCallback;
     use binder::{SpIBinder, StatusCode};
     use bytes::Bytes;
-    use uwb_uci_packets::{GetDeviceInfoCmdBuilder, UciVendor_9_CommandBuilder};
+    use uwb_uci_packets::*;
     enum ExpectedHalCall {
         Open { out: BinderResult<()> },
         Close { out: BinderResult<()> },
@@ -649,25 +653,37 @@ pub mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_onHalEvent() {
-        let uwb_event_test = UwbEvent(0);
-        let uwb_status_test = UwbStatus(1);
-        let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
-        let uwb_client_callback_test = create_uwb_client_callback(rsp_sender);
-        let result = uwb_client_callback_test.onHalEvent(uwb_event_test, uwb_status_test).await;
-        assert_eq!(result, Ok(()));
+    fn setup_client_callback() -> (mpsc::UnboundedReceiver<HalCallback>, UwbClientCallback) {
+        // TODO: Remove this once we call it somewhere real.
+        logger::init(
+            logger::Config::default()
+                .with_tag_on_device("uwb_test")
+                .with_min_level(log::Level::Debug),
+        );
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let uwb_client_callback = create_uwb_client_callback(rsp_sender);
+        (rsp_receiver, uwb_client_callback)
     }
 
     #[tokio::test]
-    async fn test_onUciMessage_good() {
+    async fn test_on_hal_event() {
+        let event = UwbEvent(0);
+        let event_status = UwbStatus(1);
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onHalEvent(event, event_status).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(response, Some(HalCallback::Event { event: _, event_status: _ })));
+    }
+
+    #[tokio::test]
+    async fn test_get_device_info_rsp() {
         let data = [
             0x40, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
             0x0a,
         ];
-        let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let uwb_client_callback_test = create_uwb_client_callback(rsp_sender);
-        let result = uwb_client_callback_test.onUciMessage(&data).await;
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
         assert_eq!(result, Ok(()));
         let response = rsp_receiver.recv().await;
         assert!(matches!(
@@ -677,7 +693,207 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn test_onUciMessage_good_fragmented_packet() {
+    async fn test_get_caps_info_rsp() {
+        let data = [0x40, 0x03, 0x00, 0x05, 0x00, 0x01, 0x00, 0x01, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::GetCapsInfoRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_set_config_rsp() {
+        let data = [0x40, 0x04, 0x00, 0x04, 0x01, 0x01, 0x01, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SetConfigRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_get_config_rsp() {
+        let data = [0x40, 0x05, 0x00, 0x05, 0x01, 0x01, 0x00, 0x01, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::GetConfigRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_device_reset_rsp() {
+        let data = [0x40, 0x00, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::DeviceResetRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_init_rsp() {
+        let data = [0x41, 0x00, 0x00, 0x01, 0x11];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionInitRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_deinit_rsp() {
+        let data = [0x41, 0x01, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionDeinitRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_app_config_rsp() {
+        let data = [0x41, 0x04, 0x00, 0x02, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetAppConfigRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_set_app_config_rsp() {
+        let data = [0x41, 0x03, 0x00, 0x04, 0x01, 0x01, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionSetAppConfigRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_state_rsp() {
+        let data = [0x41, 0x06, 0x00, 0x02, 0x00, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetStateRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_get_count_rsp() {
+        let data = [0x41, 0x05, 0x00, 0x02, 0x00, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetCountRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_rsp() {
+        let data = [0x41, 0x07, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(
+                uci_hrcv::UciResponse::SessionUpdateControllerMulticastListRsp(_)
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_range_start_rsp() {
+        let data = [0x42, 0x00, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStartRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_range_stop_rsp() {
+        let data = [0x42, 0x01, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStopRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_android_set_country_code_rsp() {
+        let data = [0x4c, 0x01, 0x00, 0x01, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidSetCountryCodeRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_android_get_power_stats_rsp() {
+        let data = [
+            0x4c, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidGetPowerStatsRsp(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_raw_vendor_rsp_fragmented_packet() {
         let fragment_1 = [
             0x59, 0x01, 0x00, 0xff, 0x81, 0x93, 0xf8, 0x56, 0x53, 0x74, 0x5d, 0xcf, 0x45, 0xfa,
             0x34, 0xbd, 0xf1, 0x56, 0x53, 0x8f, 0x13, 0xff, 0x9b, 0xdd, 0xee, 0xaf, 0x0e, 0xff,
@@ -712,11 +928,10 @@ pub mod tests {
             0x0b, 0x0c, 0x44, 0xd9, 0xb9, 0xd2, 0x38, 0x4c, 0xb6, 0xff, 0x83, 0xfe, 0xc8, 0x65,
             0xbc, 0x2a, 0x10, 0xed, 0x18, 0x62, 0xd2, 0x1b, 0x87,
         ];
-        let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let uwb_client_callback_test = create_uwb_client_callback(rsp_sender);
-        let result1 = uwb_client_callback_test.onUciMessage(&fragment_1).await;
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result1 = uwb_client_callback.onUciMessage(&fragment_1).await;
         assert_eq!(result1, Ok(()));
-        let result2 = uwb_client_callback_test.onUciMessage(&fragment_2).await;
+        let result2 = uwb_client_callback.onUciMessage(&fragment_2).await;
         assert_eq!(result2, Ok(()));
         // One defragmented packet sent as response
         let response = rsp_receiver.recv().await;
@@ -727,36 +942,185 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn test_onUciMessage_bad() {
+    async fn test_generic_error_ntf() {
+        let data = [0x60, 0x07, 0x00, 0x01, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::GenericError(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_device_status_ntf() {
+        let data = [0x60, 0x01, 0x00, 0x01, 0x01];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::DeviceStatusNtf(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_status_ntf() {
+        let data = [0x61, 0x02, 0x00, 0x06, 0x01, 0x02, 0x03, 0x04, 0x02, 0x21];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::SessionStatusNtf(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_ntf() {
+        let data = [0x61, 0x07, 0x00, 0x06, 0x00, 0x01, 0x02, 0x03, 0x04, 0x00];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(
+                uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(_)
+            ))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_short_mac_two_way_range_data_ntf() {
+        let data = [
+            0x62, 0x00, 0x00, 0x19, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x00, 0x0a,
+            0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00,
+        ];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_extended_mac_two_way_range_data_ntf() {
+        let data = [
+            0x62, 0x00, 0x00, 0x19, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x00, 0x0a,
+            0x01, 0x01, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00,
+        ];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
+        assert_eq!(result, Ok(()));
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_raw_vendor_ntf_fragmented_packet() {
+        let fragment_1 = [
+            0x79, 0x01, 0x00, 0xff, 0x81, 0x93, 0xf8, 0x56, 0x53, 0x74, 0x5d, 0xcf, 0x45, 0xfa,
+            0x34, 0xbd, 0xf1, 0x56, 0x53, 0x8f, 0x13, 0xff, 0x9b, 0xdd, 0xee, 0xaf, 0x0e, 0xff,
+            0x1e, 0x63, 0xb6, 0xd7, 0xd4, 0x7b, 0xb7, 0x78, 0x30, 0xc7, 0x92, 0xd0, 0x8a, 0x5e,
+            0xf0, 0x00, 0x1d, 0x05, 0xea, 0xf9, 0x56, 0xce, 0x8b, 0xbc, 0x8b, 0x1b, 0xc2, 0xd4,
+            0x2a, 0xb8, 0x14, 0x82, 0x8b, 0xed, 0x12, 0xe5, 0x83, 0xe6, 0xb0, 0xb8, 0xa0, 0xb9,
+            0xd0, 0x90, 0x6e, 0x09, 0x4e, 0x2e, 0x22, 0x38, 0x39, 0x03, 0x66, 0xf5, 0x95, 0x14,
+            0x1c, 0xd7, 0x60, 0xbf, 0x28, 0x58, 0x9d, 0x47, 0x18, 0x1a, 0x93, 0x59, 0xbb, 0x0d,
+            0x88, 0xf7, 0x7c, 0xce, 0x13, 0xa8, 0x2f, 0x3d, 0x0e, 0xd9, 0x5c, 0x19, 0x45, 0x5d,
+            0xe8, 0xc3, 0xe0, 0x3a, 0xf3, 0x71, 0x09, 0x6e, 0x73, 0x07, 0x96, 0xa9, 0x1f, 0xf4,
+            0x57, 0x84, 0x2e, 0x59, 0x6a, 0xf6, 0x90, 0x28, 0x47, 0xc1, 0x51, 0x7c, 0x59, 0x7e,
+            0x95, 0xfc, 0xa6, 0x4d, 0x1b, 0xe6, 0xfe, 0x97, 0xa0, 0x39, 0x91, 0xa8, 0x28, 0xc9,
+            0x1d, 0x7e, 0xfc, 0xec, 0x71, 0x1d, 0x43, 0x38, 0xcb, 0xbd, 0x50, 0xea, 0x02, 0xfd,
+            0x2c, 0x7a, 0xde, 0x06, 0xdd, 0x77, 0x69, 0x4d, 0x2f, 0x57, 0xf5, 0x4b, 0x97, 0x51,
+            0x58, 0x66, 0x7a, 0x8a, 0xcb, 0x7b, 0x91, 0x18, 0xbe, 0x4e, 0x94, 0xe4, 0xf1, 0xed,
+            0x52, 0x06, 0xa7, 0xe8, 0x6b, 0xe1, 0x8f, 0x4a, 0x06, 0xe8, 0x2c, 0x9f, 0xc7, 0xcb,
+            0xd2, 0x10, 0xb0, 0x0b, 0x71, 0x80, 0x2c, 0xd1, 0xf1, 0x03, 0xc2, 0x79, 0x7e, 0x7f,
+            0x70, 0xf4, 0x8c, 0xc9, 0xcf, 0x9f, 0xcf, 0xa2, 0x8e, 0x6a, 0xe4, 0x1a, 0x28, 0x05,
+            0xa8, 0xfe, 0x7d, 0xec, 0xd9, 0x5f, 0xa7, 0xd0, 0x29, 0x63, 0x1a, 0xba, 0x39, 0xf7,
+            0xfa, 0x5e, 0xff, 0xb8, 0x5a, 0xbd, 0x35,
+        ];
+        let fragment_2 = [
+            0x69, 0x01, 0x00, 0x91, 0xe7, 0x26, 0xfb, 0xc4, 0x48, 0x68, 0x42, 0x93, 0x23, 0x1f,
+            0x87, 0xf6, 0x12, 0x5e, 0x60, 0xc8, 0x6a, 0x9d, 0x98, 0xbb, 0xb2, 0xb0, 0x47, 0x2f,
+            0xaa, 0xa5, 0xce, 0xdb, 0x32, 0x88, 0x86, 0x0d, 0x6a, 0x5a, 0xfe, 0xc8, 0xda, 0xa1,
+            0xc0, 0x06, 0x37, 0x08, 0xda, 0x67, 0x49, 0x6a, 0xa7, 0x04, 0x62, 0x95, 0xf3, 0x1e,
+            0xcd, 0x71, 0x00, 0x99, 0x68, 0xb4, 0x03, 0xb3, 0x15, 0x64, 0x8b, 0xde, 0xbc, 0x8f,
+            0x41, 0x64, 0xdf, 0x34, 0x6e, 0xff, 0x48, 0xc8, 0xe2, 0xbf, 0x02, 0x15, 0xc5, 0xbc,
+            0x0f, 0xf8, 0xa1, 0x49, 0x91, 0x71, 0xdd, 0xb4, 0x37, 0x1c, 0xfa, 0x60, 0xcb, 0x0f,
+            0xce, 0x6a, 0x0e, 0x90, 0xaf, 0x14, 0x30, 0xf2, 0x5b, 0x21, 0x6f, 0x85, 0xd3, 0x1b,
+            0x89, 0xc9, 0xba, 0x3f, 0x07, 0x11, 0xbd, 0x56, 0xda, 0xdc, 0x88, 0xb4, 0xb0, 0x57,
+            0x0b, 0x0c, 0x44, 0xd9, 0xb9, 0xd2, 0x38, 0x4c, 0xb6, 0xff, 0x83, 0xfe, 0xc8, 0x65,
+            0xbc, 0x2a, 0x10, 0xed, 0x18, 0x62, 0xd2, 0x1b, 0x87,
+        ];
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result1 = uwb_client_callback.onUciMessage(&fragment_1).await;
+        assert_eq!(result1, Ok(()));
+        let result2 = uwb_client_callback.onUciMessage(&fragment_2).await;
+        assert_eq!(result2, Ok(()));
+        // One defragmented packet sent as response
+        let response = rsp_receiver.recv().await;
+        assert!(matches!(
+            response,
+            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::RawVendorNtf(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_on_uci_message_bad() {
         let data = [
             0x42, 0x02, 0x00, 0x0b, 0x01, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00, 0x01,
             0x0a,
         ];
-        let (rsp_sender, mut rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-        let uwb_client_callback_test = create_uwb_client_callback(rsp_sender);
-        let result = uwb_client_callback_test.onUciMessage(&data).await;
+        let (mut rsp_receiver, uwb_client_callback) = setup_client_callback();
+        let result = uwb_client_callback.onUciMessage(&data).await;
         assert_eq!(result, Ok(()));
         let response = rsp_receiver.try_recv();
         assert!(response.is_err());
     }
 
-    #[tokio::test]
-    async fn test_send_uci_message() {
+    async fn setup_adaptation_impl(config_fn: impl Fn(&MockHal)) -> Result<UwbAdaptationImpl> {
+        // TODO: Remove this once we call it somewhere real.
+        logger::init(
+            logger::Config::default()
+                .with_tag_on_device("uwb_test")
+                .with_min_level(log::Level::Debug),
+        );
         let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
         let mock_hal = MockHal::new();
+        config_fn(&mock_hal);
 
-        let cmd: UciCommandPacket = GetDeviceInfoCmdBuilder {}.build().into();
-        let cmd_packet: UciPacketPacket = cmd.clone().into();
-        let mut cmd_frag_packets: Vec<UciPacketHalPacket> = cmd_packet.into();
-        let cmd_frag_data = cmd_frag_packets.pop().unwrap().to_vec();
-        let cmd_frag_data_len = cmd_frag_data.len();
-
-        mock_hal.expect_send_uci_message(cmd_frag_data, Ok(cmd_frag_data_len.try_into().unwrap()));
-        let adaptation_impl = UwbAdaptationImpl::new_with_args(
+        UwbAdaptationImpl::new_with_args(
             rsp_sender,
             binder::Strong::new(Box::new(mock_hal)),
             Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
         )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_send_uci_message() {
+        let cmd: UciCommandPacket = GetDeviceInfoCmdBuilder {}.build().into();
+        let adaptation_impl = setup_adaptation_impl(|mock_hal| {
+            let cmd_packet: UciPacketPacket = cmd.clone().into();
+            let mut cmd_frag_packets: Vec<UciPacketHalPacket> = cmd_packet.into();
+            let cmd_frag_data = cmd_frag_packets.pop().unwrap().to_vec();
+            let cmd_frag_data_len = cmd_frag_data.len();
+            mock_hal
+                .expect_send_uci_message(cmd_frag_data, Ok(cmd_frag_data_len.try_into().unwrap()));
+        })
         .await
         .unwrap();
         adaptation_impl.send_uci_message(cmd).await.unwrap();
