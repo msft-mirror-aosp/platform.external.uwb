@@ -71,14 +71,18 @@ pub fn build_set_app_config_cmd(
     no_of_params: u32,
     mut app_configs: &[u8],
 ) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
-    if no_of_params != app_configs.len().try_into()? {
-        return Err(UwbErr::InvalidArgs);
-    }
     let mut tlvs = Vec::new();
+    let received_tlvs_len = app_configs.len();
+    let mut parsed_tlvs_len = 0;
     for _ in 0..no_of_params {
         let tlv = AppConfigTlv::parse(app_configs)?;
-        app_configs = &app_configs[tlv.v.len() + 2..];
+        app_configs = app_configs.get(tlv.v.len() + 2..).ok_or(UwbErr::InvalidArgs)?;
+        parsed_tlvs_len += tlv.v.len() + 2;
         tlvs.push(tlv);
+    }
+    if parsed_tlvs_len != received_tlvs_len {
+        error!("Parsed TLV len: {:?}, received len: {:?}", parsed_tlvs_len, received_tlvs_len);
+        return Err(UwbErr::InvalidArgs);
     }
     Ok(SessionSetAppConfigCmdBuilder { session_id, tlvs })
 }
