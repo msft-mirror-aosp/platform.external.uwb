@@ -18,9 +18,9 @@ use uwb_uci_packets::{
     SessionType, SessionUpdateControllerMulticastListRspBuilder, StatusCode, UciCommandPacket,
     UciPacketChild, UciPacketPacket, UciVendor_9_ResponseBuilder,
 };
-use uwb_uci_rust::adaptation::MockUwbAdaptation;
+use uwb_uci_rust::adaptation::mock_adaptation::MockUwbAdaptation;
 use uwb_uci_rust::error::UwbErr;
-use uwb_uci_rust::event_manager::MockEventManager;
+use uwb_uci_rust::event_manager::mock_event_manager::MockEventManager;
 use uwb_uci_rust::uci::{
     uci_hmsgs, uci_hrcv, Dispatcher, DispatcherImpl, HalCallback, JNICommand, SyncUwbAdaptation,
 };
