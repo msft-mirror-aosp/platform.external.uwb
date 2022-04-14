@@ -742,7 +742,7 @@ packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = 
 }
 
 test ExtendedMacTwoWayRangeDataNtf {
-    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
@@ -782,7 +782,7 @@ packet AndroidGetPowerStatsCmd: AndroidCommand (opcode = 0x0) { //ANDROID_GET_PO
 }
 
 test AndroidGetPowerStatsCmd {
-    "\x2e\x00\x00\x00\x00\x00\x00",
+    "\x2c\x00\x00\x00\x00\x00\x00",
 }
 
 struct PowerStats {
@@ -798,7 +798,7 @@ packet AndroidGetPowerStatsRsp : AndroidResponse (opcode = 0x0) { //ANDROID_GET_
 }
 
 test AndroidGetPowerStatsRsp {
-    "\x4e\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x4c\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
@@ -807,7 +807,7 @@ packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_C
 
 // Set country code to US.
 test AndroidSetCountryCodeCmd {
-    "\x2e\x01\x00\x02\x00\x00\x00\x55\x53",
+    "\x2c\x01\x00\x02\x00\x00\x00\x55\x53",
 }
 
 packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
@@ -815,7 +815,7 @@ packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET
 }
 
 test AndroidSetCountryCodeRsp {
-    "\x4e\x01\x00\x01\x00\x00\x00\x00",
+    "\x4c\x01\x00\x01\x00\x00\x00\x00",
 }
 
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {

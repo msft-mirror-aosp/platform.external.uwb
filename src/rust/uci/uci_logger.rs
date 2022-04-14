@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+extern crate libc;
+
 use crate::uci::UwbErr;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
@@ -34,11 +36,13 @@ use uwb_uci_packets::{
 const UCI_EPOCH_DELTA: u64 = 0x00dcddb30f2f8000;
 const UCI_LOG_LAST_FILE_STORE_TIME_SEC: u64 = 86400; // 24 hours
 const MAX_FILE_SIZE: usize = 102400; // 100 kb
+const MAX_BUFFER_SIZE: usize = 10240; // 10 kb
 const PKT_LOG_HEADER_SIZE: usize = 25;
 const VENDOR_ID: u64 = AppConfigTlvType::VendorId as u64;
 const STATIC_STS_IV: u64 = AppConfigTlvType::StaticStsIv as u64;
 const LOG_DIR: &str = "/data/misc/apexdata/com.android.uwb/log";
 const FILE_NAME: &str = "uwb_uci.log";
+const LOG_HEADER: &[u8] = b"ucilogging";
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum UciLogMode {
@@ -57,13 +61,12 @@ enum Type {
 #[derive(Clone)]
 struct UciLogConfig {
     path: String,
-    max_file_size: usize,
     mode: UciLogMode,
 }
 
 impl UciLogConfig {
     pub fn new(mode: UciLogMode) -> Self {
-        Self { path: format!("{}/{}", LOG_DIR, FILE_NAME), max_file_size: MAX_FILE_SIZE, mode }
+        Self { path: format!("{}/{}", LOG_DIR, FILE_NAME), mode }
     }
 }
 
@@ -102,7 +105,7 @@ impl BufferedFile {
                 error!("Failed to remove file!");
             };
         }));
-        let mut file = File::create(path).await?;
+        let mut file = create_file_using_open_options(path).await?;
         file.write_all(b"ucilogging").await?;
         if file.flush().await.is_err() {
             error!("Failed to flush");
@@ -114,12 +117,7 @@ impl BufferedFile {
     async fn close_file(&mut self) {
         if let Some(file) = &mut self.file {
             info!("UCI log file closing");
-            if file.write_all(&self.buffer).await.is_err() {
-                error!("Failed to write");
-            }
-            if file.flush().await.is_err() {
-                error!("Failed to flush");
-            }
+            write(file, &self.buffer).await;
             self.file = None;
             self.buffer.clear();
         }
@@ -135,7 +133,13 @@ pub struct UciLoggerImpl {
 impl UciLoggerImpl {
     pub async fn new(mode: UciLogMode) -> Self {
         let config = UciLogConfig::new(mode);
-        let file = match OpenOptions::new().append(true).open(&config.path).await.ok() {
+        let file = match OpenOptions::new()
+            .append(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&config.path)
+            .await
+            .ok()
+        {
             Some(f) => match f.metadata().await {
                 Ok(md) => match md.modified() {
                     Ok(modified_date) => match SystemTime::now().duration_since(modified_date) {
@@ -200,10 +204,16 @@ impl UciLoggerImpl {
 
         // Check whether exceeded the size limit
         let mut buf_file = self.buf_file.lock().await;
-        if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > self.config.max_file_size {
+        if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_FILE_SIZE {
             match buf_file.open_next_file(&self.config.path).await {
                 Ok(()) => info!("New file created"),
                 Err(e) => error!("Open next file failed: {:?}", e),
+            }
+        } else if buf_file.buffer.len() + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_BUFFER_SIZE {
+            let temp_buf = buf_file.buffer.clone();
+            if let Some(file) = &mut buf_file.file {
+                write(file, &temp_buf).await;
+                buf_file.buffer.clear();
             }
         }
         buf_file.buffer.put_u32(length); // original length
@@ -219,14 +229,12 @@ impl UciLoggerImpl {
         if create_dir(LOG_DIR).await.is_err() {
             error!("Failed to create dir");
         }
-        match File::create(path).await {
+        if remove_file(path).await.is_err() {
+            error!("Failed to remove file!");
+        };
+        match create_file_using_open_options(path).await {
             Ok(mut f) => {
-                if f.write_all(b"ucilogging").await.is_err() {
-                    error!("failed to write");
-                }
-                if f.flush().await.is_err() {
-                    error!("Failed to flush");
-                }
+                write(&mut f, LOG_HEADER).await;
                 Some(f)
             }
             Err(e) => {
@@ -234,6 +242,19 @@ impl UciLoggerImpl {
                 None
             }
         }
+    }
+}
+
+async fn create_file_using_open_options(path: &str) -> Result<File, UwbErr> {
+    Ok(OpenOptions::new().write(true).create_new(true).open(path).await?)
+}
+
+async fn write(file: &mut File, buffer: &[u8]) {
+    if file.write_all(buffer).await.is_err() {
+        error!("Failed to write");
+    }
+    if file.flush().await.is_err() {
+        error!("Failed to flush");
     }
 }
 
