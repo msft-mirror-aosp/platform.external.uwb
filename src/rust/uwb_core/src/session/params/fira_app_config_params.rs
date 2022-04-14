@@ -157,8 +157,8 @@ impl FiraAppConfigParams {
             "session_priority should be between 1 to 100",
         )?;
         validate(
-            (1..=10000).contains(&self.uwb_initiation_time_ms),
-            "uwb_initiation_time_ms should be between 1 to 10000",
+            (0..=10000).contains(&self.uwb_initiation_time_ms),
+            "uwb_initiation_time_ms should be between 0 to 10000",
         )?;
         validate(
             (1..=10).contains(&self.in_band_termination_attempt_count),
