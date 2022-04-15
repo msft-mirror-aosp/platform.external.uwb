@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use log::{error, warn};
 
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
@@ -157,8 +159,8 @@ impl FiraAppConfigParams {
             "session_priority should be between 1 to 100",
         )?;
         validate(
-            (1..=10000).contains(&self.uwb_initiation_time_ms),
-            "uwb_initiation_time_ms should be between 1 to 10000",
+            (0..=10000).contains(&self.uwb_initiation_time_ms),
+            "uwb_initiation_time_ms should be between 0 to 10000",
         )?;
         validate(
             (1..=10).contains(&self.in_band_termination_attempt_count),
@@ -258,9 +260,16 @@ impl FiraAppConfigParams {
     }
 
     pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
+        self.generate_config_map()
+            .into_iter()
+            .map(|(cfg_id, v)| AppConfigTlv { cfg_id, v })
+            .collect()
+    }
+
+    fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
         debug_assert!(self.is_valid().is_some());
 
-        let mut configs = vec![
+        let mut config_map = HashMap::from([
             (AppConfigTlvType::DeviceType, u8_to_bytes(self.device_type as u8)),
             (AppConfigTlvType::RangingRoundUsage, u8_to_bytes(self.ranging_round_usage as u8)),
             (AppConfigTlvType::StsConfig, u8_to_bytes(self.sts_config as u8)),
@@ -323,22 +332,22 @@ impl FiraAppConfigParams {
                 u16_to_bytes(self.max_number_of_measurements),
             ),
             (AppConfigTlvType::StsLength, u8_to_bytes(self.sts_length as u8)),
-        ];
+        ]);
 
         if let Some(value) = self.sub_session_id.as_ref() {
-            configs.push((AppConfigTlvType::SubSessionId, u32_to_bytes(*value)));
+            config_map.insert(AppConfigTlvType::SubSessionId, u32_to_bytes(*value));
         }
         if let Some(value) = self.number_of_range_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfRangeMeasurements, u8_to_bytes(*value)));
+            config_map.insert(AppConfigTlvType::NbOfRangeMeasurements, u8_to_bytes(*value));
         }
         if let Some(value) = self.number_of_aoa_azimuth_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfAzimuthMeasurements, u8_to_bytes(*value)));
+            config_map.insert(AppConfigTlvType::NbOfAzimuthMeasurements, u8_to_bytes(*value));
         }
         if let Some(value) = self.number_of_aoa_elevation_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfElevationMeasurements, u8_to_bytes(*value)));
+            config_map.insert(AppConfigTlvType::NbOfElevationMeasurements, u8_to_bytes(*value));
         }
 
-        configs.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
+        config_map
     }
 }
 
@@ -820,9 +829,6 @@ fn validate(value: bool, err_msg: &str) -> Option<()> {
 mod tests {
     use super::*;
 
-    use std::iter::zip;
-
-    use crate::uci::params::app_config_tlv_eq;
     use crate::utils::init_test_logging;
 
     #[test]
@@ -920,11 +926,11 @@ mod tests {
             .number_of_range_measurements(number_of_range_measurements)
             .number_of_aoa_azimuth_measurements(number_of_aoa_azimuth_measurements)
             .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements)
-            .build();
-        assert!(params.is_some());
+            .build()
+            .unwrap();
 
-        let tlvs = params.unwrap().generate_tlvs();
-        let expected_tlvs = [
+        let config_map = params.generate_config_map();
+        let expected_config_map = HashMap::from([
             (AppConfigTlvType::DeviceType, vec![device_type as u8]),
             (AppConfigTlvType::RangingRoundUsage, vec![ranging_round_usage as u8]),
             (AppConfigTlvType::StsConfig, vec![sts_config as u8]),
@@ -991,9 +997,7 @@ mod tests {
                 AppConfigTlvType::NbOfElevationMeasurements,
                 vec![number_of_aoa_elevation_measurements],
             ),
-        ]
-        .map(|(cfg_id, v)| AppConfigTlv { cfg_id, v });
-        assert_eq!(tlvs.len(), expected_tlvs.len());
-        assert!(zip(tlvs, expected_tlvs).all(|(a, b)| app_config_tlv_eq(&a, &b)));
+        ]);
+        assert_eq!(config_map, expected_config_map);
     }
 }
