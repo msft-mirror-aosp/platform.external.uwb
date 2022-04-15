@@ -226,7 +226,6 @@ fn consume_command(msgs: Vec<JNICommand>) -> Result<(), UwbErr> {
             }
         }
     }
-    mock_dispatcher.exit();
     Ok(())
 }
 
