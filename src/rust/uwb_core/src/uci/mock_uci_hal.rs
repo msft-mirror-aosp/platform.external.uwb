@@ -32,7 +32,6 @@ pub struct MockUciHal {
     expect_call_consumed: Arc<Notify>,
 }
 
-#[allow(dead_code)]
 impl MockUciHal {
     pub fn new() -> Self {
         Default::default()
