@@ -649,7 +649,7 @@ mod tests {
     use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::params::{
-        app_config_tlv_eq, cap_tlv_eq, device_config_tlv_eq, power_stats_eq, CapTlvType,
+        app_config_tlvs_eq, cap_tlv_eq, device_config_tlvs_eq, power_stats_eq, CapTlvType,
     };
     use crate::utils::init_test_logging;
 
@@ -835,11 +835,13 @@ mod tests {
         .await;
 
         let config_id = DeviceConfigId::DeviceState;
-        let expected_result =
-            DeviceConfigTlv { cfg_id: DeviceConfigId::DeviceState, v: vec![0x12, 0x34, 0x56] };
+        let expected_result = vec![DeviceConfigTlv {
+            cfg_id: DeviceConfigId::DeviceState,
+            v: vec![0x12, 0x34, 0x56],
+        }];
         CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
         let result = uci_manager.core_get_config(vec![config_id]).await.unwrap();
-        assert!(device_config_tlv_eq(&result[0], &expected_result));
+        assert!(device_config_tlvs_eq(&result, &expected_result));
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -949,9 +951,9 @@ mod tests {
         let session_id = 0x123;
         let config_id = AppConfigTlvType::DeviceType;
         let expected_result =
-            AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+            vec![AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] }];
         let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
-        assert!(app_config_tlv_eq(&result[0], &expected_result));
+        assert!(app_config_tlvs_eq(&result, &expected_result));
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 

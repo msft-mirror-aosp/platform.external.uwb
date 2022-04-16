@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
 use log::{error, warn};
 
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
@@ -56,9 +58,13 @@ const DEFAULT_BLOCK_STRIDE_LENGTH: u8 = 0;
 const DEFAULT_RESULT_REPORT_CONFIG: ResultReportConfig =
     ResultReportConfig { tof: true, aoa_azimuth: false, aoa_elevation: false, aoa_fom: false };
 const DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT: u8 = 1;
+const DEFAULT_SUB_SESSION_ID: u32 = 0;
 const DEFAULT_BPRF_PHR_DATA_RATE: BprfPhrDataRate = BprfPhrDataRate::Rate850k;
 const DEFAULT_MAX_NUMBER_OF_MEASUREMENTS: u16 = 0;
 const DEFAULT_STS_LENGTH: StsLength = StsLength::Length64;
+const DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS: u8 = 0;
+const DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS: u8 = 0;
+const DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS: u8 = 0;
 
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
@@ -105,15 +111,15 @@ pub struct FiraAppConfigParams {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: Option<u32>,
+    sub_session_id: u32,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,
 
     // Android-specific app config.
-    number_of_range_measurements: Option<u8>,
-    number_of_aoa_azimuth_measurements: Option<u8>,
-    number_of_aoa_elevation_measurements: Option<u8>,
+    number_of_range_measurements: u8,
+    number_of_aoa_azimuth_measurements: u8,
+    number_of_aoa_elevation_measurements: u8,
 }
 
 impl FiraAppConfigParams {
@@ -157,8 +163,8 @@ impl FiraAppConfigParams {
             "session_priority should be between 1 to 100",
         )?;
         validate(
-            (1..=10000).contains(&self.uwb_initiation_time_ms),
-            "uwb_initiation_time_ms should be between 1 to 10000",
+            (0..=10000).contains(&self.uwb_initiation_time_ms),
+            "uwb_initiation_time_ms should be between 0 to 10000",
         )?;
         validate(
             (1..=10).contains(&self.in_band_termination_attempt_count),
@@ -238,17 +244,13 @@ impl FiraAppConfigParams {
         match self.aoa_result_request {
             AoaResultRequest::ReqAoaResultsInterleaved => {
                 validate(
-                    self.number_of_range_measurements.is_some()
-                        || self.number_of_aoa_azimuth_measurements.is_some()
-                        || self.number_of_aoa_elevation_measurements.is_some(),
+                    self.is_any_number_of_measurement_set(),
                     "At least one of the ratio params should be set for interleaving mode",
                 );
             }
             _ => {
                 validate(
-                    self.number_of_range_measurements.is_none()
-                        && self.number_of_aoa_azimuth_measurements.is_none()
-                        && self.number_of_aoa_elevation_measurements.is_none(),
+                    !self.is_any_number_of_measurement_set(),
                     "All of the ratio params should not be set for non-interleaving mode",
                 );
             }
@@ -257,10 +259,27 @@ impl FiraAppConfigParams {
         Some(())
     }
 
+    fn is_any_number_of_measurement_set(&self) -> bool {
+        self.number_of_range_measurements != DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS
+            || self.number_of_aoa_azimuth_measurements != DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS
+            || self.number_of_aoa_elevation_measurements
+                != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
+    }
+
+    /// Generate the TLV list from the params.
     pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
+        Self::config_map_to_tlvs(self.generate_config_map())
+    }
+
+    /// Generate the updated TLV list from the difference between this and the previous params.
+    pub fn generate_updated_tlvs(&self, prev_params: &Self) -> Vec<AppConfigTlv> {
+        Self::config_map_to_tlvs(self.generate_updated_config_map(prev_params))
+    }
+
+    fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
         debug_assert!(self.is_valid().is_some());
 
-        let mut configs = vec![
+        HashMap::from([
             (AppConfigTlvType::DeviceType, u8_to_bytes(self.device_type as u8)),
             (AppConfigTlvType::RangingRoundUsage, u8_to_bytes(self.ranging_round_usage as u8)),
             (AppConfigTlvType::StsConfig, u8_to_bytes(self.sts_config as u8)),
@@ -317,28 +336,46 @@ impl FiraAppConfigParams {
                 AppConfigTlvType::InBandTerminationAttemptCount,
                 u8_to_bytes(self.in_band_termination_attempt_count),
             ),
+            (AppConfigTlvType::SubSessionId, u32_to_bytes(self.sub_session_id)),
             (AppConfigTlvType::BprfPhrDataRate, u8_to_bytes(self.bprf_phr_data_rate as u8)),
             (
                 AppConfigTlvType::MaxNumberOfMeasurements,
                 u16_to_bytes(self.max_number_of_measurements),
             ),
             (AppConfigTlvType::StsLength, u8_to_bytes(self.sts_length as u8)),
-        ];
+            (
+                AppConfigTlvType::NbOfRangeMeasurements,
+                u8_to_bytes(self.number_of_range_measurements),
+            ),
+            (
+                AppConfigTlvType::NbOfAzimuthMeasurements,
+                u8_to_bytes(self.number_of_aoa_azimuth_measurements),
+            ),
+            (
+                AppConfigTlvType::NbOfElevationMeasurements,
+                u8_to_bytes(self.number_of_aoa_elevation_measurements),
+            ),
+        ])
+    }
 
-        if let Some(value) = self.sub_session_id.as_ref() {
-            configs.push((AppConfigTlvType::SubSessionId, u32_to_bytes(*value)));
-        }
-        if let Some(value) = self.number_of_range_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfRangeMeasurements, u8_to_bytes(*value)));
-        }
-        if let Some(value) = self.number_of_aoa_azimuth_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfAzimuthMeasurements, u8_to_bytes(*value)));
-        }
-        if let Some(value) = self.number_of_aoa_elevation_measurements.as_ref() {
-            configs.push((AppConfigTlvType::NbOfElevationMeasurements, u8_to_bytes(*value)));
-        }
+    fn generate_updated_config_map(
+        &self,
+        prev_params: &Self,
+    ) -> HashMap<AppConfigTlvType, Vec<u8>> {
+        let config_map = self.generate_config_map();
+        let prev_config_map = prev_params.generate_config_map();
 
-        configs.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
+        let mut updated_config_map = HashMap::new();
+        for (key, value) in config_map.into_iter() {
+            if !matches!(prev_config_map.get(&key), Some(prev_value) if prev_value == &value) {
+                updated_config_map.insert(key, value);
+            }
+        }
+        updated_config_map
+    }
+
+    fn config_map_to_tlvs(config_map: HashMap<AppConfigTlvType, Vec<u8>>) -> Vec<AppConfigTlv> {
+        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 }
 
@@ -383,13 +420,13 @@ pub struct FiraAppConfigParamsBuilder {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: Option<u32>,
+    sub_session_id: u32,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,
-    number_of_range_measurements: Option<u8>,
-    number_of_aoa_azimuth_measurements: Option<u8>,
-    number_of_aoa_elevation_measurements: Option<u8>,
+    number_of_range_measurements: u8,
+    number_of_aoa_azimuth_measurements: u8,
+    number_of_aoa_elevation_measurements: u8,
 }
 
 impl FiraAppConfigParamsBuilder {
@@ -436,13 +473,65 @@ impl FiraAppConfigParamsBuilder {
             block_stride_length: DEFAULT_BLOCK_STRIDE_LENGTH,
             result_report_config: DEFAULT_RESULT_REPORT_CONFIG,
             in_band_termination_attempt_count: DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT,
-            sub_session_id: None,
+            sub_session_id: DEFAULT_SUB_SESSION_ID,
             bprf_phr_data_rate: DEFAULT_BPRF_PHR_DATA_RATE,
             max_number_of_measurements: DEFAULT_MAX_NUMBER_OF_MEASUREMENTS,
             sts_length: DEFAULT_STS_LENGTH,
-            number_of_range_measurements: None,
-            number_of_aoa_azimuth_measurements: None,
-            number_of_aoa_elevation_measurements: None,
+            number_of_range_measurements: DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS,
+            number_of_aoa_azimuth_measurements: DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS,
+            number_of_aoa_elevation_measurements: DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS,
+        }
+    }
+
+    pub fn from_params(params: &FiraAppConfigParams) -> Self {
+        Self {
+            device_type: Some(params.device_type),
+            ranging_round_usage: params.ranging_round_usage,
+            sts_config: params.sts_config,
+            multi_node_mode: Some(params.multi_node_mode),
+            channel_number: params.channel_number,
+            device_mac_address: Some(params.device_mac_address.clone()),
+            dst_mac_address: params.dst_mac_address.clone(),
+            slot_duration_rstu: params.slot_duration_rstu,
+            ranging_interval_ms: params.ranging_interval_ms,
+            mac_fcs_type: params.mac_fcs_type,
+            ranging_round_control: params.ranging_round_control.clone(),
+            aoa_result_request: params.aoa_result_request,
+            range_data_ntf_config: params.range_data_ntf_config,
+            range_data_ntf_proximity_near_cm: params.range_data_ntf_proximity_near_cm,
+            range_data_ntf_proximity_far_cm: params.range_data_ntf_proximity_far_cm,
+            device_role: Some(params.device_role),
+            rframe_config: params.rframe_config,
+            preamble_code_index: params.preamble_code_index,
+            sfd_id: params.sfd_id,
+            psdu_data_rate: params.psdu_data_rate,
+            preamble_duration: params.preamble_duration,
+            ranging_time_struct: params.ranging_time_struct,
+            slots_per_rr: params.slots_per_rr,
+            tx_adaptive_payload_power: params.tx_adaptive_payload_power,
+            responder_slot_index: params.responder_slot_index,
+            prf_mode: params.prf_mode,
+            scheduled_mode: params.scheduled_mode,
+            key_rotation: params.key_rotation,
+            key_rotation_rate: params.key_rotation_rate,
+            session_priority: params.session_priority,
+            mac_address_mode: params.mac_address_mode,
+            vendor_id: Some(params.vendor_id),
+            static_sts_iv: Some(params.static_sts_iv),
+            number_of_sts_segments: params.number_of_sts_segments,
+            max_rr_retry: params.max_rr_retry,
+            uwb_initiation_time_ms: params.uwb_initiation_time_ms,
+            hopping_mode: params.hopping_mode,
+            block_stride_length: params.block_stride_length,
+            result_report_config: params.result_report_config.clone(),
+            in_band_termination_attempt_count: params.in_band_termination_attempt_count,
+            sub_session_id: params.sub_session_id,
+            bprf_phr_data_rate: params.bprf_phr_data_rate,
+            max_number_of_measurements: params.max_number_of_measurements,
+            sts_length: params.sts_length,
+            number_of_range_measurements: params.number_of_range_measurements,
+            number_of_aoa_azimuth_measurements: params.number_of_aoa_azimuth_measurements,
+            number_of_aoa_elevation_measurements: params.number_of_aoa_elevation_measurements,
         }
     }
 
@@ -542,13 +631,13 @@ impl FiraAppConfigParamsBuilder {
     builder_field!(block_stride_length, u8);
     builder_field!(result_report_config, ResultReportConfig);
     builder_field!(in_band_termination_attempt_count, u8);
-    builder_field!(sub_session_id, u32, Some);
+    builder_field!(sub_session_id, u32);
     builder_field!(bprf_phr_data_rate, BprfPhrDataRate);
     builder_field!(max_number_of_measurements, u16);
     builder_field!(sts_length, StsLength);
-    builder_field!(number_of_range_measurements, u8, Some);
-    builder_field!(number_of_aoa_azimuth_measurements, u8, Some);
-    builder_field!(number_of_aoa_elevation_measurements, u8, Some);
+    builder_field!(number_of_range_measurements, u8);
+    builder_field!(number_of_aoa_azimuth_measurements, u8);
+    builder_field!(number_of_aoa_elevation_measurements, u8);
 }
 
 #[repr(u8)]
@@ -820,9 +909,6 @@ fn validate(value: bool, err_msg: &str) -> Option<()> {
 mod tests {
     use super::*;
 
-    use std::iter::zip;
-
-    use crate::uci::params::app_config_tlv_eq;
     use crate::utils::init_test_logging;
 
     #[test]
@@ -876,7 +962,8 @@ mod tests {
         let number_of_aoa_azimuth_measurements = 2;
         let number_of_aoa_elevation_measurements = 3;
 
-        let params = FiraAppConfigParamsBuilder::new()
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
             .device_type(device_type)
             .ranging_round_usage(ranging_round_usage)
             .sts_config(sts_config)
@@ -919,12 +1006,12 @@ mod tests {
             .sts_length(sts_length)
             .number_of_range_measurements(number_of_range_measurements)
             .number_of_aoa_azimuth_measurements(number_of_aoa_azimuth_measurements)
-            .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements)
-            .build();
-        assert!(params.is_some());
+            .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements);
+        let params = builder.build().unwrap();
 
-        let tlvs = params.unwrap().generate_tlvs();
-        let expected_tlvs = [
+        // Verify the generated TLV.
+        let config_map = params.generate_config_map();
+        let expected_config_map = HashMap::from([
             (AppConfigTlvType::DeviceType, vec![device_type as u8]),
             (AppConfigTlvType::RangingRoundUsage, vec![ranging_round_usage as u8]),
             (AppConfigTlvType::StsConfig, vec![sts_config as u8]),
@@ -991,9 +1078,25 @@ mod tests {
                 AppConfigTlvType::NbOfElevationMeasurements,
                 vec![number_of_aoa_elevation_measurements],
             ),
-        ]
-        .map(|(cfg_id, v)| AppConfigTlv { cfg_id, v });
-        assert_eq!(tlvs.len(), expected_tlvs.len());
-        assert!(zip(tlvs, expected_tlvs).all(|(a, b)| app_config_tlv_eq(&a, &b)));
+        ]);
+        assert_eq!(config_map, expected_config_map);
+
+        // Update the value from the original builder.
+        let updated_key_rotation_rate = 10;
+        assert_ne!(key_rotation_rate, updated_key_rotation_rate);
+        let expected_updated_config_map =
+            HashMap::from([(AppConfigTlvType::KeyRotationRate, vec![updated_key_rotation_rate])]);
+
+        let updated_params1 = builder.key_rotation_rate(updated_key_rotation_rate).build().unwrap();
+        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        assert_eq!(updated_config_map1, expected_updated_config_map);
+
+        // Update the value from the params.
+        let updated_params2 = FiraAppConfigParamsBuilder::from_params(&params)
+            .key_rotation_rate(updated_key_rotation_rate)
+            .build()
+            .unwrap();
+        let updated_config_map2 = updated_params2.generate_updated_config_map(&params);
+        assert_eq!(updated_config_map2, expected_updated_config_map);
     }
 }
