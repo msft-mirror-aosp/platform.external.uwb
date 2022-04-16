@@ -259,11 +259,14 @@ impl FiraAppConfigParams {
         Some(())
     }
 
+    /// Generate the TLV list from the params.
     pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
-        self.generate_config_map()
-            .into_iter()
-            .map(|(cfg_id, v)| AppConfigTlv { cfg_id, v })
-            .collect()
+        Self::config_map_to_tlvs(self.generate_config_map())
+    }
+
+    /// Generate the updated TLV list from the difference between this and the previous params.
+    pub fn generate_updated_tlvs(&self, prev_params: &Self) -> Vec<AppConfigTlv> {
+        Self::config_map_to_tlvs(self.generate_updated_config_map(prev_params))
     }
 
     fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
@@ -348,6 +351,26 @@ impl FiraAppConfigParams {
         }
 
         config_map
+    }
+
+    fn generate_updated_config_map(
+        &self,
+        prev_params: &Self,
+    ) -> HashMap<AppConfigTlvType, Vec<u8>> {
+        let config_map = self.generate_config_map();
+        let prev_config_map = prev_params.generate_config_map();
+
+        let mut updated_config_map = HashMap::new();
+        for (key, value) in config_map.into_iter() {
+            if !matches!(prev_config_map.get(&key), Some(prev_value) if prev_value == &value) {
+                updated_config_map.insert(key, value);
+            }
+        }
+        updated_config_map
+    }
+
+    fn config_map_to_tlvs(config_map: HashMap<AppConfigTlvType, Vec<u8>>) -> Vec<AppConfigTlv> {
+        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 }
 
@@ -452,6 +475,58 @@ impl FiraAppConfigParamsBuilder {
             number_of_range_measurements: None,
             number_of_aoa_azimuth_measurements: None,
             number_of_aoa_elevation_measurements: None,
+        }
+    }
+
+    pub fn from_params(params: &FiraAppConfigParams) -> Self {
+        Self {
+            device_type: Some(params.device_type),
+            ranging_round_usage: params.ranging_round_usage,
+            sts_config: params.sts_config,
+            multi_node_mode: Some(params.multi_node_mode),
+            channel_number: params.channel_number,
+            device_mac_address: Some(params.device_mac_address.clone()),
+            dst_mac_address: params.dst_mac_address.clone(),
+            slot_duration_rstu: params.slot_duration_rstu,
+            ranging_interval_ms: params.ranging_interval_ms,
+            mac_fcs_type: params.mac_fcs_type,
+            ranging_round_control: params.ranging_round_control.clone(),
+            aoa_result_request: params.aoa_result_request,
+            range_data_ntf_config: params.range_data_ntf_config,
+            range_data_ntf_proximity_near_cm: params.range_data_ntf_proximity_near_cm,
+            range_data_ntf_proximity_far_cm: params.range_data_ntf_proximity_far_cm,
+            device_role: Some(params.device_role),
+            rframe_config: params.rframe_config,
+            preamble_code_index: params.preamble_code_index,
+            sfd_id: params.sfd_id,
+            psdu_data_rate: params.psdu_data_rate,
+            preamble_duration: params.preamble_duration,
+            ranging_time_struct: params.ranging_time_struct,
+            slots_per_rr: params.slots_per_rr,
+            tx_adaptive_payload_power: params.tx_adaptive_payload_power,
+            responder_slot_index: params.responder_slot_index,
+            prf_mode: params.prf_mode,
+            scheduled_mode: params.scheduled_mode,
+            key_rotation: params.key_rotation,
+            key_rotation_rate: params.key_rotation_rate,
+            session_priority: params.session_priority,
+            mac_address_mode: params.mac_address_mode,
+            vendor_id: Some(params.vendor_id),
+            static_sts_iv: Some(params.static_sts_iv),
+            number_of_sts_segments: params.number_of_sts_segments,
+            max_rr_retry: params.max_rr_retry,
+            uwb_initiation_time_ms: params.uwb_initiation_time_ms,
+            hopping_mode: params.hopping_mode,
+            block_stride_length: params.block_stride_length,
+            result_report_config: params.result_report_config.clone(),
+            in_band_termination_attempt_count: params.in_band_termination_attempt_count,
+            sub_session_id: params.sub_session_id,
+            bprf_phr_data_rate: params.bprf_phr_data_rate,
+            max_number_of_measurements: params.max_number_of_measurements,
+            sts_length: params.sts_length,
+            number_of_range_measurements: params.number_of_range_measurements,
+            number_of_aoa_azimuth_measurements: params.number_of_aoa_azimuth_measurements,
+            number_of_aoa_elevation_measurements: params.number_of_aoa_elevation_measurements,
         }
     }
 
@@ -882,7 +957,8 @@ mod tests {
         let number_of_aoa_azimuth_measurements = 2;
         let number_of_aoa_elevation_measurements = 3;
 
-        let params = FiraAppConfigParamsBuilder::new()
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
             .device_type(device_type)
             .ranging_round_usage(ranging_round_usage)
             .sts_config(sts_config)
@@ -925,10 +1001,10 @@ mod tests {
             .sts_length(sts_length)
             .number_of_range_measurements(number_of_range_measurements)
             .number_of_aoa_azimuth_measurements(number_of_aoa_azimuth_measurements)
-            .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements)
-            .build()
-            .unwrap();
+            .number_of_aoa_elevation_measurements(number_of_aoa_elevation_measurements);
+        let params = builder.build().unwrap();
 
+        // Verify the generated TLV.
         let config_map = params.generate_config_map();
         let expected_config_map = HashMap::from([
             (AppConfigTlvType::DeviceType, vec![device_type as u8]),
@@ -999,5 +1075,23 @@ mod tests {
             ),
         ]);
         assert_eq!(config_map, expected_config_map);
+
+        // Update the value from the original builder.
+        let updated_key_rotation_rate = 10;
+        assert_ne!(key_rotation_rate, updated_key_rotation_rate);
+        let expected_updated_config_map =
+            HashMap::from([(AppConfigTlvType::KeyRotationRate, vec![updated_key_rotation_rate])]);
+
+        let updated_params1 = builder.key_rotation_rate(updated_key_rotation_rate).build().unwrap();
+        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        assert_eq!(updated_config_map1, expected_updated_config_map);
+
+        // Update the value from the params.
+        let updated_params2 = FiraAppConfigParamsBuilder::from_params(&params)
+            .key_rotation_rate(updated_key_rotation_rate)
+            .build()
+            .unwrap();
+        let updated_config_map2 = updated_params2.generate_updated_config_map(&params);
+        assert_eq!(updated_config_map2, expected_updated_config_map);
     }
 }
