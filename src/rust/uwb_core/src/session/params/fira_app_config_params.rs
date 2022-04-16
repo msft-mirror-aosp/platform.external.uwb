@@ -58,9 +58,13 @@ const DEFAULT_BLOCK_STRIDE_LENGTH: u8 = 0;
 const DEFAULT_RESULT_REPORT_CONFIG: ResultReportConfig =
     ResultReportConfig { tof: true, aoa_azimuth: false, aoa_elevation: false, aoa_fom: false };
 const DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT: u8 = 1;
+const DEFAULT_SUB_SESSION_ID: u32 = 0;
 const DEFAULT_BPRF_PHR_DATA_RATE: BprfPhrDataRate = BprfPhrDataRate::Rate850k;
 const DEFAULT_MAX_NUMBER_OF_MEASUREMENTS: u16 = 0;
 const DEFAULT_STS_LENGTH: StsLength = StsLength::Length64;
+const DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS: u8 = 0;
+const DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS: u8 = 0;
+const DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS: u8 = 0;
 
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
@@ -107,15 +111,15 @@ pub struct FiraAppConfigParams {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: Option<u32>,
+    sub_session_id: u32,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,
 
     // Android-specific app config.
-    number_of_range_measurements: Option<u8>,
-    number_of_aoa_azimuth_measurements: Option<u8>,
-    number_of_aoa_elevation_measurements: Option<u8>,
+    number_of_range_measurements: u8,
+    number_of_aoa_azimuth_measurements: u8,
+    number_of_aoa_elevation_measurements: u8,
 }
 
 impl FiraAppConfigParams {
@@ -240,23 +244,26 @@ impl FiraAppConfigParams {
         match self.aoa_result_request {
             AoaResultRequest::ReqAoaResultsInterleaved => {
                 validate(
-                    self.number_of_range_measurements.is_some()
-                        || self.number_of_aoa_azimuth_measurements.is_some()
-                        || self.number_of_aoa_elevation_measurements.is_some(),
+                    self.is_any_number_of_measurement_set(),
                     "At least one of the ratio params should be set for interleaving mode",
                 );
             }
             _ => {
                 validate(
-                    self.number_of_range_measurements.is_none()
-                        && self.number_of_aoa_azimuth_measurements.is_none()
-                        && self.number_of_aoa_elevation_measurements.is_none(),
+                    !self.is_any_number_of_measurement_set(),
                     "All of the ratio params should not be set for non-interleaving mode",
                 );
             }
         }
 
         Some(())
+    }
+
+    fn is_any_number_of_measurement_set(&self) -> bool {
+        self.number_of_range_measurements != DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS
+            || self.number_of_aoa_azimuth_measurements != DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS
+            || self.number_of_aoa_elevation_measurements
+                != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
     }
 
     /// Generate the TLV list from the params.
@@ -272,7 +279,7 @@ impl FiraAppConfigParams {
     fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
         debug_assert!(self.is_valid().is_some());
 
-        let mut config_map = HashMap::from([
+        HashMap::from([
             (AppConfigTlvType::DeviceType, u8_to_bytes(self.device_type as u8)),
             (AppConfigTlvType::RangingRoundUsage, u8_to_bytes(self.ranging_round_usage as u8)),
             (AppConfigTlvType::StsConfig, u8_to_bytes(self.sts_config as u8)),
@@ -329,28 +336,26 @@ impl FiraAppConfigParams {
                 AppConfigTlvType::InBandTerminationAttemptCount,
                 u8_to_bytes(self.in_band_termination_attempt_count),
             ),
+            (AppConfigTlvType::SubSessionId, u32_to_bytes(self.sub_session_id)),
             (AppConfigTlvType::BprfPhrDataRate, u8_to_bytes(self.bprf_phr_data_rate as u8)),
             (
                 AppConfigTlvType::MaxNumberOfMeasurements,
                 u16_to_bytes(self.max_number_of_measurements),
             ),
             (AppConfigTlvType::StsLength, u8_to_bytes(self.sts_length as u8)),
-        ]);
-
-        if let Some(value) = self.sub_session_id.as_ref() {
-            config_map.insert(AppConfigTlvType::SubSessionId, u32_to_bytes(*value));
-        }
-        if let Some(value) = self.number_of_range_measurements.as_ref() {
-            config_map.insert(AppConfigTlvType::NbOfRangeMeasurements, u8_to_bytes(*value));
-        }
-        if let Some(value) = self.number_of_aoa_azimuth_measurements.as_ref() {
-            config_map.insert(AppConfigTlvType::NbOfAzimuthMeasurements, u8_to_bytes(*value));
-        }
-        if let Some(value) = self.number_of_aoa_elevation_measurements.as_ref() {
-            config_map.insert(AppConfigTlvType::NbOfElevationMeasurements, u8_to_bytes(*value));
-        }
-
-        config_map
+            (
+                AppConfigTlvType::NbOfRangeMeasurements,
+                u8_to_bytes(self.number_of_range_measurements),
+            ),
+            (
+                AppConfigTlvType::NbOfAzimuthMeasurements,
+                u8_to_bytes(self.number_of_aoa_azimuth_measurements),
+            ),
+            (
+                AppConfigTlvType::NbOfElevationMeasurements,
+                u8_to_bytes(self.number_of_aoa_elevation_measurements),
+            ),
+        ])
     }
 
     fn generate_updated_config_map(
@@ -415,13 +420,13 @@ pub struct FiraAppConfigParamsBuilder {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: Option<u32>,
+    sub_session_id: u32,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,
-    number_of_range_measurements: Option<u8>,
-    number_of_aoa_azimuth_measurements: Option<u8>,
-    number_of_aoa_elevation_measurements: Option<u8>,
+    number_of_range_measurements: u8,
+    number_of_aoa_azimuth_measurements: u8,
+    number_of_aoa_elevation_measurements: u8,
 }
 
 impl FiraAppConfigParamsBuilder {
@@ -468,13 +473,13 @@ impl FiraAppConfigParamsBuilder {
             block_stride_length: DEFAULT_BLOCK_STRIDE_LENGTH,
             result_report_config: DEFAULT_RESULT_REPORT_CONFIG,
             in_band_termination_attempt_count: DEFAULT_IN_BAND_TERMINATION_ATTEMPT_COUNT,
-            sub_session_id: None,
+            sub_session_id: DEFAULT_SUB_SESSION_ID,
             bprf_phr_data_rate: DEFAULT_BPRF_PHR_DATA_RATE,
             max_number_of_measurements: DEFAULT_MAX_NUMBER_OF_MEASUREMENTS,
             sts_length: DEFAULT_STS_LENGTH,
-            number_of_range_measurements: None,
-            number_of_aoa_azimuth_measurements: None,
-            number_of_aoa_elevation_measurements: None,
+            number_of_range_measurements: DEFAULT_NUMBER_OF_RANGE_MEASUREMENTS,
+            number_of_aoa_azimuth_measurements: DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS,
+            number_of_aoa_elevation_measurements: DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS,
         }
     }
 
@@ -626,13 +631,13 @@ impl FiraAppConfigParamsBuilder {
     builder_field!(block_stride_length, u8);
     builder_field!(result_report_config, ResultReportConfig);
     builder_field!(in_band_termination_attempt_count, u8);
-    builder_field!(sub_session_id, u32, Some);
+    builder_field!(sub_session_id, u32);
     builder_field!(bprf_phr_data_rate, BprfPhrDataRate);
     builder_field!(max_number_of_measurements, u16);
     builder_field!(sts_length, StsLength);
-    builder_field!(number_of_range_measurements, u8, Some);
-    builder_field!(number_of_aoa_azimuth_measurements, u8, Some);
-    builder_field!(number_of_aoa_elevation_measurements, u8, Some);
+    builder_field!(number_of_range_measurements, u8);
+    builder_field!(number_of_aoa_azimuth_measurements, u8);
+    builder_field!(number_of_aoa_elevation_measurements, u8);
 }
 
 #[repr(u8)]
