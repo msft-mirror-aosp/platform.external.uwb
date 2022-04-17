@@ -24,7 +24,7 @@ use tokio::time::timeout;
 use crate::uci::error::{Error, Result};
 use crate::uci::notification::UciNotification;
 use crate::uci::params::{
-    app_config_tlv_eq, device_config_tlv_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
+    app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
     SetAppConfigResponse, UpdateMulticastListAction,
@@ -325,8 +325,7 @@ impl UciManager for MockUciManager {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::CoreSetConfig { expected_config_tlvs, out })
-                if zip(&expected_config_tlvs, &config_tlvs)
-                    .all(|(a, b)| device_config_tlv_eq(a, b)) =>
+                if device_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
             {
                 self.expect_call_consumed.notify_one();
                 out
@@ -409,8 +408,7 @@ impl UciManager for MockUciManager {
                 expected_config_tlvs,
                 out,
             }) if expected_session_id == session_id
-                && zip(&expected_config_tlvs, &config_tlvs)
-                    .all(|(a, b)| app_config_tlv_eq(a, b)) =>
+                && app_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
             {
                 self.expect_call_consumed.notify_one();
                 out
