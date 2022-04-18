@@ -30,6 +30,8 @@ pub enum Error {
     InvalidArguments,
     #[error("Wrong SessionState: {0}")]
     WrongState(SessionState),
+    #[error("Notification is not received in timeout")]
+    Timeout,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
