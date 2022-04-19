@@ -26,8 +26,9 @@ use crate::uci::error::StatusCode;
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
     ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
-    ExtendedAddressTwoWayRangingMeasurement, PowerStats, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressTwoWayRangingMeasurement, UpdateMulticastListAction,
+    ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats, ReasonCode,
+    ResetConfig, SessionState, SessionType, ShortAddressTwoWayRangingMeasurement,
+    UpdateMulticastListAction,
 };
 
 pub type SessionId = u32;
