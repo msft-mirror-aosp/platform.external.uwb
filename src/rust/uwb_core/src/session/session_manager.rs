@@ -14,12 +14,14 @@
 
 use std::collections::BTreeMap;
 
-use log::{debug, error};
+use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::session::error::{Error, Result};
+use crate::session::params::AppConfigParams;
+use crate::session::uwb_session::UwbSession;
 use crate::uci::notification::UciNotification;
-use crate::uci::params::{SessionId, SessionType};
+use crate::uci::params::{SessionId, SessionState, SessionType};
 use crate::uci::uci_manager::UciManager;
 
 const MAX_SESSION_COUNT: usize = 5;
@@ -48,8 +50,14 @@ impl SessionManager {
         &mut self,
         session_id: SessionId,
         session_type: SessionType,
+        params: AppConfigParams,
     ) -> Result<()> {
-        self.send_cmd(SessionCommand::InitSession { session_id, session_type }).await
+        let result =
+            self.send_cmd(SessionCommand::InitSession { session_id, session_type, params }).await;
+        if result.is_err() && result != Err(Error::DuplicatedSessionId(session_id)) {
+            let _ = self.deinit_session(session_id).await;
+        }
+        result
     }
 
     async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
@@ -98,59 +106,86 @@ impl<T: UciManager> SessionManagerActor<T> {
                             break;
                         },
                         Some((cmd, result_sender)) => {
-                            let result = self.handle_cmd(cmd).await;
-                            let _ = result_sender.send(result);
+                            self.handle_cmd(cmd, result_sender);
                         }
                     }
                 }
 
                 Some(uci_notf) = self.uci_notf_receiver.recv() => {
-                    self.handle_uci_notification(uci_notf).await;
+                    self.handle_uci_notification(uci_notf);
                 }
             }
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: SessionCommand) -> Result<()> {
+    fn handle_cmd(&mut self, cmd: SessionCommand, result_sender: oneshot::Sender<Result<()>>) {
         match cmd {
-            SessionCommand::InitSession { session_id, session_type } => {
-                if self.active_sessions.len() == MAX_SESSION_COUNT {
-                    return Err(Error::MaxSessionsExceeded);
-                }
+            SessionCommand::InitSession { session_id, session_type, params } => {
                 if self.active_sessions.contains_key(&session_id) {
-                    return Err(Error::DuplicatedSessionId(session_id));
+                    let _ = result_sender.send(Err(Error::DuplicatedSessionId(session_id)));
+                    return;
                 }
-                if let Err(e) = self.uci_manager.session_init(session_id, session_type).await {
-                    error!("Failed to init session: {:?}", e);
-                    return Err(Error::Uci);
+                if self.active_sessions.len() == MAX_SESSION_COUNT {
+                    let _ = result_sender.send(Err(Error::MaxSessionsExceeded));
+                    return;
                 }
 
-                self.active_sessions.insert(session_id, UwbSession {});
+                if !params.is_type_matched(session_type) {
+                    error!("session_type {:?} doesn't match with the params", session_type);
+                    let _ = result_sender.send(Err(Error::InvalidArguments));
+                    return;
+                }
+
+                let mut session =
+                    UwbSession::new(self.uci_manager.clone(), session_id, session_type);
+                session.initialize(params, result_sender);
+
+                // We store the session first. If the initialize() fails, then SessionManager will
+                // call deinit_session() to remove it.
+                self.active_sessions.insert(session_id, session);
             }
-
             SessionCommand::DeinitSession { session_id } => {
-                if self.active_sessions.remove(&session_id).is_none() {
-                    return Err(Error::UnknownSessionId(session_id));
-                }
-
-                if let Err(e) = self.uci_manager.session_deinit(session_id).await {
-                    error!("Failed to deinit session: {:?}", e);
-                    return Err(Error::Uci);
+                match self.active_sessions.remove(&session_id) {
+                    None => {
+                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                    }
+                    Some(mut session) => {
+                        session.deinitialize(result_sender);
+                    }
                 }
             }
         }
-        Ok(())
     }
 
-    async fn handle_uci_notification(&mut self, _notf: UciNotification) {}
-}
+    fn handle_uci_notification(&mut self, notf: UciNotification) {
+        // TODO(akahuang): Remove this after handling multiple kind of notifications.
+        #[allow(clippy::single_match)]
+        match notf {
+            UciNotification::SessionStatus { session_id, session_state, reason_code } => {
+                if session_state == SessionState::SessionStateDeinit {
+                    debug!("Session {:?} is deinitialized", session_id);
+                    let _ = self.active_sessions.remove(&session_id);
+                    return;
+                }
 
-// TODO(akahuang): store the necessary session parameters here.
-struct UwbSession {}
+                match self.active_sessions.get_mut(&session_id) {
+                    Some(session) => session.set_state(session_state),
+                    None => {
+                        warn!(
+                            "Received notification of the unknown Session {:?}: {:?}, {:?}",
+                            session_id, session_state, reason_code
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
 
 #[derive(Debug)]
 enum SessionCommand {
-    InitSession { session_id: SessionId, session_type: SessionType },
+    InitSession { session_id: SessionId, session_type: SessionType, params: AppConfigParams },
     DeinitSession { session_id: SessionId },
 }
 
@@ -158,12 +193,32 @@ enum SessionCommand {
 mod tests {
     use super::*;
 
+    use crate::session::params::fira_app_config_params::*;
+    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::params::{ReasonCode, SetAppConfigResponse};
+    use crate::utils::init_test_logging;
+
+    fn generate_params() -> AppConfigParams {
+        AppConfigParams::Fira(
+            FiraAppConfigParamsBuilder::new()
+                .device_type(DeviceType::Controller)
+                .multi_node_mode(MultiNodeMode::Unicast)
+                .device_mac_address(UwbAddress::Short([1, 2]))
+                .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+                .device_role(DeviceRole::Initiator)
+                .vendor_id([0xFE, 0xDC])
+                .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56])
+                .build()
+                .unwrap(),
+        )
+    }
 
     async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)
     where
         F: FnOnce(&mut MockUciManager),
     {
+        init_test_logging();
         let (notf_sender, notf_receiver) = mpsc::unbounded_channel();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
@@ -173,47 +228,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_init_session() {
+    async fn test_init_deinit_session() {
         let session_id = 0x123;
         let session_type = SessionType::FiraRangingSession;
+        let params = generate_params();
 
+        let tlvs = params.generate_tlvs();
         let session_id_clone = session_id;
         let session_type_clone = session_type;
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
-            })
-            .await;
-
-        let result = session_manager.init_session(session_id, session_type).await;
-        assert_eq!(result, Ok(()));
-        let result = session_manager.init_session(session_id, session_type).await;
-        assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
-        assert!(mock_uci_manager.wait_expected_calls_done().await);
-    }
-
-    #[tokio::test]
-    async fn test_deinit_session() {
-        let session_id = 0x123;
-        let session_type = SessionType::FiraRangingSession;
-
-        let session_id_clone = session_id;
-        let session_type_clone = session_type;
-        let (mut session_manager, mut mock_uci_manager) =
-            setup_session_manager(move |uci_manager| {
-                uci_manager.expect_session_init(session_id_clone, session_type_clone, Ok(()));
+                let init_notfs = vec![UciNotification::SessionStatus {
+                    session_id,
+                    session_state: SessionState::SessionStateInit,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                }];
+                let set_app_config_notfs = vec![UciNotification::SessionStatus {
+                    session_id,
+                    session_state: SessionState::SessionStateIdle,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                }];
+                uci_manager.expect_session_init(
+                    session_id_clone,
+                    session_type_clone,
+                    init_notfs,
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id_clone,
+                    tlvs,
+                    set_app_config_notfs,
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
                 uci_manager.expect_session_deinit(session_id_clone, Ok(()));
             })
             .await;
 
+        // Deinit a session before initialized should fail.
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
-        let result = session_manager.init_session(session_id, session_type).await;
+
+        // Initialize a normal session should be successful.
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
         assert_eq!(result, Ok(()));
+
+        // Initialize a session multiple times without deinitialize should fail.
+        let result = session_manager.init_session(session_id, session_type, params).await;
+        assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
+
+        // Deinitialize the session should be successful.
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Ok(()));
+
+        // Deinit a session after deinitialized should fail.
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
 }

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::uci::params::SessionId;
+use crate::uci::params::{SessionId, SessionState};
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
@@ -26,6 +26,10 @@ pub enum Error {
     DuplicatedSessionId(SessionId),
     #[error("Unknown SessionId: {0}")]
     UnknownSessionId(SessionId),
+    #[error("Invalid arguments")]
+    InvalidArguments,
+    #[error("Wrong SessionState: {0}")]
+    WrongState(SessionState),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
