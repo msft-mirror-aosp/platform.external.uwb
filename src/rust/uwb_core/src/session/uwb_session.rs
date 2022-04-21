@@ -64,6 +64,14 @@ impl UwbSession {
         let _ = self.cmd_sender.send((Command::Deinitialize, result_sender));
     }
 
+    pub fn start_ranging(&mut self, result_sender: oneshot::Sender<Result<()>>) {
+        let _ = self.cmd_sender.send((Command::StartRanging, result_sender));
+    }
+
+    pub fn stop_ranging(&mut self, result_sender: oneshot::Sender<Result<()>>) {
+        let _ = self.cmd_sender.send((Command::StopRanging, result_sender));
+    }
+
     pub fn set_state(&mut self, state: SessionState) {
         let _ = self.state_sender.send(state);
     }
@@ -101,6 +109,8 @@ impl<T: UciManager> UwbSessionActor<T> {
                             let result = match cmd {
                                 Command::Initialize { params } => self.initialize(params).await,
                                 Command::Deinitialize => self.deinitialize().await,
+                                Command::StartRanging => self.start_ranging().await,
+                                Command::StopRanging => self.stop_ranging().await,
                             };
                             let _ = result_sender.send(result);
                         }
@@ -149,6 +159,52 @@ impl<T: UciManager> UwbSessionActor<T> {
         Ok(())
     }
 
+    async fn start_ranging(&mut self) -> Result<()> {
+        let state = *self.state_receiver.borrow();
+        match state {
+            SessionState::SessionStateActive => {
+                warn!("Session {} is already running", self.session_id);
+                Ok(())
+            }
+            SessionState::SessionStateIdle => {
+                if let Err(e) = self.uci_manager.range_start(self.session_id).await {
+                    error!("Failed to start ranging: {:?}", e);
+                    return Err(Error::Uci);
+                }
+                self.wait_state(SessionState::SessionStateActive).await?;
+
+                Ok(())
+            }
+            _ => {
+                error!("Session {} cannot start running at {:?}", self.session_id, state);
+                Err(Error::WrongState(state))
+            }
+        }
+    }
+
+    async fn stop_ranging(&mut self) -> Result<()> {
+        let state = *self.state_receiver.borrow();
+        match state {
+            SessionState::SessionStateIdle => {
+                warn!("Session {} is already stopped", self.session_id);
+                Ok(())
+            }
+            SessionState::SessionStateActive => {
+                if let Err(e) = self.uci_manager.range_stop(self.session_id).await {
+                    error!("Failed to start ranging: {:?}", e);
+                    return Err(Error::Uci);
+                }
+                self.wait_state(SessionState::SessionStateIdle).await?;
+
+                Ok(())
+            }
+            _ => {
+                error!("Session {} cannot stop running at {:?}", self.session_id, state);
+                Err(Error::WrongState(state))
+            }
+        }
+    }
+
     async fn wait_state(&mut self, expected_state: SessionState) -> Result<()> {
         const WAIT_STATE_TIMEOUT_MS: u64 = 1000;
         match timeout(Duration::from_millis(WAIT_STATE_TIMEOUT_MS), self.state_receiver.changed())
@@ -182,4 +238,6 @@ impl<T: UciManager> UwbSessionActor<T> {
 enum Command {
     Initialize { params: AppConfigParams },
     Deinitialize,
+    StartRanging,
+    StopRanging,
 }
