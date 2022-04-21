@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
 use crate::uci::error::{Error, Result};
-use crate::uci::notification::UciNotification;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::params::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
@@ -31,16 +31,24 @@ use crate::uci::params::{
 };
 use crate::uci::uci_manager::UciManager;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct MockUciManager {
     expected_calls: Arc<Mutex<VecDeque<ExpectedCall>>>,
-    notf_sender: Option<mpsc::UnboundedSender<UciNotification>>,
     expect_call_consumed: Arc<Notify>,
+    core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
 }
 
 impl MockUciManager {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            expected_calls: Default::default(),
+            expect_call_consumed: Default::default(),
+            core_notf_sender: mpsc::unbounded_channel().0,
+            session_notf_sender: mpsc::unbounded_channel().0,
+            vendor_notf_sender: mpsc::unbounded_channel().0,
+        }
     }
 
     pub async fn wait_expected_calls_done(&mut self) -> bool {
@@ -248,22 +256,51 @@ impl MockUciManager {
             out,
         });
     }
+
+    fn send_notifications(&self, notfs: Vec<UciNotification>) {
+        for notf in notfs.into_iter() {
+            match notf {
+                UciNotification::Core(notf) => {
+                    let _ = self.core_notf_sender.send(notf);
+                }
+                UciNotification::Session(notf) => {
+                    let _ = self.session_notf_sender.send(notf);
+                }
+                UciNotification::Vendor(notf) => {
+                    let _ = self.vendor_notf_sender.send(notf);
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
 impl UciManager for MockUciManager {
-    async fn open_hal(
+    async fn set_core_notification_sender(
         &mut self,
-        notf_sender: mpsc::UnboundedSender<UciNotification>,
-    ) -> Result<()> {
+        core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    ) {
+        self.core_notf_sender = core_notf_sender;
+    }
+    async fn set_session_notification_sender(
+        &mut self,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    ) {
+        self.session_notf_sender = session_notf_sender;
+    }
+    async fn set_vendor_notification_sender(
+        &mut self,
+        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    ) {
+        self.vendor_notf_sender = vendor_notf_sender;
+    }
+
+    async fn open_hal(&mut self) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::OpenHal { notfs, out }) => {
                 self.expect_call_consumed.notify_one();
-                self.notf_sender = Some(notf_sender);
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -390,9 +427,7 @@ impl UciManager for MockUciManager {
                 out,
             }) if expected_session_id == session_id && expected_session_type == session_type => {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -436,9 +471,7 @@ impl UciManager for MockUciManager {
                 && app_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -525,9 +558,7 @@ impl UciManager for MockUciManager {
                 }) =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -545,9 +576,7 @@ impl UciManager for MockUciManager {
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -565,9 +594,7 @@ impl UciManager for MockUciManager {
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
