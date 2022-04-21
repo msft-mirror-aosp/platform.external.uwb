@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Duration;
+
 use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot, watch};
+use tokio::time::timeout;
 
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
@@ -147,10 +150,22 @@ impl<T: UciManager> UwbSessionActor<T> {
     }
 
     async fn wait_state(&mut self, expected_state: SessionState) -> Result<()> {
-        if self.state_receiver.changed().await.is_err() {
-            debug!("UwbSession is about to drop.");
-            return Err(Error::TokioFailure);
+        const WAIT_STATE_TIMEOUT_MS: u64 = 1000;
+        match timeout(Duration::from_millis(WAIT_STATE_TIMEOUT_MS), self.state_receiver.changed())
+            .await
+        {
+            Ok(result) => {
+                if result.is_err() {
+                    debug!("UwbSession is about to drop.");
+                    return Err(Error::TokioFailure);
+                }
+            }
+            Err(_) => {
+                error!("Timeout waiting for the session status notification");
+                return Err(Error::Timeout);
+            }
         }
+
         let state = *self.state_receiver.borrow();
         if state != expected_state {
             error!(
