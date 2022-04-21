@@ -72,6 +72,14 @@ impl UwbSession {
         let _ = self.cmd_sender.send((Command::StopRanging, result_sender));
     }
 
+    pub fn reconfigure(
+        &mut self,
+        params: AppConfigParams,
+        result_sender: oneshot::Sender<Result<()>>,
+    ) {
+        let _ = self.cmd_sender.send((Command::Reconfigure { params }, result_sender));
+    }
+
     pub fn set_state(&mut self, state: SessionState) {
         let _ = self.state_sender.send(state);
     }
@@ -83,6 +91,7 @@ struct UwbSessionActor<T: UciManager> {
     uci_manager: T,
     session_id: SessionId,
     session_type: SessionType,
+    params: Option<AppConfigParams>,
 }
 
 impl<T: UciManager> UwbSessionActor<T> {
@@ -93,7 +102,7 @@ impl<T: UciManager> UwbSessionActor<T> {
         session_id: SessionId,
         session_type: SessionType,
     ) -> Self {
-        Self { cmd_receiver, state_receiver, uci_manager, session_id, session_type }
+        Self { cmd_receiver, state_receiver, uci_manager, session_id, session_type, params: None }
     }
 
     async fn run(&mut self) {
@@ -111,6 +120,7 @@ impl<T: UciManager> UwbSessionActor<T> {
                                 Command::Deinitialize => self.deinitialize().await,
                                 Command::StartRanging => self.start_ranging().await,
                                 Command::StopRanging => self.stop_ranging().await,
+                                Command::Reconfigure { params } => self.reconfigure(params).await,
                             };
                             let _ = result_sender.send(result);
                         }
@@ -121,31 +131,15 @@ impl<T: UciManager> UwbSessionActor<T> {
     }
 
     async fn initialize(&mut self, params: AppConfigParams) -> Result<()> {
+        debug_assert!(*self.state_receiver.borrow() == SessionState::SessionStateDeinit);
+
         if let Err(e) = self.uci_manager.session_init(self.session_id, self.session_type).await {
             error!("Failed to initialize session: {:?}", e);
             return Err(Error::Uci);
         }
         self.wait_state(SessionState::SessionStateInit).await?;
 
-        let tlvs = params.generate_tlvs();
-        match self.uci_manager.session_set_app_config(self.session_id, tlvs).await {
-            Ok(result) => {
-                for config_status in result.config_status.iter() {
-                    warn!(
-                        "AppConfig {:?} is not applied: {:?}",
-                        config_status.cfg_id, config_status.status
-                    );
-                }
-                if result.status != StatusCode::UciStatusOk {
-                    error!("Failed to set app_config. StatusCode: {:?}", result.status);
-                    return Err(Error::Uci);
-                }
-            }
-            Err(e) => {
-                error!("Failed to set app_config: {:?}", e);
-                return Err(Error::Uci);
-            }
-        }
+        self.reconfigure(params).await?;
         self.wait_state(SessionState::SessionStateIdle).await?;
 
         Ok(())
@@ -205,6 +199,37 @@ impl<T: UciManager> UwbSessionActor<T> {
         }
     }
 
+    async fn reconfigure(&mut self, params: AppConfigParams) -> Result<()> {
+        debug_assert!(*self.state_receiver.borrow() != SessionState::SessionStateDeinit);
+
+        let tlvs = match self.params.as_ref() {
+            Some(prev_params) => params.generate_updated_tlvs(prev_params),
+            None => params.generate_tlvs(),
+        };
+
+        match self.uci_manager.session_set_app_config(self.session_id, tlvs).await {
+            Ok(result) => {
+                for config_status in result.config_status.iter() {
+                    warn!(
+                        "AppConfig {:?} is not applied: {:?}",
+                        config_status.cfg_id, config_status.status
+                    );
+                }
+                if result.status != StatusCode::UciStatusOk {
+                    error!("Failed to set app_config. StatusCode: {:?}", result.status);
+                    return Err(Error::Uci);
+                }
+            }
+            Err(e) => {
+                error!("Failed to set app_config: {:?}", e);
+                return Err(Error::Uci);
+            }
+        }
+
+        self.params = Some(params);
+        Ok(())
+    }
+
     async fn wait_state(&mut self, expected_state: SessionState) -> Result<()> {
         const WAIT_STATE_TIMEOUT_MS: u64 = 1000;
         match timeout(Duration::from_millis(WAIT_STATE_TIMEOUT_MS), self.state_receiver.changed())
@@ -240,4 +265,5 @@ enum Command {
     Deinitialize,
     StartRanging,
     StopRanging,
+    Reconfigure { params: AppConfigParams },
 }
