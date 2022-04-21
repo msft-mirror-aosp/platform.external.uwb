@@ -180,18 +180,30 @@ impl MockUciManager {
         );
     }
 
-    pub fn expect_range_start(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::RangeStart { expected_session_id, out });
+    pub fn expect_range_start(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RangeStart {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
-    pub fn expect_range_stop(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::RangeStop { expected_session_id, out });
+    pub fn expect_range_stop(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RangeStop {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
     pub fn expect_range_get_ranging_count(
@@ -523,10 +535,13 @@ impl UciManager for MockUciManager {
     async fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RangeStart { expected_session_id, out })
+            Some(ExpectedCall::RangeStart { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -540,10 +555,13 @@ impl UciManager for MockUciManager {
     async fn range_stop(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RangeStop { expected_session_id, out })
+            Some(ExpectedCall::RangeStop { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -692,10 +710,12 @@ enum ExpectedCall {
     },
     RangeStart {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     RangeStop {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     RangeGetRangingCount {

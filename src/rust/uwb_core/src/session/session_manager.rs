@@ -64,6 +64,14 @@ impl SessionManager {
         self.send_cmd(SessionCommand::DeinitSession { session_id }).await
     }
 
+    async fn start_ranging(&mut self, session_id: SessionId) -> Result<()> {
+        self.send_cmd(SessionCommand::StartRanging { session_id }).await
+    }
+
+    async fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
+        self.send_cmd(SessionCommand::StopRanging { session_id }).await
+    }
+
     // Send the |cmd| to the SessionManagerActor.
     async fn send_cmd(&self, cmd: SessionCommand) -> Result<()> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -154,6 +162,27 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
+
+            SessionCommand::StartRanging { session_id } => {
+                match self.active_sessions.get_mut(&session_id) {
+                    None => {
+                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                    }
+                    Some(session) => {
+                        session.start_ranging(result_sender);
+                    }
+                }
+            }
+            SessionCommand::StopRanging { session_id } => {
+                match self.active_sessions.get_mut(&session_id) {
+                    None => {
+                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                    }
+                    Some(session) => {
+                        session.stop_ranging(result_sender);
+                    }
+                }
+            }
         }
     }
 
@@ -187,6 +216,8 @@ impl<T: UciManager> SessionManagerActor<T> {
 enum SessionCommand {
     InitSession { session_id: SessionId, session_type: SessionType, params: AppConfigParams },
     DeinitSession { session_id: SessionId },
+    StartRanging { session_id: SessionId },
+    StopRanging { session_id: SessionId },
 }
 
 #[cfg(test)]
@@ -311,6 +342,55 @@ mod tests {
 
         let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Err(Error::Timeout));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_start_stop_ranging() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+        let params = generate_params();
+        let tlvs = params.generate_tlvs();
+
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                let state_init_notf = vec![UciNotification::SessionStatus {
+                    session_id,
+                    session_state: SessionState::SessionStateInit,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                }];
+                let state_idle_notf = vec![UciNotification::SessionStatus {
+                    session_id,
+                    session_state: SessionState::SessionStateIdle,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                }];
+                let state_active_notf = vec![UciNotification::SessionStatus {
+                    session_id,
+                    session_state: SessionState::SessionStateActive,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                }];
+                uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    tlvs,
+                    state_idle_notf.clone(),
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_range_start(session_id, state_active_notf, Ok(()));
+                uci_manager.expect_range_stop(session_id, state_idle_notf, Ok(()));
+            })
+            .await;
+
+        let result = session_manager.init_session(session_id, session_type, params).await;
+        assert_eq!(result, Ok(()));
+        let result = session_manager.start_ranging(session_id).await;
+        assert_eq!(result, Ok(()));
+        let result = session_manager.stop_ranging(session_id).await;
+        assert_eq!(result, Ok(()));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
