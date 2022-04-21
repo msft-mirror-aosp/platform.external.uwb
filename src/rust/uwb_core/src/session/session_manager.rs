@@ -72,6 +72,10 @@ impl SessionManager {
         self.send_cmd(SessionCommand::StopRanging { session_id }).await
     }
 
+    async fn reconfigure(&mut self, session_id: SessionId, params: AppConfigParams) -> Result<()> {
+        self.send_cmd(SessionCommand::Reconfigure { session_id, params }).await
+    }
+
     // Send the |cmd| to the SessionManagerActor.
     async fn send_cmd(&self, cmd: SessionCommand) -> Result<()> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -183,6 +187,16 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
+            SessionCommand::Reconfigure { session_id, params } => {
+                match self.active_sessions.get_mut(&session_id) {
+                    None => {
+                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                    }
+                    Some(session) => {
+                        session.reconfigure(params, result_sender);
+                    }
+                }
+            }
         }
     }
 
@@ -218,6 +232,7 @@ enum SessionCommand {
     DeinitSession { session_id: SessionId },
     StartRanging { session_id: SessionId },
     StopRanging { session_id: SessionId },
+    Reconfigure { session_id: SessionId, params: AppConfigParams },
 }
 
 #[cfg(test)]
