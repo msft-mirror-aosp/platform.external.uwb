@@ -289,4 +289,29 @@ mod tests {
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
+
+    #[tokio::test]
+    async fn test_init_session_timeout() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+        let params = generate_params();
+
+        let session_id_clone = session_id;
+        let session_type_clone = session_type;
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(
+                    session_id_clone,
+                    session_type_clone,
+                    vec![], // Not sending SessionStatus notification.
+                    Ok(()),
+                );
+            })
+            .await;
+
+        let result = session_manager.init_session(session_id, session_type, params).await;
+        assert_eq!(result, Err(Error::Timeout));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
 }
