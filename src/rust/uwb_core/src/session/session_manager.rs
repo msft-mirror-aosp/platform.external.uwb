@@ -265,8 +265,6 @@ mod tests {
         let params = generate_params();
 
         let tlvs = params.generate_tlvs();
-        let session_id_clone = session_id;
-        let session_type_clone = session_type;
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
                 let init_notfs = vec![UciNotification::SessionStatus {
@@ -279,14 +277,9 @@ mod tests {
                     session_state: SessionState::SessionStateIdle,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
                 }];
-                uci_manager.expect_session_init(
-                    session_id_clone,
-                    session_type_clone,
-                    init_notfs,
-                    Ok(()),
-                );
+                uci_manager.expect_session_init(session_id, session_type, init_notfs, Ok(()));
                 uci_manager.expect_session_set_app_config(
-                    session_id_clone,
+                    session_id,
                     tlvs,
                     set_app_config_notfs,
                     Ok(SetAppConfigResponse {
@@ -294,7 +287,7 @@ mod tests {
                         config_status: vec![],
                     }),
                 );
-                uci_manager.expect_session_deinit(session_id_clone, Ok(()));
+                uci_manager.expect_session_deinit(session_id, Ok(()));
             })
             .await;
 
@@ -327,16 +320,10 @@ mod tests {
         let session_type = SessionType::FiraRangingSession;
         let params = generate_params();
 
-        let session_id_clone = session_id;
-        let session_type_clone = session_type;
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                uci_manager.expect_session_init(
-                    session_id_clone,
-                    session_type_clone,
-                    vec![], // Not sending SessionStatus notification.
-                    Ok(()),
-                );
+                let notfs = vec![]; // Not sending SessionStatus notification.
+                uci_manager.expect_session_init(session_id, session_type, notfs, Ok(()));
             })
             .await;
 
