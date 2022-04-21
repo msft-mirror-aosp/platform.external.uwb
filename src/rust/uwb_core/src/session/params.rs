@@ -12,4 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod fira_app_config_params;
+pub mod fira_app_config_params;
+
+use crate::uci::params::{AppConfigTlv, SessionType};
+
+/// The parameters of the UWB session.
+// TODO(akahuang): Add CCC support.
+#[derive(Debug, Clone)]
+pub enum AppConfigParams {
+    Fira(fira_app_config_params::FiraAppConfigParams),
+}
+
+impl AppConfigParams {
+    pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
+        match self {
+            Self::Fira(params) => params.generate_tlvs(),
+        }
+    }
+
+    pub fn generate_updated_tlvs(&self, prev_params: &Self) -> Vec<AppConfigTlv> {
+        match self {
+            Self::Fira(params) => match prev_params {
+                Self::Fira(prev_params) => params.generate_updated_tlvs(prev_params),
+            },
+        }
+    }
+
+    pub fn is_type_matched(&self, session_type: SessionType) -> bool {
+        match self {
+            Self::Fira(_) => {
+                session_type == SessionType::FiraDataTransfer
+                    || session_type == SessionType::FiraRangingSession
+            }
+        }
+    }
+}
