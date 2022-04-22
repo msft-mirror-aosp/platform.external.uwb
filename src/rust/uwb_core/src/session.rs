@@ -17,6 +17,8 @@
 // TODO(akahuang): remove it after implementing the client of each component.
 #![allow(dead_code)]
 
+mod uwb_session;
+
 pub(crate) mod error;
 pub(crate) mod params;
 pub(crate) mod session_manager;
