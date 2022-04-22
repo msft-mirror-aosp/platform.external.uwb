@@ -102,11 +102,13 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_session_type: SessionType,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionInit {
             expected_session_id,
             expected_session_type,
+            notfs,
             out,
         });
     }
@@ -122,11 +124,13 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_config_tlvs: Vec<AppConfigTlv>,
+        notfs: Vec<UciNotification>,
         out: Result<SetAppConfigResponse>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetAppConfig {
             expected_session_id,
             expected_config_tlvs,
+            notfs,
             out,
         });
     }
@@ -176,18 +180,30 @@ impl MockUciManager {
         );
     }
 
-    pub fn expect_range_start(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::RangeStart { expected_session_id, out });
+    pub fn expect_range_start(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RangeStart {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
-    pub fn expect_range_stop(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::RangeStop { expected_session_id, out });
+    pub fn expect_range_stop(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RangeStop {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
     pub fn expect_range_get_ranging_count(
@@ -365,10 +381,16 @@ impl UciManager for MockUciManager {
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionInit { expected_session_id, expected_session_type, out })
-                if expected_session_id == session_id && expected_session_type == session_type =>
-            {
+            Some(ExpectedCall::SessionInit {
+                expected_session_id,
+                expected_session_type,
+                notfs,
+                out,
+            }) if expected_session_id == session_id && expected_session_type == session_type => {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -406,11 +428,15 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::SessionSetAppConfig {
                 expected_session_id,
                 expected_config_tlvs,
+                notfs,
                 out,
             }) if expected_session_id == session_id
                 && app_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -509,10 +535,13 @@ impl UciManager for MockUciManager {
     async fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RangeStart { expected_session_id, out })
+            Some(ExpectedCall::RangeStart { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -526,10 +555,13 @@ impl UciManager for MockUciManager {
     async fn range_stop(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RangeStop { expected_session_id, out })
+            Some(ExpectedCall::RangeStop { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -645,6 +677,7 @@ enum ExpectedCall {
     SessionInit {
         expected_session_id: SessionId,
         expected_session_type: SessionType,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     SessionDeinit {
@@ -654,6 +687,7 @@ enum ExpectedCall {
     SessionSetAppConfig {
         expected_session_id: SessionId,
         expected_config_tlvs: Vec<AppConfigTlv>,
+        notfs: Vec<UciNotification>,
         out: Result<SetAppConfigResponse>,
     },
     SessionGetAppConfig {
@@ -676,10 +710,12 @@ enum ExpectedCall {
     },
     RangeStart {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     RangeStop {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     RangeGetRangingCount {
