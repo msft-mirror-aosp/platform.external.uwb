@@ -2,7 +2,7 @@
 
 use crate::error::UwbErr;
 use crate::uci::uci_hrcv;
-use crate::uci::uci_logger::{UciLogMode, UciLogger, UciLoggerImpl};
+use crate::uci::uci_logger::{RealFileFactory, UciLogMode, UciLogger, UciLoggerImpl};
 use crate::uci::HalCallback;
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     IUwb::IUwbAsync,
@@ -133,7 +133,8 @@ impl UwbAdaptationImpl {
                 UCI_LOG_DEFAULT
             }
         };
-        let logger = UciLoggerImpl::new(mode).await;
+        let logger =
+            UciLoggerImpl::new(mode, Arc::new(Mutex::new(RealFileFactory::default()))).await;
         Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger), hal_death_recipient })
     }
 

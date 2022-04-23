@@ -17,7 +17,9 @@
 extern crate libc;
 
 use crate::uci::uci_logger::UciLogger;
+use crate::uci::UwbErr;
 use async_trait::async_trait;
+use std::path::Path;
 use uwb_uci_packets::{UciCommandPacket, UciNotificationPacket, UciResponsePacket};
 
 #[cfg(test)]
@@ -44,4 +46,19 @@ impl UciLogger for MockUciLogger {
     async fn log_uci_response(&self, _rsp: UciResponsePacket) {}
     async fn log_uci_notification(&self, _ntf: UciNotificationPacket) {}
     async fn close_file(&self) {}
+}
+
+#[cfg(test)]
+pub async fn create_dir(_path: impl AsRef<Path>) -> Result<(), UwbErr> {
+    Ok(())
+}
+
+#[cfg(test)]
+pub async fn remove_file(_path: impl AsRef<Path>) -> Result<(), UwbErr> {
+    Ok(())
+}
+
+#[cfg(test)]
+pub async fn rename(_from: impl AsRef<Path>, _to: impl AsRef<Path>) -> Result<(), UwbErr> {
+    Ok(())
 }
