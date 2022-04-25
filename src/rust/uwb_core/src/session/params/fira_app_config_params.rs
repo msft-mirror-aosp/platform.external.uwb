@@ -14,9 +14,10 @@
 
 use std::collections::HashMap;
 
-use log::{error, warn};
+use log::warn;
 
-use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
+use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
+use crate::uci::params::AppConfigTlvType;
 use crate::utils::builder_field;
 
 // The default value of each parameters.
@@ -266,17 +267,7 @@ impl FiraAppConfigParams {
                 != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
     }
 
-    /// Generate the TLV list from the params.
-    pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
-        Self::config_map_to_tlvs(self.generate_config_map())
-    }
-
-    /// Generate the updated TLV list from the difference between this and the previous params.
-    pub fn generate_updated_tlvs(&self, prev_params: &Self) -> Vec<AppConfigTlv> {
-        Self::config_map_to_tlvs(self.generate_updated_config_map(prev_params))
-    }
-
-    fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
+    pub fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
         debug_assert!(self.is_valid().is_some());
 
         HashMap::from([
@@ -358,7 +349,7 @@ impl FiraAppConfigParams {
         ])
     }
 
-    fn generate_updated_config_map(
+    pub fn generate_updated_config_map(
         &self,
         prev_params: &Self,
     ) -> HashMap<AppConfigTlvType, Vec<u8>> {
@@ -372,10 +363,6 @@ impl FiraAppConfigParams {
             }
         }
         updated_config_map
-    }
-
-    fn config_map_to_tlvs(config_map: HashMap<AppConfigTlvType, Vec<u8>>) -> Vec<AppConfigTlv> {
-        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 }
 
@@ -883,26 +870,6 @@ pub enum StsLength {
     Length32 = 0,
     Length64 = 1,
     Length128 = 2,
-}
-
-fn u8_to_bytes(value: u8) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-fn u16_to_bytes(value: u16) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-fn u32_to_bytes(value: u32) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-
-fn validate(value: bool, err_msg: &str) -> Option<()> {
-    match value {
-        true => Some(()),
-        false => {
-            error!("{}", err_msg);
-            None
-        }
-    }
 }
 
 #[cfg(test)]
