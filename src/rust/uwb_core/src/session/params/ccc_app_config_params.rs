@@ -21,7 +21,7 @@ use crate::session::params::fira_app_config_params::{
 };
 use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::session::params::AppConfigParams;
-use crate::uci::params::AppConfigTlvType;
+use crate::uci::params::{AppConfigTlvType, SessionState};
 use crate::utils::builder_field;
 
 const CHAP_IN_RSTU: u16 = 400; // 1 Chap = 400 RSTU.
@@ -53,6 +53,19 @@ pub struct CccAppConfigParams {
 }
 
 impl CccAppConfigParams {
+    pub fn is_config_updatable(
+        config_map: &HashMap<AppConfigTlvType, Vec<u8>>,
+        session_state: SessionState,
+    ) -> bool {
+        match session_state {
+            SessionState::SessionStateIdle => {
+                // Only ran_multiplier can be updated at idle state.
+                config_map.keys().all(|key| key == &AppConfigTlvType::RangingInterval)
+            }
+            _ => false,
+        }
+    }
+
     pub fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
         debug_assert!(self.is_valid().is_some());
 
@@ -331,7 +344,40 @@ mod tests {
             .ran_multiplier(updated_ran_multiplier)
             .build()
             .unwrap();
-        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        let updated_config_map1 = updated_params1
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .unwrap();
         assert_eq!(updated_config_map1, expected_updated_config_map);
+    }
+
+    #[test]
+    fn test_update_config() {
+        let mut builder = CccAppConfigParamsBuilder::new();
+        builder
+            .protocol_version(CccProtocolVersion { major: 2, minor: 1 })
+            .uwb_config(CccUwbConfig::Config0)
+            .pulse_shape_combo(CccPulseShapeCombo {
+                initiator_tx: PulseShape::PrecursorFree,
+                responder_tx: PulseShape::PrecursorFreeSpecial,
+            })
+            .ran_multiplier(3)
+            .channel_number(CccUwbChannel::Channel9)
+            .chaps_per_slot(ChapsPerSlot::Value9)
+            .num_responder_nodes(1)
+            .slots_per_rr(3)
+            .sync_code_index(12)
+            .hopping_mode(CccHoppingMode::ContinuousAes);
+        let params = builder.build().unwrap();
+
+        builder.ran_multiplier(5);
+        let updated_params = builder.build().unwrap();
+        // ran_multiplier can be updated at idle state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .is_some());
+        // ran_multiplier cannot be updated at active state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateActive)
+            .is_none());
     }
 }
