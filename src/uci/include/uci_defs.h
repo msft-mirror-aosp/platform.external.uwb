@@ -30,7 +30,8 @@
 /* Define the message header size for all UCI Commands and Notifications.
  */
 #define UCI_MSG_HDR_SIZE 0x04     /* per UCI spec */
-#define UCI_MAX_PAYLOAD_SIZE 0xFF /* max control message size */
+#define UCI_MAX_PAYLOAD_SIZE 4096 /* max control message size */
+#define UCI_MAX_PKT_SIZE 259 /* Max payload size + header size */
 #define UCI_PSDU_SIZE_4K 4096     /* PSDU Data size */
 #define UCI_VENDOR_INFO_MAX_SIZE 0xFF
 
@@ -76,7 +77,13 @@
 #define UCI_GID_ANDROID 0x0E        /* 1110b Android vendor group */
 #define UCI_GID_TEST 0x0D           /* 1101b RF Test Gropup */
 
-/* 0100b - 1100b RFU */
+/* Vendor specific group Identifier */
+#define UCI_GID_VENDOR_SPECIFIC_0x09 0x09
+#define UCI_GID_VENDOR_SPECIFIC_0x0A 0x0A
+#define UCI_GID_VENDOR_SPECIFIC_0x0B 0x0B
+#define UCI_GID_VENDOR_SPECIFIC_0x0C 0x0C
+#define UCI_GID_VENDOR_SPECIFIC_0x0E 0x0E
+#define UCI_GID_VENDOR_SPECIFIC_0x0F 0x0F
 
 /* OID: Opcode Identifier (byte 1) */
 #define UCI_OID_MASK 0x3F
@@ -271,6 +278,8 @@
 #define UCI_PARAM_LEN_IN_BAND_TERMINATION_ATTEMPT_COUNT 0x01
 #define UCI_PARAM_LEN_SUB_SESSION_ID 0x04
 #define UCI_PARAM_LEN_BLOCK_STRIDE_LENGTH 0x01
+
+#define MAX_VENDOR_INFO_LENGTH   1000 // vendor specific info of rangedata max length considering 24 measures for TDOA
 
 /*************************************************
  * Status codes
