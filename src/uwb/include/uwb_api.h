@@ -141,7 +141,7 @@ enum {
   UWB_BLINK_DATA_TX_NTF_REVT, /* 31 Blink Data Tx ntf                   */
   UWB_CONFORMANCE_TEST_DATA,  /* 32 Conformance test data ntf           */
   UWB_SET_COUNTRY_CODE_REVT,  /* 33 Set country code resp */
-
+  UWB_VENDOR_SPECIFIC_UCI_NTF_EVT   /* 34 Proprietary ntf */
 };
 typedef uint16_t tUWB_RESPONSE_EVT;
 
@@ -308,6 +308,12 @@ typedef struct {
   uint8_t data[CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH];
 } tUWB_CONFORMANCE_TEST_DATA;
 
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+} tUWB_VENDOR_SPECIFIC_REVT;
+
 /* the data type associated with UWB_RANGING_GET_COUNT_REVT */
 typedef struct {
   uint8_t status; /* response status */
@@ -362,6 +368,7 @@ typedef union {
   tUWB_SET_COUNTRY_CODE_REVT sSet_country_code_status;
   tUWB_SEND_BLINK_DATA_NTF_REVT sSend_blink_data_ntf;
   tUWB_CONFORMANCE_TEST_DATA sConformance_test_data;
+  tUWB_VENDOR_SPECIFIC_REVT sVendor_specific_ntf;
 } tUWB_RESPONSE;
 
 /* Data types associated with all RF test Events */
