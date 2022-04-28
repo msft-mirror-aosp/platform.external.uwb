@@ -27,6 +27,9 @@ rust_defaults {
         "libuwb_uci_packets",
 	"libbinder_tokio_rs",
     ],
+    rlibs: [
+        "libarbitrary",
+    ],
     proc_macros: [
         "libasync_trait",
     ],
@@ -73,6 +76,7 @@ rust_defaults {
     proc_macros: ["libnum_derive"],
     rustlibs:[
         "libbytes",
+        "liblog_rust",
         "libnum_traits",
         "libthiserror",
     ],
@@ -111,9 +115,11 @@ rust_library {
     defaults: ["libuwb_uci_packet_defaults"],
     crate_name: "uwb_uci_packets",
     apex_available: [
+        "//apex_available:platform",
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
+    vendor_available: true,
 }
 
 genrule {
@@ -135,7 +141,18 @@ rust_defaults {
     srcs: ["rust/uwb_core/src/lib.rs"],
     lints: "android",
     clippy_lints: "android",
-    host_supported: true,
+    rustlibs: [
+        "libbytes",
+        "libnum_traits",
+        "liblog_rust",
+        "libthiserror",
+        "libtokio",
+        "libuwb_uci_packets",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+    min_sdk_version: "Tiramisu",
 }
 
 rust_library {
@@ -147,4 +164,30 @@ rust_library {
 rust_test {
     name: "libuwb_core_tests",
     defaults: ["libuwb_core_defaults"],
+    rustlibs: [
+        "libenv_logger",
+    ],
+}
+
+rust_fuzz {
+    name: "uwb_uci_rust_fuzzer",
+    srcs: [
+        "fuzz/fuzzer.rs",
+    ],
+    rustlibs: [
+        "libarbitrary",
+        "liblog_rust",
+        "libnum_traits",
+        "libtokio",
+        "libuwb_uci_packets",
+        "libuwb_uci_rust",
+    ],
+    fuzz_config: {
+        cc: [
+            "android-uwb-team@google.com",
+        ],
+        componentid: 1042770,
+        fuzz_on_haiku_device: true,
+        fuzz_on_haiku_host: true,
+    },
 }
