@@ -48,47 +48,9 @@
 #define BTU_TASK 4
 #endif
 
-/* BTE Application, Sample Apps, or Serial port Demo based on JP3 and JP4
- * setting) */
-#ifndef BTE_APPL_TASK
-#define BTE_APPL_TASK 5
-#endif
-
-#ifndef DEV_MGR_TASK
-#define DEV_MGR_TASK 6
-#endif
-
-#ifndef ISE_SCR_TASK
-#define ISE_SCR_TASK 7
-#endif
-
-#ifndef UCODEC_TASK
-#define UCODEC_TASK 8
-#endif
-
-#ifndef RPCT_TASK
-#define RPCT_TASK 9
-#endif
-
-#ifndef UNV_TASK
-#define UNV_TASK 10
-#endif
-
-#ifndef BTE_IDLE_TASK
-#define BTE_IDLE_TASK 11
-#endif
-
-#ifndef UIPC_TASK
-#define UIPC_TASK 12
-#endif
-
-#ifndef HCISU_AMP_TASK
-#define HCISU_AMP_TASK 13
-#endif
-
 /* The number of GKI tasks in the software system. */
 #ifndef GKI_MAX_TASKS
-#define GKI_MAX_TASKS 14
+#define GKI_MAX_TASKS 5
 #endif
 
 /******************************************************************************
