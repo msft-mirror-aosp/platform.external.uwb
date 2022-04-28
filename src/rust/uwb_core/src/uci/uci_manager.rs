@@ -276,6 +276,10 @@ impl UciManager for UciManagerImpl {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
     ) -> Result<()> {
+        if !(1..=8).contains(&controlees.len()) {
+            warn!("Number of controlees should be between 1 to 8");
+            return Err(Error::InvalidArgs);
+        }
         let cmd =
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {

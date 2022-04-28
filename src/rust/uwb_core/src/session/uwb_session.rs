@@ -21,12 +21,18 @@ use tokio::time::timeout;
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::uci::error::StatusCode;
-use crate::uci::params::{SessionId, SessionState, SessionType};
+use crate::uci::params::{
+    Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
+    UpdateMulticastListAction,
+};
 use crate::uci::uci_manager::UciManager;
+
+const NOTIFICATION_TIMEOUT_MS: u64 = 1000;
 
 pub(crate) struct UwbSession {
     cmd_sender: mpsc::UnboundedSender<(Command, oneshot::Sender<Result<()>>)>,
     state_sender: watch::Sender<SessionState>,
+    controlee_status_notf_sender: Option<oneshot::Sender<Vec<ControleeStatus>>>,
 }
 
 impl UwbSession {
@@ -49,7 +55,7 @@ impl UwbSession {
         );
         tokio::spawn(async move { actor.run().await });
 
-        Self { cmd_sender, state_sender }
+        Self { cmd_sender, state_sender, controlee_status_notf_sender: None }
     }
 
     pub fn initialize(
@@ -80,8 +86,28 @@ impl UwbSession {
         let _ = self.cmd_sender.send((Command::Reconfigure { params }, result_sender));
     }
 
-    pub fn set_state(&mut self, state: SessionState) {
+    pub fn update_controller_multicast_list(
+        &mut self,
+        action: UpdateMulticastListAction,
+        controlees: Vec<Controlee>,
+        result_sender: oneshot::Sender<Result<()>>,
+    ) {
+        let (notf_sender, notf_receiver) = oneshot::channel();
+        self.controlee_status_notf_sender = Some(notf_sender);
+        let _ = self.cmd_sender.send((
+            Command::UpdateControllerMulticastList { action, controlees, notf_receiver },
+            result_sender,
+        ));
+    }
+
+    pub fn on_session_status_changed(&mut self, state: SessionState) {
         let _ = self.state_sender.send(state);
+    }
+
+    pub fn on_controller_multicast_list_udpated(&mut self, status_list: Vec<ControleeStatus>) {
+        if let Some(sender) = self.controlee_status_notf_sender.take() {
+            let _ = sender.send(status_list);
+        }
     }
 }
 
@@ -113,14 +139,28 @@ impl<T: UciManager> UwbSessionActor<T> {
                         None => {
                             debug!("UwbSession is about to drop.");
                             break;
-                        },
+                        }
                         Some((cmd, result_sender)) => {
                             let result = match cmd {
                                 Command::Initialize { params } => self.initialize(params).await,
                                 Command::Deinitialize => self.deinitialize().await,
                                 Command::StartRanging => self.start_ranging().await,
                                 Command::StopRanging => self.stop_ranging().await,
-                                Command::Reconfigure { params } => self.reconfigure(params).await,
+                                Command::Reconfigure { params } => {
+                                    self.reconfigure(params).await
+                                }
+                                Command::UpdateControllerMulticastList {
+                                    action,
+                                    controlees,
+                                    notf_receiver,
+                                } => {
+                                    self.update_controller_multicast_list(
+                                        action,
+                                        controlees,
+                                        notf_receiver,
+                                    )
+                                    .await
+                                }
                             };
                             let _ = result_sender.send(result);
                         }
@@ -230,23 +270,65 @@ impl<T: UciManager> UwbSessionActor<T> {
         Ok(())
     }
 
-    async fn wait_state(&mut self, expected_state: SessionState) -> Result<()> {
-        const WAIT_STATE_TIMEOUT_MS: u64 = 1000;
-        match timeout(Duration::from_millis(WAIT_STATE_TIMEOUT_MS), self.state_receiver.changed())
+    async fn update_controller_multicast_list(
+        &mut self,
+        action: UpdateMulticastListAction,
+        controlees: Vec<Controlee>,
+        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
+    ) -> Result<()> {
+        let state = *self.state_receiver.borrow();
+        if !matches!(state, SessionState::SessionStateIdle | SessionState::SessionStateActive) {
+            error!("Cannot update multicast list at state {:?}", state);
+            return Err(Error::WrongState(state));
+        }
+
+        self.uci_manager
+            .session_update_controller_multicast_list(self.session_id, action, controlees)
             .await
-        {
-            Ok(result) => {
-                if result.is_err() {
-                    debug!("UwbSession is about to drop.");
-                    return Err(Error::TokioFailure);
+            .map_err(|e| {
+                error!("Failed to update multicast list: {:?}", e);
+                Error::Uci
+            })?;
+
+        // Wait for the notification of the update status.
+        let results = timeout(Duration::from_millis(NOTIFICATION_TIMEOUT_MS), notf_receiver)
+            .await
+            .map_err(|_| {
+                error!("Timeout waiting for the multicast list notification");
+                Error::Timeout
+            })?
+            .map_err(|_| {
+                error!("oneshot sender is dropped.");
+                Error::TokioFailure
+            })?;
+
+        // Check the update status for adding new controlees.
+        if action == UpdateMulticastListAction::AddControlee {
+            for result in results.iter() {
+                if result.status != MulticastUpdateStatusCode::StatusOkMulticastListUpdate {
+                    error!("Failed to update multicast list: {:?}", result);
+                    return Err(Error::Uci);
                 }
-            }
-            Err(_) => {
-                error!("Timeout waiting for the session status notification");
-                return Err(Error::Timeout);
             }
         }
 
+        Ok(())
+    }
+
+    async fn wait_state(&mut self, expected_state: SessionState) -> Result<()> {
+        // Wait for the notification of the session status.
+        timeout(Duration::from_millis(NOTIFICATION_TIMEOUT_MS), self.state_receiver.changed())
+            .await
+            .map_err(|_| {
+                error!("Timeout waiting for the session status notification");
+                Error::Timeout
+            })?
+            .map_err(|_| {
+                debug!("UwbSession is about to drop.");
+                Error::TokioFailure
+            })?;
+
+        // Check if the latest session status is expected or not.
         let state = *self.state_receiver.borrow();
         if state != expected_state {
             error!(
@@ -261,9 +343,18 @@ impl<T: UciManager> UwbSessionActor<T> {
 }
 
 enum Command {
-    Initialize { params: AppConfigParams },
+    Initialize {
+        params: AppConfigParams,
+    },
     Deinitialize,
     StartRanging,
     StopRanging,
-    Reconfigure { params: AppConfigParams },
+    Reconfigure {
+        params: AppConfigParams,
+    },
+    UpdateControllerMulticastList {
+        action: UpdateMulticastListAction,
+        controlees: Vec<Controlee>,
+        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
+    },
 }
