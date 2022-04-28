@@ -25,7 +25,7 @@ use crate::uci::params::{AppConfigTlvType, SessionState};
 use crate::utils::builder_field;
 
 const CHAP_IN_RSTU: u16 = 400; // 1 Chap = 400 RSTU.
-const MINIMUM_BLOCK_DURATION_MS: u32 = 96;
+pub(super) const MINIMUM_BLOCK_DURATION_MS: u32 = 96;
 
 // The constant AppConfigTlv values for CCC.
 const CCC_DEVICE_TYPE: DeviceType = DeviceType::Controlee;

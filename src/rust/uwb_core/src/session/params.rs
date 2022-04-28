@@ -13,22 +13,27 @@
 // limitations under the License.
 
 pub mod ccc_app_config_params;
+pub mod ccc_started_app_config_params;
 pub mod fira_app_config_params;
 mod utils;
 
 use std::collections::HashMap;
 
 use crate::session::params::ccc_app_config_params::CccAppConfigParams;
+use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::session::params::fira_app_config_params::FiraAppConfigParams;
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType, SessionState, SessionType};
 
 type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
 
-/// The parameters of the UWB session.
+/// The application configuration parameters of the UWB session. It is used to generate the
+/// parameters for the SESSION_SET_APP_CONFIG_CMD, or converted from the result of the
+/// SESSION_GET_APP_CONFIG_CMD.
 #[derive(Debug, Clone)]
 pub enum AppConfigParams {
     Fira(FiraAppConfigParams),
     Ccc(CccAppConfigParams),
+    CccStarted(CccStartedAppConfigParams),
 }
 
 impl AppConfigParams {
@@ -56,6 +61,7 @@ impl AppConfigParams {
         match self {
             Self::Fira(params) => params.generate_config_map(),
             Self::Ccc(params) => params.generate_config_map(),
+            _ => HashMap::new(),
         }
     }
 
@@ -94,7 +100,7 @@ impl AppConfigParams {
                 session_type == SessionType::FiraDataTransfer
                     || session_type == SessionType::FiraRangingSession
             }
-            Self::Ccc(_) => session_type == SessionType::Ccc,
+            Self::Ccc(_) | Self::CccStarted(_) => session_type == SessionType::Ccc,
         }
     }
 
