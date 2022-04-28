@@ -175,6 +175,7 @@ rust_fuzz {
         "fuzz/fuzzer.rs",
     ],
     rustlibs: [
+        "android.hardware.uwb-V1-rust",
         "libarbitrary",
         "liblog_rust",
         "libnum_traits",
