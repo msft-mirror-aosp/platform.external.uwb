@@ -23,18 +23,21 @@ use uwb_uci_packets::{
     ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder, SessionType,
     SessionUpdateControllerMulticastListCmdBuilder, UciCommandPacket, UciVendor_9_CommandBuilder,
     UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder, UciVendor_E_CommandBuilder,
-    UciVendor_F_CommandBuilder,
+    UciVendor_F_CommandBuilder, UpdateMulticastListAction,
 };
 
-pub fn build_session_init_cmd(session_id: u32, session_type: u8) -> SessionInitCmdBuilder {
-    SessionInitCmdBuilder {
+pub fn build_session_init_cmd(
+    session_id: u32,
+    session_type: u8,
+) -> Result<SessionInitCmdBuilder, UwbErr> {
+    Ok(SessionInitCmdBuilder {
         session_id,
-        session_type: SessionType::from_u8(session_type).expect("invalid session type"),
-    }
+        session_type: SessionType::from_u8(session_type).ok_or(UwbErr::InvalidArgs)?,
+    })
 }
 
-pub fn build_set_country_code_cmd(code: &[u8]) -> AndroidSetCountryCodeCmdBuilder {
-    AndroidSetCountryCodeCmdBuilder { country_code: code.try_into().expect("invalid country code") }
+pub fn build_set_country_code_cmd(code: &[u8]) -> Result<AndroidSetCountryCodeCmdBuilder, UwbErr> {
+    Ok(AndroidSetCountryCodeCmdBuilder { country_code: code.try_into()? })
 }
 
 pub fn build_multicast_list_update_cmd(
@@ -43,7 +46,12 @@ pub fn build_multicast_list_update_cmd(
     no_of_controlee: u8,
     address_list: &[i16],
     sub_session_id_list: &[i32],
-) -> SessionUpdateControllerMulticastListCmdBuilder {
+) -> Result<SessionUpdateControllerMulticastListCmdBuilder, UwbErr> {
+    if usize::from(no_of_controlee) != address_list.len()
+        || usize::from(no_of_controlee) != sub_session_id_list.len()
+    {
+        return Err(UwbErr::InvalidArgs);
+    }
     let mut controlees = Vec::new();
     for i in 0..no_of_controlee {
         controlees.push(Controlee {
@@ -51,7 +59,11 @@ pub fn build_multicast_list_update_cmd(
             subsession_id: sub_session_id_list[i as usize] as u32,
         });
     }
-    SessionUpdateControllerMulticastListCmdBuilder { session_id, action, controlees }
+    Ok(SessionUpdateControllerMulticastListCmdBuilder {
+        session_id,
+        action: UpdateMulticastListAction::from_u8(action).ok_or(UwbErr::InvalidArgs)?,
+        controlees,
+    })
 }
 
 pub fn build_set_app_config_cmd(
@@ -60,10 +72,17 @@ pub fn build_set_app_config_cmd(
     mut app_configs: &[u8],
 ) -> Result<SessionSetAppConfigCmdBuilder, UwbErr> {
     let mut tlvs = Vec::new();
+    let received_tlvs_len = app_configs.len();
+    let mut parsed_tlvs_len = 0;
     for _ in 0..no_of_params {
         let tlv = AppConfigTlv::parse(app_configs)?;
-        app_configs = &app_configs[tlv.v.len() + 2..];
+        app_configs = app_configs.get(tlv.v.len() + 2..).ok_or(UwbErr::InvalidArgs)?;
+        parsed_tlvs_len += tlv.v.len() + 2;
         tlvs.push(tlv);
+    }
+    if parsed_tlvs_len != received_tlvs_len {
+        error!("Parsed TLV len: {:?}, received len: {:?}", parsed_tlvs_len, received_tlvs_len);
+        return Err(UwbErr::InvalidArgs);
     }
     Ok(SessionSetAppConfigCmdBuilder { session_id, tlvs })
 }
@@ -74,9 +93,9 @@ pub fn build_uci_vendor_cmd_packet(
     payload: Vec<u8>,
 ) -> Result<UciCommandPacket, UwbErr> {
     use GroupId::*;
-    let group_id: GroupId = GroupId::from_u32(gid).expect("invalid vendor gid");
+    let group_id: GroupId = GroupId::from_u32(gid).ok_or(UwbErr::InvalidArgs)?;
     let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
-    let opcode: u8 = oid.try_into().expect("invalid vendor oid");
+    let opcode: u8 = oid.try_into()?;
     let packet: UciCommandPacket = match group_id {
         VendorReserved9 => UciVendor_9_CommandBuilder { opcode, payload }.build().into(),
         VendorReservedA => UciVendor_A_CommandBuilder { opcode, payload }.build().into(),
@@ -91,8 +110,30 @@ pub fn build_uci_vendor_cmd_packet(
     Ok(packet)
 }
 
-pub fn build_device_reset_cmd(reset_config: u8) -> DeviceResetCmdBuilder {
-    DeviceResetCmdBuilder {
-        reset_config: ResetConfig::from_u8(reset_config).expect("invalid reset config"),
+pub fn build_device_reset_cmd(reset_config: u8) -> Result<DeviceResetCmdBuilder, UwbErr> {
+    Ok(DeviceResetCmdBuilder {
+        reset_config: ResetConfig::from_u8(reset_config).ok_or(UwbErr::InvalidArgs)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use num_traits::ToPrimitive;
+    use uwb_uci_packets::*;
+
+    #[test]
+    fn test_build_uci_vendor_cmd_packet() {
+        let oid: u8 = 6;
+        let gid = GroupId::VendorReserved9;
+        let payload = vec![0x5, 0x5, 0x5, 0x5];
+        assert_eq!(
+            build_uci_vendor_cmd_packet(gid.to_u32().unwrap(), oid.into(), payload.clone())
+                .unwrap()
+                .to_bytes(),
+            UciVendor_9_CommandBuilder { opcode: oid, payload: Some(Bytes::from(payload)) }
+                .build()
+                .to_bytes()
+        );
     }
 }
