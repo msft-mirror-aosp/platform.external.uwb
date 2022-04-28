@@ -19,8 +19,8 @@ use uwb_uci_packets::Packet;
 
 use crate::uci::error::{Error, Result as UciResult, StatusCode};
 use crate::uci::params::{
-    ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RawVendorMessage,
-    ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
+    ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
+    RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
 };
 
 #[derive(Debug, Clone)]
@@ -37,9 +37,20 @@ pub(crate) enum UciNotification {
         remaining_multicast_list_size: usize,
         status_list: Vec<ControleeStatus>,
     },
-    ShortMacTwoWayRangeData(Vec<ShortAddressTwoWayRangingMeasurement>),
-    ExtendedMacTwoWayRangeData(Vec<ExtendedAddressTwoWayRangingMeasurement>),
+    RangeData {
+        sequence_number: u32,
+        session_id: SessionId,
+        current_ranging_interval_ms: u32,
+        ranging_measurement_type: RangingMeasurementType,
+        ranging_measurements: RangingMeasurements,
+    },
     RawVendor(RawVendorMessage),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RangingMeasurements {
+    Short(Vec<ShortAddressTwoWayRangingMeasurement>),
+    Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 }
 
 impl UciNotification {
@@ -120,19 +131,22 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangeDataNtfPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangeDataNtfChild;
-        match evt.specialize() {
+        let ranging_measurements = match evt.specialize() {
             RangeDataNtfChild::ShortMacTwoWayRangeDataNtf(evt) => {
-                Ok(UciNotification::ShortMacTwoWayRangeData(
-                    evt.get_two_way_ranging_measurements().clone(),
-                ))
+                RangingMeasurements::Short(evt.get_two_way_ranging_measurements().clone())
             }
             RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
-                Ok(UciNotification::ExtendedMacTwoWayRangeData(
-                    evt.get_two_way_ranging_measurements().clone(),
-                ))
+                RangingMeasurements::Extended(evt.get_two_way_ranging_measurements().clone())
             }
-            _ => Err(Error::Specialize(evt.to_vec())),
-        }
+            _ => return Err(Error::Specialize(evt.to_vec())),
+        };
+        Ok(UciNotification::RangeData {
+            sequence_number: evt.get_sequence_number(),
+            session_id: evt.get_session_id(),
+            current_ranging_interval_ms: evt.get_current_ranging_interval(),
+            ranging_measurement_type: evt.get_ranging_measurement_type(),
+            ranging_measurements,
+        })
     }
 }
 
