@@ -14,14 +14,23 @@
  * limitations under the License.
  */
 
+extern crate libc;
+
+#[cfg(test)]
+use crate::uci::mock_uci_logger::{create_dir, remove_file, rename};
 use crate::uci::UwbErr;
 use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use log::{error, info};
+use std::marker::Unpin;
+use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::fs::{create_dir, rename, File, OpenOptions};
-use tokio::io::AsyncWriteExt;
+use tokio::fs::OpenOptions;
+#[cfg(not(test))]
+use tokio::fs::{create_dir, remove_file, rename};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
+use tokio::{task, time};
 use uwb_uci_packets::{
     AppConfigTlv, AppConfigTlvType, MessageType, Packet, SessionCommandChild,
     SessionGetAppConfigRspBuilder, SessionResponseChild, SessionSetAppConfigCmdBuilder,
@@ -31,12 +40,18 @@ use uwb_uci_packets::{
 
 // micros since 0000-01-01
 const UCI_EPOCH_DELTA: u64 = 0x00dcddb30f2f8000;
-const MAX_FILE_SIZE: usize = 4096;
+const UCI_LOG_LAST_FILE_STORE_TIME_SEC: u64 = 86400; // 24 hours
+const MAX_FILE_SIZE: usize = 102400; // 100 kb
+const MAX_BUFFER_SIZE: usize = 10240; // 10 kb
 const PKT_LOG_HEADER_SIZE: usize = 25;
 const VENDOR_ID: u64 = AppConfigTlvType::VendorId as u64;
 const STATIC_STS_IV: u64 = AppConfigTlvType::StaticStsIv as u64;
 const LOG_DIR: &str = "/data/misc/apexdata/com.android.uwb/log";
 const FILE_NAME: &str = "uwb_uci.log";
+const LOG_HEADER: &[u8] = b"ucilogging";
+
+type SyncFile = Arc<Mutex<dyn AsyncWrite + Send + Sync + Unpin>>;
+type SyncFactory = Arc<Mutex<dyn FileFactory + Send + Sync>>;
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum UciLogMode {
@@ -53,15 +68,14 @@ enum Type {
 }
 
 #[derive(Clone)]
-struct UciLogConfig {
+pub struct UciLogConfig {
     path: String,
-    max_file_size: usize,
     mode: UciLogMode,
 }
 
 impl UciLogConfig {
     pub fn new(mode: UciLogMode) -> Self {
-        Self { path: format!("{}/{}", LOG_DIR, FILE_NAME), max_file_size: MAX_FILE_SIZE, mode }
+        Self { path: format!("{}/{}", LOG_DIR, FILE_NAME), mode }
     }
 }
 
@@ -74,13 +88,14 @@ pub trait UciLogger {
 }
 
 struct BufferedFile {
-    file: Option<File>,
+    file: Option<SyncFile>,
     size_count: usize,
     buffer: BytesMut,
+    deleter_handle: Option<task::JoinHandle<()>>,
 }
 
 impl BufferedFile {
-    async fn open_next_file(&mut self, path: &str) -> Result<(), UwbErr> {
+    async fn open_next_file(&mut self, factory: SyncFactory, path: &str) -> Result<(), UwbErr> {
         info!("Open next file");
         self.close_file().await;
         if create_dir(LOG_DIR).await.is_err() {
@@ -89,11 +104,18 @@ impl BufferedFile {
         if rename(path, path.to_owned() + ".last").await.is_err() {
             error!("Failed to rename the file");
         }
-        let mut file = File::create(path).await?;
-        file.write_all(b"ucilogging").await?;
-        if file.flush().await.is_err() {
-            error!("Failed to flush");
+        if let Some(deleter_handle) = self.deleter_handle.take() {
+            deleter_handle.abort();
         }
+        let last_file_path = path.to_owned() + ".last";
+        self.deleter_handle = Some(task::spawn(async {
+            time::sleep(time::Duration::from_secs(UCI_LOG_LAST_FILE_STORE_TIME_SEC)).await;
+            if remove_file(last_file_path).await.is_err() {
+                error!("Failed to remove file!");
+            };
+        }));
+        let mut file = factory.lock().await.create_file_using_open_options(path).await?;
+        write(&mut file, LOG_HEADER).await;
         self.file = Some(file);
         Ok(())
     }
@@ -101,12 +123,7 @@ impl BufferedFile {
     async fn close_file(&mut self) {
         if let Some(file) = &mut self.file {
             info!("UCI log file closing");
-            if file.write_all(&self.buffer).await.is_err() {
-                error!("Failed to write");
-            }
-            if file.flush().await.is_err() {
-                error!("Failed to flush");
-            }
+            write(file, &self.buffer).await;
             self.file = None;
             self.buffer.clear();
         }
@@ -117,44 +134,19 @@ impl BufferedFile {
 pub struct UciLoggerImpl {
     config: UciLogConfig,
     buf_file: Mutex<BufferedFile>,
+    file_factory: SyncFactory,
 }
 
 impl UciLoggerImpl {
-    pub async fn new(mode: UciLogMode) -> Self {
+    pub async fn new(mode: UciLogMode, file_factory: SyncFactory) -> Self {
         let config = UciLogConfig::new(mode);
-        let file = match OpenOptions::new().append(true).open(&config.path).await.ok() {
-            Some(f) => Some(f),
-            None => {
-                if create_dir(LOG_DIR).await.is_err() {
-                    error!("Failed to create dir");
-                }
-                let new_file = match File::create(&config.path).await {
-                    Ok(mut f) => {
-                        if f.write_all(b"ucilogging").await.is_err() {
-                            error!("failed to write");
-                        }
-                        if f.flush().await.is_err() {
-                            error!("Failed to flush");
-                        }
-                        Some(f)
-                    }
-                    Err(e) => {
-                        error!("Failed to create file {:?}", e);
-                        None
-                    }
-                };
-                new_file
-            }
-        };
-        let buf_file = BufferedFile {
-            size_count: match file {
-                Some(ref f) => f.metadata().await.unwrap().len().try_into().unwrap(),
-                None => 0,
-            },
-            file,
-            buffer: BytesMut::new(),
-        };
-        let ret = Self { config, buf_file: Mutex::new(buf_file) };
+        let mut factory = file_factory.lock().await;
+        factory.set_config(config.clone()).await;
+        let (file, size) = factory.new_file().await;
+        let buf_file =
+            BufferedFile { size_count: size, file, buffer: BytesMut::new(), deleter_handle: None };
+        let ret =
+            Self { config, buf_file: Mutex::new(buf_file), file_factory: file_factory.clone() };
         info!("UCI logger created");
         ret
     }
@@ -182,10 +174,16 @@ impl UciLoggerImpl {
 
         // Check whether exceeded the size limit
         let mut buf_file = self.buf_file.lock().await;
-        if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > self.config.max_file_size {
-            match buf_file.open_next_file(&self.config.path).await {
+        if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_FILE_SIZE {
+            match buf_file.open_next_file(self.file_factory.clone(), &self.config.path).await {
                 Ok(()) => info!("New file created"),
                 Err(e) => error!("Open next file failed: {:?}", e),
+            }
+        } else if buf_file.buffer.len() + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_BUFFER_SIZE {
+            let temp_buf = buf_file.buffer.clone();
+            if let Some(file) = &mut buf_file.file {
+                write(file, &temp_buf).await;
+                buf_file.buffer.clear();
             }
         }
         buf_file.buffer.put_u32(length); // original length
@@ -196,6 +194,16 @@ impl UciLoggerImpl {
         buf_file.buffer.put_u8(mt_byte); // type
         buf_file.buffer.put_slice(&bytes); // full packet.
         buf_file.size_count += bytes.len() + PKT_LOG_HEADER_SIZE;
+    }
+}
+
+async fn write(file: &mut SyncFile, buffer: &[u8]) {
+    let mut locked_file = file.lock().await;
+    if locked_file.write_all(buffer).await.is_err() {
+        error!("Failed to write");
+    }
+    if locked_file.flush().await.is_err() {
+        error!("Failed to flush");
     }
 }
 
@@ -293,28 +301,240 @@ impl UciLogger for UciLoggerImpl {
     }
 }
 
-#[cfg(test)]
-pub struct MockUciLogger {}
-
-#[cfg(test)]
-impl MockUciLogger {
-    pub fn new() -> Self {
-        MockUciLogger {}
-    }
-}
-
-#[cfg(test)]
-impl Default for MockUciLogger {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
 #[async_trait]
-impl UciLogger for MockUciLogger {
-    async fn log_uci_command(&self, _cmd: UciCommandPacket) {}
-    async fn log_uci_response(&self, _rsp: UciResponsePacket) {}
-    async fn log_uci_notification(&self, _ntf: UciNotificationPacket) {}
-    async fn close_file(&self) {}
+pub trait FileFactory {
+    async fn new_file(&self) -> (Option<SyncFile>, usize);
+    async fn create_file_using_open_options(&self, path: &str) -> Result<SyncFile, UwbErr>;
+    async fn create_file_at_path(&self, path: &str) -> Option<SyncFile>;
+    async fn set_config(&mut self, config: UciLogConfig);
+}
+
+#[derive(Default)]
+pub struct RealFileFactory {
+    config: Option<UciLogConfig>,
+}
+
+#[async_trait]
+impl FileFactory for RealFileFactory {
+    async fn new_file(&self) -> (Option<SyncFile>, usize) {
+        match OpenOptions::new()
+            .append(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&self.config.as_ref().unwrap().path)
+            .await
+            .ok()
+        {
+            Some(f) => {
+                let size = match f.metadata().await {
+                    Ok(md) => {
+                        let duration = match md.modified() {
+                            Ok(modified_date) => {
+                                match SystemTime::now().duration_since(modified_date) {
+                                    Ok(duration) => duration.as_secs(),
+                                    Err(e) => {
+                                        error!("Failed to convert to duration {:?}", e);
+                                        0
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to convert to duration {:?}", e);
+                                0
+                            }
+                        };
+                        if duration > UCI_LOG_LAST_FILE_STORE_TIME_SEC {
+                            0
+                        } else {
+                            md.len().try_into().unwrap()
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to get metadata {:?}", e);
+                        0
+                    }
+                };
+                match size {
+                    0 => {
+                        (self.create_file_at_path(&self.config.as_ref().unwrap().path).await, size)
+                    }
+                    _ => (Some(Arc::new(Mutex::new(f))), size),
+                }
+            }
+            None => (self.create_file_at_path(&self.config.as_ref().unwrap().path).await, 0),
+        }
+    }
+
+    async fn set_config(&mut self, config: UciLogConfig) {
+        self.config = Some(config);
+    }
+
+    async fn create_file_using_open_options(&self, path: &str) -> Result<SyncFile, UwbErr> {
+        Ok(Arc::new(Mutex::new(OpenOptions::new().write(true).create_new(true).open(path).await?)))
+    }
+    async fn create_file_at_path(&self, path: &str) -> Option<SyncFile> {
+        if create_dir(LOG_DIR).await.is_err() {
+            error!("Failed to create dir");
+        }
+        if remove_file(path).await.is_err() {
+            error!("Failed to remove file!");
+        }
+        match self.create_file_using_open_options(path).await {
+            Ok(mut f) => {
+                write(&mut f, LOG_HEADER).await;
+                Some(f)
+            }
+            Err(e) => {
+                error!("Failed to create file {:?}", e);
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::pin::Pin;
+    use core::task::{Context, Poll};
+    use log::debug;
+    use std::io::Error;
+    use uwb_uci_packets::{
+        AppConfigTlvType, DeviceState, DeviceStatusNtfBuilder, GetDeviceInfoCmdBuilder,
+        GetDeviceInfoRspBuilder, StatusCode,
+    };
+
+    struct MockLogFile;
+
+    impl MockLogFile {
+        #[allow(dead_code)]
+        async fn write_all(&mut self, _data: &[u8]) -> Result<(), UwbErr> {
+            debug!("Write to fake file");
+            Ok(())
+        }
+        #[allow(dead_code)]
+        async fn flush(&self) -> Result<(), UwbErr> {
+            debug!("Fake file flush success");
+            Ok(())
+        }
+    }
+
+    impl AsyncWrite for MockLogFile {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<Result<usize, Error>> {
+            Poll::Ready(Ok(0))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct MockFileFactory;
+
+    #[async_trait]
+    impl FileFactory for MockFileFactory {
+        async fn new_file(&self) -> (Option<SyncFile>, usize) {
+            (Some(Arc::new(Mutex::new(MockLogFile {}))), 0)
+        }
+        async fn set_config(&mut self, _config: UciLogConfig) {}
+        async fn create_file_using_open_options(&self, _path: &str) -> Result<SyncFile, UwbErr> {
+            Ok(Arc::new(Mutex::new(MockLogFile {})))
+        }
+        async fn create_file_at_path(&self, _path: &str) -> Option<SyncFile> {
+            Some(Arc::new(Mutex::new(MockLogFile {})))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_log_command() -> Result<(), UwbErr> {
+        let logger =
+            UciLoggerImpl::new(UciLogMode::Filtered, Arc::new(Mutex::new(MockFileFactory {})))
+                .await;
+        let cmd: UciCommandPacket = GetDeviceInfoCmdBuilder {}.build().into();
+        logger.log_uci_command(cmd).await;
+        let data = [0x20, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let buf_file = logger.buf_file.lock().await;
+        assert_eq!(1, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
+        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_log_response() -> Result<(), UwbErr> {
+        let logger =
+            UciLoggerImpl::new(UciLogMode::Filtered, Arc::new(Mutex::new(MockFileFactory {})))
+                .await;
+        let rsp = GetDeviceInfoRspBuilder {
+            status: StatusCode::UciStatusOk,
+            uci_version: 0,
+            mac_version: 0,
+            phy_version: 0,
+            uci_test_version: 0,
+            vendor_spec_info: vec![],
+        }
+        .build()
+        .into();
+        logger.log_uci_response(rsp).await;
+        let data = [
+            0x40, 0x02, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00,
+        ];
+        let buf_file = logger.buf_file.lock().await;
+        assert_eq!(2, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
+        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_log_notification() -> Result<(), UwbErr> {
+        let logger =
+            UciLoggerImpl::new(UciLogMode::Filtered, Arc::new(Mutex::new(MockFileFactory {})))
+                .await;
+        let ntf =
+            DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
+        logger.log_uci_notification(ntf).await;
+        let data = [0x60, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01];
+        let buf_file = logger.buf_file.lock().await;
+        assert_eq!(3, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
+        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_disabled_log() -> Result<(), UwbErr> {
+        let logger =
+            UciLoggerImpl::new(UciLogMode::Disabled, Arc::new(Mutex::new(MockFileFactory {})))
+                .await;
+        let cmd: UciCommandPacket = GetDeviceInfoCmdBuilder {}.build().into();
+        logger.log_uci_command(cmd).await;
+        let buf_file = logger.buf_file.lock().await;
+        assert!(buf_file.buffer.is_empty());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_filter_log() -> Result<(), UwbErr> {
+        let logger =
+            UciLoggerImpl::new(UciLogMode::Filtered, Arc::new(Mutex::new(MockFileFactory {})))
+                .await;
+        let rsp = SessionGetAppConfigRspBuilder {
+            status: StatusCode::UciStatusOk,
+            tlvs: vec![AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0x02, 0x02] }],
+        }
+        .build()
+        .into();
+        logger.log_uci_response(rsp).await;
+        let data = [0x41, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x27, 0x02, 0x00, 0x00];
+        let buf_file = logger.buf_file.lock().await;
+        assert_eq!(2, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
+        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        Ok(())
+    }
 }
