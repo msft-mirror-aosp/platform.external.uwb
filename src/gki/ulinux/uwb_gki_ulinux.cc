@@ -267,8 +267,13 @@ void phUwb_GKI_shutdown(void) {
 
 #if (FALSE == GKI_PTHREAD_JOINABLE)
       int i = 0;
-      while ((gki_cb.com.OSWaitEvt[task_id - 1] != 0) && (++i < 10))
-        usleep(100 * 1000);
+      if((task_id - 1) != BTU_TASK) {
+        while ((gki_cb.com.OSWaitEvt[task_id - 1] != 0) && (++i < 10))
+          usleep(50 * 1000);
+      } else {
+        usleep(50 * 1000);
+        UCI_TRACE_D("%s: Wait not needed for UWBA_TASK with task id %d", __func__,(task_id - 1));
+      }
 #else
       /* wait for proper Arnold Schwarzenegger task state */
       result = pthread_join(gki_cb.os.thread_id[task_id - 1], NULL);
@@ -280,13 +285,9 @@ void phUwb_GKI_shutdown(void) {
       phUwb_GKI_exit_task(task_id - 1);
     }
   }
-
-  /* Destroy mutex and condition variable objects */
-  pthread_mutex_destroy(&gki_cb.os.GKI_mutex);
-  /*    pthread_mutex_destroy(&GKI_sched_mutex); */
-  /*    pthread_mutex_destroy(&thread_delay_mutex);
-   pthread_cond_destroy (&thread_delay_cond); */
-
+/*    pthread_mutex_destroy(&GKI_sched_mutex); */
+/*    pthread_mutex_destroy(&thread_delay_mutex);
+ pthread_cond_destroy (&thread_delay_cond); */
   if (gki_cb.os.gki_timer_wake_lock_on) {
     UCI_TRACE_I("GKI_shutdown :  release_wake_lock(brcm_btld)");
     release_wake_lock(WAKE_LOCK_ID);
@@ -296,6 +297,8 @@ void phUwb_GKI_shutdown(void) {
   *p_run_cond = GKI_TIMER_TICK_EXIT_COND;
   if (oldCOnd == GKI_TIMER_TICK_STOP_COND)
     pthread_cond_signal(&gki_cb.os.gki_timer_cond);
+  /* Destroy mutex and condition variable objects */
+  pthread_mutex_destroy(&gki_cb.os.GKI_mutex);
 }
 
 /*******************************************************************************
