@@ -20,11 +20,14 @@ use android_hardware_uwb::aidl::android::hardware::uwb::UwbStatus::UwbStatus;
 use std::array::TryFromSliceError;
 use std::option::Option;
 use tokio::sync::{mpsc, oneshot};
+use uwb_uci_packets::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum UwbErr {
+    #[error("StatusCoode error: {0:?}")]
+    StatusCode(StatusCode),
     #[error("UWBStatus error: {0:?}")]
-    Status(UwbStatus),
+    UwbStatus(UwbStatus),
     #[error("Binder error: {0}")]
     Binder(#[from] binder::Status),
     #[error("JNI error: {0}")]
@@ -53,16 +56,18 @@ pub enum UwbErr {
     Exit,
     #[error("Could not connect to HAL")]
     HalUnavailable(#[from] binder::StatusCode),
+    #[error("Could not convert")]
+    ConvertToEnum(#[from] std::num::TryFromIntError),
     #[error("Unknown error")]
     Undefined,
 }
 
 impl UwbErr {
     pub fn failed() -> Self {
-        UwbErr::Status(UwbStatus::FAILED)
+        UwbErr::UwbStatus(UwbStatus::FAILED)
     }
 
     pub fn refused() -> Self {
-        UwbErr::Status(UwbStatus::REFUSED)
+        UwbErr::UwbStatus(UwbStatus::REFUSED)
     }
 }
