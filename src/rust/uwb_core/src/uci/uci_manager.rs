@@ -579,13 +579,11 @@ impl<T: UciHal> UciManagerActor<T> {
             }
             UciNotification::Session(SessionNotification::Status {
                 session_id,
-                session_state,
+                session_state: SessionState::SessionStateInit,
                 reason_code: _,
             }) => {
-                if matches!(session_state, SessionState::SessionStateInit) {
-                    if let Err(e) = self.hal.notify_session_initialized(session_id).await {
-                        warn!("notify_session_initialized() failed: {:?}", e);
-                    }
+                if let Err(e) = self.hal.notify_session_initialized(session_id).await {
+                    warn!("notify_session_initialized() failed: {:?}", e);
                 }
             }
             _ => {}
