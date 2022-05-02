@@ -26,20 +26,30 @@ use crate::uci::params::{
 
 #[derive(Debug, Clone)]
 pub(crate) enum UciNotification {
-    CoreDeviceStatus(DeviceState),
-    CoreGenericError(StatusCode),
-    SessionStatus {
+    Core(CoreNotification),
+    Session(SessionNotification),
+    Vendor(RawVendorMessage),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum CoreNotification {
+    DeviceStatus(DeviceState),
+    GenericError(StatusCode),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum SessionNotification {
+    Status {
         session_id: SessionId,
         session_state: SessionState,
         reason_code: ReasonCode,
     },
-    SessionUpdateControllerMulticastList {
+    UpdateControllerMulticastList {
         session_id: SessionId,
         remaining_multicast_list_size: usize,
         status_list: Vec<ControleeStatus>,
     },
     RangeData(SessionRangeData),
-    RawVendor(RawVendorMessage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -115,7 +125,10 @@ fn extended_address_two_way_ranging_measurement_eq(
 
 impl UciNotification {
     pub fn need_retry(&self) -> bool {
-        matches!(self, Self::CoreGenericError(StatusCode::UciStatusCommandRetry))
+        matches!(
+            self,
+            Self::Core(CoreNotification::GenericError(StatusCode::UciStatusCommandRetry))
+        )
     }
 }
 
@@ -124,9 +137,9 @@ impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
     fn try_from(evt: uwb_uci_packets::UciNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
         match evt.specialize() {
-            UciNotificationChild::CoreNotification(evt) => evt.try_into(),
-            UciNotificationChild::SessionNotification(evt) => evt.try_into(),
-            UciNotificationChild::RangingNotification(evt) => evt.try_into(),
+            UciNotificationChild::CoreNotification(evt) => Ok(Self::Core(evt.try_into()?)),
+            UciNotificationChild::SessionNotification(evt) => Ok(Self::Session(evt.try_into()?)),
+            UciNotificationChild::RangingNotification(evt) => Ok(Self::Session(evt.try_into()?)),
             UciNotificationChild::AndroidNotification(evt) => evt.try_into(),
             UciNotificationChild::UciVendor_9_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_A_Notification(evt) => vendor_notification(evt.into()),
@@ -138,34 +151,32 @@ impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
     }
 }
 
-impl TryFrom<uwb_uci_packets::CoreNotificationPacket> for UciNotification {
+impl TryFrom<uwb_uci_packets::CoreNotificationPacket> for CoreNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::CoreNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::CoreNotificationChild;
         match evt.specialize() {
             CoreNotificationChild::DeviceStatusNtf(evt) => {
-                Ok(UciNotification::CoreDeviceStatus(evt.get_device_state()))
+                Ok(Self::DeviceStatus(evt.get_device_state()))
             }
-            CoreNotificationChild::GenericError(evt) => {
-                Ok(UciNotification::CoreGenericError(evt.get_status()))
-            }
+            CoreNotificationChild::GenericError(evt) => Ok(Self::GenericError(evt.get_status())),
             _ => Err(Error::Specialize(evt.to_vec())),
         }
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for UciNotification {
+impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for SessionNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::SessionNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::SessionNotificationChild;
         match evt.specialize() {
-            SessionNotificationChild::SessionStatusNtf(evt) => Ok(UciNotification::SessionStatus {
+            SessionNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
                 session_id: evt.get_session_id(),
                 session_state: evt.get_session_state(),
                 reason_code: evt.get_reason_code(),
             }),
             SessionNotificationChild::SessionUpdateControllerMulticastListNtf(evt) => {
-                Ok(UciNotification::SessionUpdateControllerMulticastList {
+                Ok(Self::UpdateControllerMulticastList {
                     session_id: evt.get_session_id(),
                     remaining_multicast_list_size: evt.get_remaining_multicast_list_size() as usize,
                     status_list: evt.get_controlee_status().clone(),
@@ -176,7 +187,7 @@ impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for UciNotification {
     }
 }
 
-impl TryFrom<uwb_uci_packets::RangingNotificationPacket> for UciNotification {
+impl TryFrom<uwb_uci_packets::RangingNotificationPacket> for SessionNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangingNotificationPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangingNotificationChild;
@@ -187,7 +198,7 @@ impl TryFrom<uwb_uci_packets::RangingNotificationPacket> for UciNotification {
     }
 }
 
-impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
+impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::RangeDataNtfPacket) -> Result<Self, Self::Error> {
         use uwb_uci_packets::RangeDataNtfChild;
@@ -200,7 +211,7 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
             }
             _ => return Err(Error::Specialize(evt.to_vec())),
         };
-        Ok(UciNotification::RangeData(SessionRangeData {
+        Ok(Self::RangeData(SessionRangeData {
             sequence_number: evt.get_sequence_number(),
             session_id: evt.get_session_id(),
             current_ranging_interval_ms: evt.get_current_ranging_interval(),
@@ -218,7 +229,7 @@ impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
 }
 
 fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> UciResult<UciNotification> {
-    Ok(UciNotification::RawVendor(RawVendorMessage {
+    Ok(UciNotification::Vendor(RawVendorMessage {
         gid: evt.get_group_id().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
         oid: evt.get_opcode().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
         payload: get_vendor_uci_payload(evt)?,
