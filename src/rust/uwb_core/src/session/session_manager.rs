@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::session::uwb_session::UwbSession;
-use crate::uci::notification::{SessionRangeData, UciNotification};
+use crate::uci::notification::{SessionNotification, SessionRangeData, UciNotification};
 use crate::uci::params::{
     Controlee, SessionId, SessionState, SessionType, UpdateMulticastListAction,
 };
@@ -147,7 +147,9 @@ impl<T: UciManager> SessionManagerActor<T> {
                 }
 
                 Some(uci_notf) = self.uci_notf_receiver.recv() => {
-                    self.handle_uci_notification(uci_notf);
+                    if let UciNotification::Session(notf) = uci_notf {
+                        self.handle_uci_notification(notf);
+                    }
                 }
             }
         }
@@ -236,9 +238,9 @@ impl<T: UciManager> SessionManagerActor<T> {
         }
     }
 
-    fn handle_uci_notification(&mut self, notf: UciNotification) {
+    fn handle_uci_notification(&mut self, notf: SessionNotification) {
         match notf {
-            UciNotification::SessionStatus { session_id, session_state, reason_code } => {
+            SessionNotification::Status { session_id, session_state, reason_code } => {
                 if session_state == SessionState::SessionStateDeinit {
                     debug!("Session {:?} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
@@ -255,7 +257,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
-            UciNotification::SessionUpdateControllerMulticastList {
+            SessionNotification::UpdateControllerMulticastList {
                 session_id,
                 remaining_multicast_list_size: _,
                 status_list,
@@ -268,13 +270,12 @@ impl<T: UciManager> SessionManagerActor<T> {
                     );
                 }
             },
-            UciNotification::RangeData(data) => {
+            SessionNotification::RangeData(data) => {
                 match self.active_sessions.get_mut(&data.session_id) {
                     Some(session) => session.on_range_data_received(data),
                     None => warn!("Received range data of the unknown Session: {:?}", data),
                 }
             }
-            _ => {}
         }
     }
 }
@@ -358,16 +359,17 @@ mod tests {
         let tlvs = params.generate_tlvs();
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                let init_notfs = vec![UciNotification::SessionStatus {
+                let init_notfs = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateInit,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let set_app_config_notfs = vec![UciNotification::SessionStatus {
-                    session_id,
-                    session_state: SessionState::SessionStateIdle,
-                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
+                })];
+                let set_app_config_notfs =
+                    vec![UciNotification::Session(SessionNotification::Status {
+                        session_id,
+                        session_state: SessionState::SessionStateIdle,
+                        reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                    })];
                 uci_manager.expect_session_init(session_id, session_type, init_notfs, Ok(()));
                 uci_manager.expect_session_set_app_config(
                     session_id,
@@ -439,21 +441,22 @@ mod tests {
 
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                let state_init_notf = vec![UciNotification::SessionStatus {
+                let state_init_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateInit,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let state_idle_notf = vec![UciNotification::SessionStatus {
+                })];
+                let state_idle_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateIdle,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let state_active_notf = vec![UciNotification::SessionStatus {
-                    session_id,
-                    session_state: SessionState::SessionStateActive,
-                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
+                })];
+                let state_active_notf =
+                    vec![UciNotification::Session(SessionNotification::Status {
+                        session_id,
+                        session_state: SessionState::SessionStateActive,
+                        reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                    })];
                 uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
                 uci_manager.expect_session_set_app_config(
                     session_id,
@@ -493,18 +496,18 @@ mod tests {
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                let state_init_notf = vec![UciNotification::SessionStatus {
+                let state_init_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateInit,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let state_idle_notf = vec![UciNotification::SessionStatus {
+                })];
+                let state_idle_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateIdle,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let multicast_list_notf =
-                    vec![UciNotification::SessionUpdateControllerMulticastList {
+                })];
+                let multicast_list_notf = vec![UciNotification::Session(
+                    SessionNotification::UpdateControllerMulticastList {
                         session_id,
                         remaining_multicast_list_size: 1,
                         status_list: vec![ControleeStatus {
@@ -512,7 +515,8 @@ mod tests {
                             subsession_id: 0x24,
                             status: MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
                         }],
-                    }];
+                    },
+                )];
                 uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
                 uci_manager.expect_session_set_app_config(
                     session_id,
@@ -556,16 +560,16 @@ mod tests {
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                let state_init_notf = vec![UciNotification::SessionStatus {
+                let state_init_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateInit,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
-                let state_idle_notf = vec![UciNotification::SessionStatus {
+                })];
+                let state_idle_notf = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateIdle,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
+                })];
                 uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
                 uci_manager.expect_session_set_app_config(
                     session_id,
@@ -631,18 +635,18 @@ mod tests {
         let range_data_clone = range_data.clone();
         let (mut session_manager, mut mock_uci_manager) =
             setup_session_manager(move |uci_manager| {
-                let init_notfs = vec![UciNotification::SessionStatus {
+                let init_notfs = vec![UciNotification::Session(SessionNotification::Status {
                     session_id,
                     session_state: SessionState::SessionStateInit,
                     reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                }];
+                })];
                 let set_app_config_notfs = vec![
-                    UciNotification::SessionStatus {
+                    UciNotification::Session(SessionNotification::Status {
                         session_id,
                         session_state: SessionState::SessionStateIdle,
                         reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
-                    },
-                    UciNotification::RangeData(range_data_clone),
+                    }),
+                    UciNotification::Session(SessionNotification::RangeData(range_data_clone)),
                 ];
                 uci_manager.expect_session_init(session_id, session_type, init_notfs, Ok(()));
                 uci_manager.expect_session_set_app_config(
