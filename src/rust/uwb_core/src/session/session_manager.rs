@@ -321,18 +321,16 @@ mod tests {
     use crate::utils::init_test_logging;
 
     fn generate_params() -> AppConfigParams {
-        AppConfigParams::Fira(
-            FiraAppConfigParamsBuilder::new()
-                .device_type(DeviceType::Controller)
-                .multi_node_mode(MultiNodeMode::Unicast)
-                .device_mac_address(UwbAddress::Short([1, 2]))
-                .dst_mac_address(vec![UwbAddress::Short([3, 4])])
-                .device_role(DeviceRole::Initiator)
-                .vendor_id([0xFE, 0xDC])
-                .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56])
-                .build()
-                .unwrap(),
-        )
+        FiraAppConfigParamsBuilder::new()
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56])
+            .build()
+            .unwrap()
     }
 
     async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)

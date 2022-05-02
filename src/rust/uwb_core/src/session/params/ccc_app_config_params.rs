@@ -20,6 +20,7 @@ use crate::session::params::fira_app_config_params::{
     DeviceRole, DeviceType, KeyRotation, MultiNodeMode, RangeDataNtfConfig, StsConfig,
 };
 use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
+use crate::session::params::AppConfigParams;
 use crate::uci::params::AppConfigTlvType;
 use crate::utils::builder_field;
 
@@ -126,7 +127,7 @@ impl CccAppConfigParamsBuilder {
         }
     }
 
-    pub fn build(&self) -> Option<CccAppConfigParams> {
+    pub fn build(&self) -> Option<AppConfigParams> {
         let params = CccAppConfigParams {
             protocol_version: self.protocol_version.clone(),
             uwb_config: self.uwb_config?,
@@ -140,21 +141,24 @@ impl CccAppConfigParamsBuilder {
             hopping_mode: self.hopping_mode?,
         };
         params.is_valid()?;
-        Some(params)
+        Some(AppConfigParams::Ccc(params))
     }
 
-    pub fn from_params(params: &CccAppConfigParams) -> Self {
-        Self {
-            protocol_version: params.protocol_version.clone(),
-            uwb_config: Some(params.uwb_config),
-            pulse_shape_combo: Some(params.pulse_shape_combo.clone()),
-            ran_multiplier: Some(params.ran_multiplier),
-            channel_number: Some(params.channel_number),
-            chaps_per_slot: Some(params.chaps_per_slot),
-            num_responder_nodes: Some(params.num_responder_nodes),
-            slots_per_rr: Some(params.slots_per_rr),
-            sync_code_index: Some(params.sync_code_index),
-            hopping_mode: Some(params.hopping_mode),
+    pub fn from_params(params: &AppConfigParams) -> Option<Self> {
+        match params {
+            AppConfigParams::Ccc(params) => Some(Self {
+                protocol_version: params.protocol_version.clone(),
+                uwb_config: Some(params.uwb_config),
+                pulse_shape_combo: Some(params.pulse_shape_combo.clone()),
+                ran_multiplier: Some(params.ran_multiplier),
+                channel_number: Some(params.channel_number),
+                chaps_per_slot: Some(params.chaps_per_slot),
+                num_responder_nodes: Some(params.num_responder_nodes),
+                slots_per_rr: Some(params.slots_per_rr),
+                sync_code_index: Some(params.sync_code_index),
+                hopping_mode: Some(params.hopping_mode),
+            }),
+            _ => None,
         }
     }
 
@@ -313,5 +317,21 @@ mod tests {
             (AppConfigTlvType::CccUrskTtl, u16_to_bytes(CCC_URSK_TTL)),
         ]);
         assert_eq!(config_map, expected_config_map);
+
+        // Update the value from the params.
+        let updated_ran_multiplier = 5;
+        assert_ne!(ran_multiplier, updated_ran_multiplier);
+        let expected_updated_config_map = HashMap::from([(
+            AppConfigTlvType::RangingInterval,
+            u32_to_bytes(updated_ran_multiplier * MINIMUM_BLOCK_DURATION_MS),
+        )]);
+
+        let updated_params1 = CccAppConfigParamsBuilder::from_params(&params)
+            .unwrap()
+            .ran_multiplier(updated_ran_multiplier)
+            .build()
+            .unwrap();
+        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        assert_eq!(updated_config_map1, expected_updated_config_map);
     }
 }

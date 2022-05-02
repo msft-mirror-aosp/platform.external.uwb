@@ -53,9 +53,25 @@ impl AppConfigParams {
         &self,
         prev_params: &Self,
     ) -> HashMap<AppConfigTlvType, Vec<u8>> {
+        let config_map = self.generate_config_map();
+        let prev_config_map = prev_params.generate_config_map();
+
         match (self, prev_params) {
-            (Self::Fira(params), Self::Fira(prev_params)) => {
-                params.generate_updated_config_map(prev_params)
+            (Self::Fira(_), Self::Fira(_)) | (Self::Ccc(_), Self::Ccc(_)) => {
+                // The key sets of both map should be the same.
+                debug_assert!(
+                    config_map.len() == prev_config_map.len()
+                        && config_map.keys().all(|key| prev_config_map.contains_key(key))
+                );
+
+                let mut updated_config_map = HashMap::new();
+                for (key, value) in config_map.into_iter() {
+                    if !matches!(prev_config_map.get(&key), Some(prev_value) if prev_value == &value)
+                    {
+                        updated_config_map.insert(key, value);
+                    }
+                }
+                updated_config_map
             }
             _ => HashMap::new(),
         }
