@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use log::warn;
 
 use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
-use crate::session::params::AppConfigParams;
+use crate::session::params::{AppConfigParams, AppConfigTlvMap};
 use crate::uci::params::{AppConfigTlvType, SessionState};
 use crate::utils::builder_field;
 
@@ -268,10 +268,7 @@ impl FiraAppConfigParams {
                 != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
     }
 
-    pub fn is_config_updatable(
-        config_map: &HashMap<AppConfigTlvType, Vec<u8>>,
-        session_state: SessionState,
-    ) -> bool {
+    pub fn is_config_updatable(config_map: &AppConfigTlvMap, session_state: SessionState) -> bool {
         match session_state {
             SessionState::SessionStateActive => {
                 let avalible_list = HashSet::from([
@@ -288,7 +285,7 @@ impl FiraAppConfigParams {
         }
     }
 
-    pub fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
+    pub fn generate_config_map(&self) -> AppConfigTlvMap {
         debug_assert!(self.is_valid().is_some());
 
         HashMap::from([

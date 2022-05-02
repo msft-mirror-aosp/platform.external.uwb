@@ -22,6 +22,8 @@ use crate::session::params::ccc_app_config_params::CccAppConfigParams;
 use crate::session::params::fira_app_config_params::FiraAppConfigParams;
 use crate::uci::params::{AppConfigTlv, AppConfigTlvType, SessionState, SessionType};
 
+type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
+
 /// The parameters of the UWB session.
 #[derive(Debug, Clone)]
 pub enum AppConfigParams {
@@ -46,11 +48,11 @@ impl AppConfigParams {
         ))
     }
 
-    fn config_map_to_tlvs(config_map: HashMap<AppConfigTlvType, Vec<u8>>) -> Vec<AppConfigTlv> {
+    fn config_map_to_tlvs(config_map: AppConfigTlvMap) -> Vec<AppConfigTlv> {
         config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 
-    fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
+    fn generate_config_map(&self) -> AppConfigTlvMap {
         match self {
             Self::Fira(params) => params.generate_config_map(),
             Self::Ccc(params) => params.generate_config_map(),
@@ -61,7 +63,7 @@ impl AppConfigParams {
         &self,
         prev_params: &Self,
         session_state: SessionState,
-    ) -> Option<HashMap<AppConfigTlvType, Vec<u8>>> {
+    ) -> Option<AppConfigTlvMap> {
         let config_map = self.generate_config_map();
         let prev_config_map = prev_params.generate_config_map();
 
@@ -97,9 +99,9 @@ impl AppConfigParams {
     }
 
     fn diff_config_map(
-        config_map: HashMap<AppConfigTlvType, Vec<u8>>,
-        prev_config_map: HashMap<AppConfigTlvType, Vec<u8>>,
-    ) -> HashMap<AppConfigTlvType, Vec<u8>> {
+        config_map: AppConfigTlvMap,
+        prev_config_map: AppConfigTlvMap,
+    ) -> AppConfigTlvMap {
         // The key sets of both map should be the same.
         debug_assert!(
             config_map.len() == prev_config_map.len()
