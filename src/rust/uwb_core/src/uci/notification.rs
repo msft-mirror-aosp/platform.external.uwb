@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::convert::{TryFrom, TryInto};
+use std::iter::zip;
 
 use num_traits::ToPrimitive;
 use uwb_uci_packets::Packet;
@@ -37,20 +38,79 @@ pub(crate) enum UciNotification {
         remaining_multicast_list_size: usize,
         status_list: Vec<ControleeStatus>,
     },
-    RangeData {
-        sequence_number: u32,
-        session_id: SessionId,
-        current_ranging_interval_ms: u32,
-        ranging_measurement_type: RangingMeasurementType,
-        ranging_measurements: RangingMeasurements,
-    },
+    RangeData(SessionRangeData),
     RawVendor(RawVendorMessage),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SessionRangeData {
+    pub sequence_number: u32,
+    pub session_id: SessionId,
+    pub current_ranging_interval_ms: u32,
+    pub ranging_measurement_type: RangingMeasurementType,
+    pub ranging_measurements: RangingMeasurements,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum RangingMeasurements {
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
+}
+
+impl PartialEq for RangingMeasurements {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Short(a_vec), Self::Short(b_vec)) => {
+                a_vec.len() == b_vec.len()
+                    && zip(a_vec, b_vec)
+                        .all(|(a, b)| short_address_two_way_ranging_measurement_eq(a, b))
+            }
+            (Self::Extended(a_vec), Self::Extended(b_vec)) => {
+                a_vec.len() == b_vec.len()
+                    && zip(a_vec, b_vec)
+                        .all(|(a, b)| extended_address_two_way_ranging_measurement_eq(a, b))
+            }
+            _ => false,
+        }
+    }
+}
+
+fn short_address_two_way_ranging_measurement_eq(
+    a: &ShortAddressTwoWayRangingMeasurement,
+    b: &ShortAddressTwoWayRangingMeasurement,
+) -> bool {
+    a.mac_address == b.mac_address
+        && a.status == b.status
+        && a.nlos == b.nlos
+        && a.distance == b.distance
+        && a.aoa_azimuth == b.aoa_azimuth
+        && a.aoa_azimuth_fom == b.aoa_azimuth_fom
+        && a.aoa_elevation == b.aoa_elevation
+        && a.aoa_elevation_fom == b.aoa_elevation_fom
+        && a.aoa_destination_azimuth == b.aoa_destination_azimuth
+        && a.aoa_destination_azimuth_fom == b.aoa_destination_azimuth_fom
+        && a.aoa_destination_elevation == b.aoa_destination_elevation
+        && a.aoa_destination_elevation_fom == b.aoa_destination_elevation_fom
+        && a.slot_index == b.slot_index
+}
+
+fn extended_address_two_way_ranging_measurement_eq(
+    a: &ExtendedAddressTwoWayRangingMeasurement,
+    b: &ExtendedAddressTwoWayRangingMeasurement,
+) -> bool {
+    a.mac_address == b.mac_address
+        && a.status == b.status
+        && a.nlos == b.nlos
+        && a.distance == b.distance
+        && a.aoa_azimuth == b.aoa_azimuth
+        && a.aoa_azimuth_fom == b.aoa_azimuth_fom
+        && a.aoa_elevation == b.aoa_elevation
+        && a.aoa_elevation_fom == b.aoa_elevation_fom
+        && a.aoa_destination_azimuth == b.aoa_destination_azimuth
+        && a.aoa_destination_azimuth_fom == b.aoa_destination_azimuth_fom
+        && a.aoa_destination_elevation == b.aoa_destination_elevation
+        && a.aoa_destination_elevation_fom == b.aoa_destination_elevation_fom
+        && a.slot_index == b.slot_index
 }
 
 impl UciNotification {
@@ -140,13 +200,13 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for UciNotification {
             }
             _ => return Err(Error::Specialize(evt.to_vec())),
         };
-        Ok(UciNotification::RangeData {
+        Ok(UciNotification::RangeData(SessionRangeData {
             sequence_number: evt.get_sequence_number(),
             session_id: evt.get_session_id(),
             current_ranging_interval_ms: evt.get_current_ranging_interval(),
             ranging_measurement_type: evt.get_ranging_measurement_type(),
             ranging_measurements,
-        })
+        }))
     }
 }
 
