@@ -738,6 +738,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_open_hal_without_notification() {
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        hal.expected_open(None, Ok(()));
+        let mut uci_manager = UciManagerImpl::new(hal.clone());
+
+        let result = uci_manager.open_hal().await;
+        assert!(matches!(result, Err(Error::Timeout)));
+        assert!(hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
     async fn test_close_hal_explicitly() {
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             hal.expected_close(Ok(()));
