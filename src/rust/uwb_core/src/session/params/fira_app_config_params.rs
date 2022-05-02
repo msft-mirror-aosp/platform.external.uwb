@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use log::warn;
 
 use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::session::params::AppConfigParams;
-use crate::uci::params::AppConfigTlvType;
+use crate::uci::params::{AppConfigTlvType, SessionState};
 use crate::utils::builder_field;
 
 // The default value of each parameters.
@@ -266,6 +266,26 @@ impl FiraAppConfigParams {
             || self.number_of_aoa_azimuth_measurements != DEFAULT_NUMBER_OF_AOA_AZIMUTH_MEASUREMENTS
             || self.number_of_aoa_elevation_measurements
                 != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
+    }
+
+    pub fn is_config_updatable(
+        config_map: &HashMap<AppConfigTlvType, Vec<u8>>,
+        session_state: SessionState,
+    ) -> bool {
+        match session_state {
+            SessionState::SessionStateActive => {
+                let avalible_list = HashSet::from([
+                    AppConfigTlvType::RangingInterval,
+                    AppConfigTlvType::RngDataNtf,
+                    AppConfigTlvType::RngDataNtfProximityNear,
+                    AppConfigTlvType::RngDataNtfProximityFar,
+                    AppConfigTlvType::BlockStrideLength,
+                ]);
+                config_map.keys().all(|key| avalible_list.contains(key))
+            }
+            SessionState::SessionStateIdle => true,
+            _ => false,
+        }
     }
 
     pub fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
@@ -1043,7 +1063,9 @@ mod tests {
             HashMap::from([(AppConfigTlvType::KeyRotationRate, vec![updated_key_rotation_rate])]);
 
         let updated_params1 = builder.key_rotation_rate(updated_key_rotation_rate).build().unwrap();
-        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        let updated_config_map1 = updated_params1
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .unwrap();
         assert_eq!(updated_config_map1, expected_updated_config_map);
 
         // Update the value from the params.
@@ -1052,7 +1074,34 @@ mod tests {
             .key_rotation_rate(updated_key_rotation_rate)
             .build()
             .unwrap();
-        let updated_config_map2 = updated_params2.generate_updated_config_map(&params);
+        let updated_config_map2 = updated_params2
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .unwrap();
         assert_eq!(updated_config_map2, expected_updated_config_map);
+    }
+
+    #[test]
+    fn test_update_config() {
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56]);
+        let params = builder.build().unwrap();
+
+        builder.multi_node_mode(MultiNodeMode::OneToMany);
+        let updated_params = builder.build().unwrap();
+        // MultiNodeMode can be updated at idle state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .is_some());
+        // MultiNodeMode cannot be updated at active state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateActive)
+            .is_none());
     }
 }

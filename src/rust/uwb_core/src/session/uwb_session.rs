@@ -249,8 +249,16 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn reconfigure(&mut self, params: AppConfigParams) -> Result<()> {
         debug_assert!(*self.state_receiver.borrow() != SessionState::SessionStateDeinit);
 
+        let state = *self.state_receiver.borrow();
         let tlvs = match self.params.as_ref() {
-            Some(prev_params) => params.generate_updated_tlvs(prev_params),
+            Some(prev_params) => {
+                if let Some(tlvs) = params.generate_updated_tlvs(prev_params, state) {
+                    tlvs
+                } else {
+                    error!("Cannot update the app config at state {:?}: {:?}", state, params);
+                    return Err(Error::InvalidArguments);
+                }
+            }
             None => params.generate_tlvs(),
         };
 
