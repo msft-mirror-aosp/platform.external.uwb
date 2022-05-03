@@ -23,7 +23,7 @@ use uwb_uci_packets::{Packet, UciCommandPacket};
 use crate::uci::command::UciCommand;
 use crate::uci::error::{Error, Result};
 use crate::uci::message::UciMessage;
-use crate::uci::notification::UciNotification;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
@@ -42,10 +42,23 @@ const MAX_RETRY_COUNT: usize = 3;
 /// abstracts the UCI commands, responses, and notifications.
 #[async_trait]
 pub(crate) trait UciManager: 'static + Send + Clone {
+    // Set the sendor of the UCI notificaions.
+    async fn set_core_notification_sender(
+        &mut self,
+        core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    );
+    async fn set_session_notification_sender(
+        &mut self,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    );
+    async fn set_vendor_notification_sender(
+        &mut self,
+        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    );
+
     // Open the UCI HAL.
-    // All the other methods should be called after the open_hal() completes successfully.
-    async fn open_hal(&mut self, notf_sender: mpsc::UnboundedSender<UciNotification>)
-        -> Result<()>;
+    // All the UCI commands should be called after the open_hal() completes successfully.
+    async fn open_hal(&mut self) -> Result<()>;
 
     // Close the UCI HAL.
     async fn close_hal(&mut self) -> Result<()>;
@@ -134,11 +147,30 @@ impl UciManagerImpl {
 
 #[async_trait]
 impl UciManager for UciManagerImpl {
-    async fn open_hal(
+    async fn set_core_notification_sender(
         &mut self,
-        notf_sender: mpsc::UnboundedSender<UciNotification>,
-    ) -> Result<()> {
-        match self.send_cmd(UciManagerCmd::OpenHal { notf_sender }).await {
+        core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    ) {
+        let _ = self.send_cmd(UciManagerCmd::SetCoreNotificationSender { core_notf_sender }).await;
+    }
+    async fn set_session_notification_sender(
+        &mut self,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    ) {
+        let _ = self
+            .send_cmd(UciManagerCmd::SetSessionNotificationSender { session_notf_sender })
+            .await;
+    }
+    async fn set_vendor_notification_sender(
+        &mut self,
+        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    ) {
+        let _ =
+            self.send_cmd(UciManagerCmd::SetVendorNotificationSender { vendor_notf_sender }).await;
+    }
+
+    async fn open_hal(&mut self) -> Result<()> {
+        match self.send_cmd(UciManagerCmd::OpenHal).await {
             Ok(UciResponse::OpenHal) => Ok(()),
             Ok(_) => Err(Error::ResponseMismatched),
             Err(e) => Err(e),
@@ -360,8 +392,6 @@ struct UciManagerActor<T: UciHal> {
     // Receive the response and the notification from |hal|. Only used when |hal| is opened
     // successfully.
     msg_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
-    // Send the notification to the UciManager. Only valid when |hal| is opened successfully.
-    notf_sender: Option<mpsc::UnboundedSender<UciNotification>>,
     // Defrag the UCI packets.
     defrager: uwb_uci_packets::PacketDefrager,
 
@@ -377,6 +407,11 @@ struct UciManagerActor<T: UciHal> {
     // The timeout of waiting for the response. Only used when waiting for the response of a UCI
     // command.
     wait_resp_timeout: PinSleep,
+
+    // Send the notifications to the caller of UciManager.
+    core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
 }
 
 impl<T: UciHal> UciManagerActor<T> {
@@ -392,12 +427,14 @@ impl<T: UciHal> UciManagerActor<T> {
             cmd_receiver,
             is_hal_opened: false,
             msg_receiver: mpsc::unbounded_channel().1,
-            notf_sender: None,
             defrager: Default::default(),
             open_hal_result_sender: None,
             wait_device_status_timeout: PinSleep::new(Duration::MAX),
             retryer: None,
             wait_resp_timeout: PinSleep::new(Duration::MAX),
+            core_notf_sender: mpsc::unbounded_channel().0,
+            session_notf_sender: mpsc::unbounded_channel().0,
+            vendor_notf_sender: mpsc::unbounded_channel().0,
         }
     }
 
@@ -472,7 +509,19 @@ impl<T: UciHal> UciManagerActor<T> {
         debug!("Received cmd: {:?}", cmd);
 
         match cmd {
-            UciManagerCmd::OpenHal { notf_sender } => {
+            UciManagerCmd::SetCoreNotificationSender { core_notf_sender } => {
+                self.core_notf_sender = core_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::SetSessionNotificationSender { session_notf_sender } => {
+                self.session_notf_sender = session_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::SetVendorNotificationSender { vendor_notf_sender } => {
+                self.vendor_notf_sender = vendor_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::OpenHal => {
                 if self.is_hal_opened {
                     warn!("The UCI HAL is already opened, skip.");
                     let _ = result_sender.send(Err(Error::WrongState));
@@ -482,7 +531,7 @@ impl<T: UciHal> UciManagerActor<T> {
                 let (msg_sender, msg_receiver) = mpsc::unbounded_channel();
                 match self.hal.open(msg_sender).await {
                     Ok(()) => {
-                        self.on_hal_open(msg_receiver, notf_sender);
+                        self.on_hal_open(msg_receiver);
                         self.wait_device_status_timeout =
                             PinSleep::new(Duration::from_millis(UCI_TIMEOUT_MS));
                         self.open_hal_result_sender.replace(result_sender);
@@ -565,47 +614,48 @@ impl<T: UciHal> UciManagerActor<T> {
             return;
         }
 
-        match notf.clone() {
-            UciNotification::CoreDeviceStatus(status) => {
-                if let Some(result_sender) = self.open_hal_result_sender.take() {
-                    let result = match status {
-                        DeviceState::DeviceStateReady | DeviceState::DeviceStateActive => {
-                            Ok(UciResponse::OpenHal)
-                        }
-                        _ => Err(Error::HalFailed),
-                    };
-                    let _ = result_sender.send(result);
+        match notf {
+            UciNotification::Core(core_notf) => {
+                if let CoreNotification::DeviceStatus(status) = core_notf {
+                    if let Some(result_sender) = self.open_hal_result_sender.take() {
+                        let result = match status {
+                            DeviceState::DeviceStateReady | DeviceState::DeviceStateActive => {
+                                Ok(UciResponse::OpenHal)
+                            }
+                            _ => Err(Error::HalFailed),
+                        };
+                        let _ = result_sender.send(result);
+                    }
                 }
+                let _ = self.core_notf_sender.send(core_notf);
             }
-            UciNotification::SessionStatus { session_id, session_state, reason_code: _ } => {
-                if matches!(session_state, SessionState::SessionStateInit) {
+            UciNotification::Session(session_notf) => {
+                if let SessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateInit,
+                    reason_code: _,
+                } = session_notf
+                {
                     if let Err(e) = self.hal.notify_session_initialized(session_id).await {
                         warn!("notify_session_initialized() failed: {:?}", e);
                     }
                 }
+                let _ = self.session_notf_sender.send(session_notf);
             }
-            _ => {}
-        }
-
-        if let Some(notf_sender) = self.notf_sender.as_mut() {
-            let _ = notf_sender.send(notf);
+            UciNotification::Vendor(vendor_notf) => {
+                let _ = self.vendor_notf_sender.send(vendor_notf);
+            }
         }
     }
 
-    fn on_hal_open(
-        &mut self,
-        msg_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
-        notf_sender: mpsc::UnboundedSender<UciNotification>,
-    ) {
+    fn on_hal_open(&mut self, msg_receiver: mpsc::UnboundedReceiver<RawUciMessage>) {
         self.is_hal_opened = true;
         self.msg_receiver = msg_receiver;
-        self.notf_sender = Some(notf_sender);
     }
 
     fn on_hal_closed(&mut self) {
         self.is_hal_opened = false;
         self.msg_receiver = mpsc::unbounded_channel().1;
-        self.notf_sender = None;
     }
 
     fn is_waiting_resp(&self) -> bool {
@@ -638,7 +688,10 @@ impl Retryer {
 
 #[derive(Debug)]
 enum UciManagerCmd {
-    OpenHal { notf_sender: mpsc::UnboundedSender<UciNotification> },
+    SetCoreNotificationSender { core_notf_sender: mpsc::UnboundedSender<CoreNotification> },
+    SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
+    SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
+    OpenHal,
     CloseHal,
     SendUciCommand { cmd: UciCommand },
 }
@@ -666,7 +719,7 @@ mod tests {
 
     async fn setup_uci_manager_with_open_hal(
         setup_hal_fn: fn(&mut MockUciHal),
-    ) -> (UciManagerImpl, mpsc::UnboundedReceiver<UciNotification>, MockUciHal) {
+    ) -> (UciManagerImpl, MockUciHal) {
         init_test_logging();
 
         let mut hal = MockUciHal::new();
@@ -676,18 +729,30 @@ mod tests {
         hal.expected_open(Some(notf), Ok(()));
         setup_hal_fn(&mut hal);
 
-        let (notf_sender, notf_receiver) = mpsc::unbounded_channel();
         // Verify open_hal() is working.
         let mut uci_manager = UciManagerImpl::new(hal.clone());
-        let result = uci_manager.open_hal(notf_sender).await;
+        let result = uci_manager.open_hal().await;
         assert!(result.is_ok());
 
-        (uci_manager, notf_receiver, hal)
+        (uci_manager, hal)
+    }
+
+    #[tokio::test]
+    async fn test_open_hal_without_notification() {
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        hal.expected_open(None, Ok(()));
+        let mut uci_manager = UciManagerImpl::new(hal.clone());
+
+        let result = uci_manager.open_hal().await;
+        assert!(matches!(result, Err(Error::Timeout)));
+        assert!(hal.wait_expected_calls_done().await);
     }
 
     #[tokio::test]
     async fn test_close_hal_explicitly() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             hal.expected_close(Ok(()));
         })
         .await;
@@ -699,7 +764,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_hal_when_exit() {
-        let (uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             // UciManager should close the hal if the hal is still opened when exit.
             hal.expected_close(Ok(()));
         })
@@ -723,7 +788,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_reset_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::DeviceResetCmdBuilder {
                 reset_config: uwb_uci_packets::ResetConfig::UwbsReset,
             }
@@ -744,7 +809,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_core_get_device_info_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into();
             let resp = into_raw_messages(uwb_uci_packets::GetDeviceInfoRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusOk,
@@ -773,7 +838,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_core_get_caps_info_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let tlv = uwb_uci_packets::CapTlv {
                 t: uwb_uci_packets::CapTlvType::SupportedFiraPhyVersionRange,
                 v: vec![0x12, 0x34, 0x56],
@@ -796,7 +861,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_core_set_config_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let tlv = uwb_uci_packets::DeviceConfigTlv {
                 cfg_id: uwb_uci_packets::DeviceConfigId::DeviceState,
                 v: vec![0x12, 0x34, 0x56],
@@ -822,7 +887,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_core_get_config_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cfg_id = uwb_uci_packets::DeviceConfigId::DeviceState;
             let tlv = uwb_uci_packets::DeviceConfigTlv { cfg_id, v: vec![0x12, 0x34, 0x56] };
             let cmd =
@@ -851,7 +916,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_init_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let session_id = 0x123;
             let cmd = uwb_uci_packets::SessionInitCmdBuilder {
                 session_id,
@@ -883,7 +948,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_deinit_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::SessionDeinitCmdBuilder { session_id: 0x123 }.build().into();
             let resp = into_raw_messages(uwb_uci_packets::SessionDeinitRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusOk,
@@ -901,7 +966,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_set_app_config_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let tlv = uwb_uci_packets::AppConfigTlv {
                 cfg_id: uwb_uci_packets::AppConfigTlvType::DeviceType,
                 v: vec![0x12, 0x34, 0x56],
@@ -934,7 +999,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_app_config_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cfg_id = uwb_uci_packets::AppConfigTlvType::DeviceType;
             let tlv = uwb_uci_packets::AppConfigTlv { cfg_id, v: vec![0x12, 0x34, 0x56] };
             let cmd = uwb_uci_packets::SessionGetAppConfigCmdBuilder {
@@ -963,7 +1028,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
             let resp = into_raw_messages(uwb_uci_packets::SessionGetCountRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusOk,
@@ -981,7 +1046,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_state_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd =
                 uwb_uci_packets::SessionGetStateCmdBuilder { session_id: 0x123 }.build().into();
             let resp = into_raw_messages(uwb_uci_packets::SessionGetStateRspBuilder {
@@ -1001,7 +1066,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_update_controller_multicast_list_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let controlee =
                 uwb_uci_packets::Controlee { short_address: 0x4567, subsession_id: 0x90ab };
             let cmd = uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
@@ -1033,7 +1098,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_range_start_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::RangeStartCmdBuilder { session_id: 0x123 }.build().into();
             let resp = into_raw_messages(uwb_uci_packets::RangeStartRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusOk,
@@ -1051,7 +1116,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_range_stop_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::RangeStopCmdBuilder { session_id: 0x123 }.build().into();
             let resp = into_raw_messages(uwb_uci_packets::RangeStopRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusOk,
@@ -1069,7 +1134,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_range_get_ranging_count_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::RangeGetRangingCountCmdBuilder { session_id: 0x123 }
                 .build()
                 .into();
@@ -1090,7 +1155,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_android_set_country_code_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd =
                 uwb_uci_packets::AndroidSetCountryCodeCmdBuilder { country_code: b"US".to_owned() }
                     .build()
@@ -1111,7 +1176,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_android_get_power_stats_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into();
             let resp = into_raw_messages(uwb_uci_packets::AndroidGetPowerStatsRspBuilder {
                 stats: uwb_uci_packets::PowerStats {
@@ -1141,7 +1206,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_vendor_cmd_ok() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd = uwb_uci_packets::UciVendor_F_CommandBuilder {
                 opcode: 0x3,
                 payload: Some(Bytes::from(vec![0x11, 0x22, 0x33, 0x44])),
@@ -1168,7 +1233,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_retry_no_response() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
 
             hal.expected_send_command(cmd, vec![], Ok(()));
@@ -1182,7 +1247,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_timeout() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
 
             hal.expected_send_command(cmd, vec![], Err(Error::Timeout));
@@ -1196,7 +1261,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_retry_too_many_times() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
             let retry_resp = into_raw_messages(uwb_uci_packets::SessionGetCountRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
@@ -1216,7 +1281,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_retry_notification() {
-        let (mut uci_manager, _, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
             let cmd: RawUciMessage = uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into();
             let retry_resp = into_raw_messages(uwb_uci_packets::SessionGetCountRspBuilder {
                 status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,

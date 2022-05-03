@@ -21,6 +21,7 @@ use tokio::time::timeout;
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::uci::error::StatusCode;
+use crate::uci::notification::SessionRangeData;
 use crate::uci::params::{
     Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
     UpdateMulticastListAction,
@@ -32,6 +33,7 @@ const NOTIFICATION_TIMEOUT_MS: u64 = 1000;
 pub(crate) struct UwbSession {
     cmd_sender: mpsc::UnboundedSender<(Command, oneshot::Sender<Result<()>>)>,
     state_sender: watch::Sender<SessionState>,
+    range_data_sender: mpsc::UnboundedSender<SessionRangeData>,
     controlee_status_notf_sender: Option<oneshot::Sender<Vec<ControleeStatus>>>,
 }
 
@@ -40,6 +42,7 @@ impl UwbSession {
         uci_manager: T,
         session_id: SessionId,
         session_type: SessionType,
+        range_data_sender: mpsc::UnboundedSender<SessionRangeData>,
     ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
         let (state_sender, mut state_receiver) = watch::channel(SessionState::SessionStateDeinit);
@@ -55,7 +58,7 @@ impl UwbSession {
         );
         tokio::spawn(async move { actor.run().await });
 
-        Self { cmd_sender, state_sender, controlee_status_notf_sender: None }
+        Self { cmd_sender, state_sender, range_data_sender, controlee_status_notf_sender: None }
     }
 
     pub fn initialize(
@@ -108,6 +111,10 @@ impl UwbSession {
         if let Some(sender) = self.controlee_status_notf_sender.take() {
             let _ = sender.send(status_list);
         }
+    }
+
+    pub fn on_range_data_received(&mut self, data: SessionRangeData) {
+        let _ = self.range_data_sender.send(data);
     }
 }
 
@@ -242,8 +249,16 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn reconfigure(&mut self, params: AppConfigParams) -> Result<()> {
         debug_assert!(*self.state_receiver.borrow() != SessionState::SessionStateDeinit);
 
+        let state = *self.state_receiver.borrow();
         let tlvs = match self.params.as_ref() {
-            Some(prev_params) => params.generate_updated_tlvs(prev_params),
+            Some(prev_params) => {
+                if let Some(tlvs) = params.generate_updated_tlvs(prev_params, state) {
+                    tlvs
+                } else {
+                    error!("Cannot update the app config at state {:?}: {:?}", state, params);
+                    return Err(Error::InvalidArguments);
+                }
+            }
             None => params.generate_tlvs(),
         };
 

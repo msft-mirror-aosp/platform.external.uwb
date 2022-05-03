@@ -26,6 +26,7 @@ use crate::uci::params::{
 
 #[derive(Debug)]
 pub(super) enum UciResponse {
+    SetNotification,
     OpenHal,
     CloseHal,
     DeviceReset(UciResult<()>),
@@ -51,7 +52,7 @@ pub(super) enum UciResponse {
 impl UciResponse {
     pub fn need_retry(&self) -> bool {
         match self {
-            Self::OpenHal | Self::CloseHal => false,
+            Self::SetNotification | Self::OpenHal | Self::CloseHal => false,
 
             Self::DeviceReset(result) => Self::matches_result_retry(result),
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
