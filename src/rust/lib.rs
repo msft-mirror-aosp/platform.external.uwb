@@ -16,6 +16,7 @@
 // TODO remove this and add appropriate documentation once it is decided whether this stays here or
 // moves into packages/modules/Uwb
 #![allow(missing_docs)]
+#![feature(rustc_private)]
 
 pub mod adaptation;
 pub mod error;
