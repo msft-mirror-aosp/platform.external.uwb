@@ -17,7 +17,8 @@
 
 #![allow(clippy::eq_op)]
 
-use std::iter::zip;
+use std::collections::{hash_map::RandomState, HashMap};
+use std::iter::{zip, FromIterator};
 
 use crate::uci::error::StatusCode;
 
@@ -25,8 +26,9 @@ use crate::uci::error::StatusCode;
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
     ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
-    ExtendedAddressTwoWayRangingMeasurement, PowerStats, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressTwoWayRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
+    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
+    ShortAddressTwoWayRangingMeasurement, UpdateMulticastListAction,
 };
 
 pub type SessionId = u32;
@@ -54,12 +56,24 @@ pub fn cap_tlv_eq(a: &CapTlv, b: &CapTlv) -> bool {
     a.t == b.t && a.v == b.v
 }
 
-pub fn app_config_tlv_eq(a: &AppConfigTlv, b: &AppConfigTlv) -> bool {
-    a.cfg_id == b.cfg_id && a.v == b.v
+pub fn app_config_tlvs_eq(a: &[AppConfigTlv], b: &[AppConfigTlv]) -> bool {
+    app_config_tlvs_to_map(a) == app_config_tlvs_to_map(b)
 }
 
-pub fn device_config_tlv_eq(a: &DeviceConfigTlv, b: &DeviceConfigTlv) -> bool {
-    a.cfg_id == b.cfg_id && a.v == b.v
+fn app_config_tlvs_to_map(
+    tlvs: &[AppConfigTlv],
+) -> HashMap<AppConfigTlvType, &Vec<u8>, RandomState> {
+    HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
+}
+
+pub fn device_config_tlvs_eq(a: &[DeviceConfigTlv], b: &[DeviceConfigTlv]) -> bool {
+    device_config_tlvs_to_map(a) == device_config_tlvs_to_map(b)
+}
+
+fn device_config_tlvs_to_map(
+    tlvs: &[DeviceConfigTlv],
+) -> HashMap<DeviceConfigId, &Vec<u8>, RandomState> {
+    HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
 }
 
 #[derive(Debug, Clone)]
@@ -90,19 +104,6 @@ impl PartialEq for SetAppConfigResponse {
     }
 }
 
-// TODO(akahuang): Add the enum at uwb_uci_packets.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UpdateMulticastListAction {
-    Add = 0x00,
-    Delete = 0x01,
-}
-
-impl From<UpdateMulticastListAction> for u8 {
-    fn from(item: UpdateMulticastListAction) -> u8 {
-        item as u8
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountryCode([u8; 2]);
 
@@ -122,7 +123,7 @@ impl From<CountryCode> for [u8; 2] {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
     pub uci_version: u16,
     pub mac_version: u16,
