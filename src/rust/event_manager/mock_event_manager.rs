@@ -91,6 +91,10 @@ impl MockEventManager {
             Err(Error::JniCall(JniError::Unknown))
         })
     }
+
+    pub fn clear_expected_calls(&self) {
+        self.expected_calls.lock().unwrap().clear();
+    }
 }
 
 #[cfg(any(test, fuzzing))]
