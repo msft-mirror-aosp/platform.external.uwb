@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use log::{error, warn};
+use log::warn;
 
-use crate::uci::params::{AppConfigTlv, AppConfigTlvType};
+use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
+use crate::session::params::{AppConfigParams, AppConfigTlvMap};
+use crate::uci::params::{AppConfigTlvType, SessionState};
 use crate::utils::builder_field;
 
 // The default value of each parameters.
@@ -266,17 +268,24 @@ impl FiraAppConfigParams {
                 != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
     }
 
-    /// Generate the TLV list from the params.
-    pub fn generate_tlvs(&self) -> Vec<AppConfigTlv> {
-        Self::config_map_to_tlvs(self.generate_config_map())
+    pub fn is_config_updatable(config_map: &AppConfigTlvMap, session_state: SessionState) -> bool {
+        match session_state {
+            SessionState::SessionStateActive => {
+                let avalible_list = HashSet::from([
+                    AppConfigTlvType::RangingInterval,
+                    AppConfigTlvType::RngDataNtf,
+                    AppConfigTlvType::RngDataNtfProximityNear,
+                    AppConfigTlvType::RngDataNtfProximityFar,
+                    AppConfigTlvType::BlockStrideLength,
+                ]);
+                config_map.keys().all(|key| avalible_list.contains(key))
+            }
+            SessionState::SessionStateIdle => true,
+            _ => false,
+        }
     }
 
-    /// Generate the updated TLV list from the difference between this and the previous params.
-    pub fn generate_updated_tlvs(&self, prev_params: &Self) -> Vec<AppConfigTlv> {
-        Self::config_map_to_tlvs(self.generate_updated_config_map(prev_params))
-    }
-
-    fn generate_config_map(&self) -> HashMap<AppConfigTlvType, Vec<u8>> {
+    pub fn generate_config_map(&self) -> AppConfigTlvMap {
         debug_assert!(self.is_valid().is_some());
 
         HashMap::from([
@@ -356,26 +365,6 @@ impl FiraAppConfigParams {
                 u8_to_bytes(self.number_of_aoa_elevation_measurements),
             ),
         ])
-    }
-
-    fn generate_updated_config_map(
-        &self,
-        prev_params: &Self,
-    ) -> HashMap<AppConfigTlvType, Vec<u8>> {
-        let config_map = self.generate_config_map();
-        let prev_config_map = prev_params.generate_config_map();
-
-        let mut updated_config_map = HashMap::new();
-        for (key, value) in config_map.into_iter() {
-            if !matches!(prev_config_map.get(&key), Some(prev_value) if prev_value == &value) {
-                updated_config_map.insert(key, value);
-            }
-        }
-        updated_config_map
-    }
-
-    fn config_map_to_tlvs(config_map: HashMap<AppConfigTlvType, Vec<u8>>) -> Vec<AppConfigTlv> {
-        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 }
 
@@ -483,59 +472,62 @@ impl FiraAppConfigParamsBuilder {
         }
     }
 
-    pub fn from_params(params: &FiraAppConfigParams) -> Self {
-        Self {
-            device_type: Some(params.device_type),
-            ranging_round_usage: params.ranging_round_usage,
-            sts_config: params.sts_config,
-            multi_node_mode: Some(params.multi_node_mode),
-            channel_number: params.channel_number,
-            device_mac_address: Some(params.device_mac_address.clone()),
-            dst_mac_address: params.dst_mac_address.clone(),
-            slot_duration_rstu: params.slot_duration_rstu,
-            ranging_interval_ms: params.ranging_interval_ms,
-            mac_fcs_type: params.mac_fcs_type,
-            ranging_round_control: params.ranging_round_control.clone(),
-            aoa_result_request: params.aoa_result_request,
-            range_data_ntf_config: params.range_data_ntf_config,
-            range_data_ntf_proximity_near_cm: params.range_data_ntf_proximity_near_cm,
-            range_data_ntf_proximity_far_cm: params.range_data_ntf_proximity_far_cm,
-            device_role: Some(params.device_role),
-            rframe_config: params.rframe_config,
-            preamble_code_index: params.preamble_code_index,
-            sfd_id: params.sfd_id,
-            psdu_data_rate: params.psdu_data_rate,
-            preamble_duration: params.preamble_duration,
-            ranging_time_struct: params.ranging_time_struct,
-            slots_per_rr: params.slots_per_rr,
-            tx_adaptive_payload_power: params.tx_adaptive_payload_power,
-            responder_slot_index: params.responder_slot_index,
-            prf_mode: params.prf_mode,
-            scheduled_mode: params.scheduled_mode,
-            key_rotation: params.key_rotation,
-            key_rotation_rate: params.key_rotation_rate,
-            session_priority: params.session_priority,
-            mac_address_mode: params.mac_address_mode,
-            vendor_id: Some(params.vendor_id),
-            static_sts_iv: Some(params.static_sts_iv),
-            number_of_sts_segments: params.number_of_sts_segments,
-            max_rr_retry: params.max_rr_retry,
-            uwb_initiation_time_ms: params.uwb_initiation_time_ms,
-            hopping_mode: params.hopping_mode,
-            block_stride_length: params.block_stride_length,
-            result_report_config: params.result_report_config.clone(),
-            in_band_termination_attempt_count: params.in_band_termination_attempt_count,
-            sub_session_id: params.sub_session_id,
-            bprf_phr_data_rate: params.bprf_phr_data_rate,
-            max_number_of_measurements: params.max_number_of_measurements,
-            sts_length: params.sts_length,
-            number_of_range_measurements: params.number_of_range_measurements,
-            number_of_aoa_azimuth_measurements: params.number_of_aoa_azimuth_measurements,
-            number_of_aoa_elevation_measurements: params.number_of_aoa_elevation_measurements,
+    pub fn from_params(params: &AppConfigParams) -> Option<Self> {
+        match params {
+            AppConfigParams::Fira(params) => Some(Self {
+                device_type: Some(params.device_type),
+                ranging_round_usage: params.ranging_round_usage,
+                sts_config: params.sts_config,
+                multi_node_mode: Some(params.multi_node_mode),
+                channel_number: params.channel_number,
+                device_mac_address: Some(params.device_mac_address.clone()),
+                dst_mac_address: params.dst_mac_address.clone(),
+                slot_duration_rstu: params.slot_duration_rstu,
+                ranging_interval_ms: params.ranging_interval_ms,
+                mac_fcs_type: params.mac_fcs_type,
+                ranging_round_control: params.ranging_round_control.clone(),
+                aoa_result_request: params.aoa_result_request,
+                range_data_ntf_config: params.range_data_ntf_config,
+                range_data_ntf_proximity_near_cm: params.range_data_ntf_proximity_near_cm,
+                range_data_ntf_proximity_far_cm: params.range_data_ntf_proximity_far_cm,
+                device_role: Some(params.device_role),
+                rframe_config: params.rframe_config,
+                preamble_code_index: params.preamble_code_index,
+                sfd_id: params.sfd_id,
+                psdu_data_rate: params.psdu_data_rate,
+                preamble_duration: params.preamble_duration,
+                ranging_time_struct: params.ranging_time_struct,
+                slots_per_rr: params.slots_per_rr,
+                tx_adaptive_payload_power: params.tx_adaptive_payload_power,
+                responder_slot_index: params.responder_slot_index,
+                prf_mode: params.prf_mode,
+                scheduled_mode: params.scheduled_mode,
+                key_rotation: params.key_rotation,
+                key_rotation_rate: params.key_rotation_rate,
+                session_priority: params.session_priority,
+                mac_address_mode: params.mac_address_mode,
+                vendor_id: Some(params.vendor_id),
+                static_sts_iv: Some(params.static_sts_iv),
+                number_of_sts_segments: params.number_of_sts_segments,
+                max_rr_retry: params.max_rr_retry,
+                uwb_initiation_time_ms: params.uwb_initiation_time_ms,
+                hopping_mode: params.hopping_mode,
+                block_stride_length: params.block_stride_length,
+                result_report_config: params.result_report_config.clone(),
+                in_band_termination_attempt_count: params.in_band_termination_attempt_count,
+                sub_session_id: params.sub_session_id,
+                bprf_phr_data_rate: params.bprf_phr_data_rate,
+                max_number_of_measurements: params.max_number_of_measurements,
+                sts_length: params.sts_length,
+                number_of_range_measurements: params.number_of_range_measurements,
+                number_of_aoa_azimuth_measurements: params.number_of_aoa_azimuth_measurements,
+                number_of_aoa_elevation_measurements: params.number_of_aoa_elevation_measurements,
+            }),
+            _ => None,
         }
     }
 
-    pub fn build(&self) -> Option<FiraAppConfigParams> {
+    pub fn build(&self) -> Option<AppConfigParams> {
         let params = FiraAppConfigParams {
             device_type: self.device_type?,
             ranging_round_usage: self.ranging_round_usage,
@@ -587,7 +579,7 @@ impl FiraAppConfigParamsBuilder {
         };
 
         params.is_valid()?;
-        Some(params)
+        Some(AppConfigParams::Fira(params))
     }
 
     // Generate the setter methods for all the fields.
@@ -885,26 +877,6 @@ pub enum StsLength {
     Length128 = 2,
 }
 
-fn u8_to_bytes(value: u8) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-fn u16_to_bytes(value: u16) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-fn u32_to_bytes(value: u32) -> Vec<u8> {
-    value.to_le_bytes().to_vec()
-}
-
-fn validate(value: bool, err_msg: &str) -> Option<()> {
-    match value {
-        true => Some(()),
-        false => {
-            error!("{}", err_msg);
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1088,15 +1060,45 @@ mod tests {
             HashMap::from([(AppConfigTlvType::KeyRotationRate, vec![updated_key_rotation_rate])]);
 
         let updated_params1 = builder.key_rotation_rate(updated_key_rotation_rate).build().unwrap();
-        let updated_config_map1 = updated_params1.generate_updated_config_map(&params);
+        let updated_config_map1 = updated_params1
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .unwrap();
         assert_eq!(updated_config_map1, expected_updated_config_map);
 
         // Update the value from the params.
         let updated_params2 = FiraAppConfigParamsBuilder::from_params(&params)
+            .unwrap()
             .key_rotation_rate(updated_key_rotation_rate)
             .build()
             .unwrap();
-        let updated_config_map2 = updated_params2.generate_updated_config_map(&params);
+        let updated_config_map2 = updated_params2
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .unwrap();
         assert_eq!(updated_config_map2, expected_updated_config_map);
+    }
+
+    #[test]
+    fn test_update_config() {
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56]);
+        let params = builder.build().unwrap();
+
+        builder.multi_node_mode(MultiNodeMode::OneToMany);
+        let updated_params = builder.build().unwrap();
+        // MultiNodeMode can be updated at idle state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateIdle)
+            .is_some());
+        // MultiNodeMode cannot be updated at active state.
+        assert!(updated_params
+            .generate_updated_config_map(&params, SessionState::SessionStateActive)
+            .is_none());
     }
 }

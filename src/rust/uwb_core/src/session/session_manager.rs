@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::session::uwb_session::UwbSession;
-use crate::uci::notification::{SessionNotification, SessionRangeData, UciNotification};
+use crate::uci::notification::{SessionNotification, SessionRangeData};
 use crate::uci::params::{
     Controlee, SessionId, SessionState, SessionType, UpdateMulticastListAction,
 };
@@ -39,10 +39,10 @@ pub(crate) struct SessionManager {
 impl SessionManager {
     pub fn new<T: UciManager>(
         uci_manager: T,
-        uci_notf_receiver: mpsc::UnboundedReceiver<UciNotification>,
+        session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
     ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = SessionManagerActor::new(cmd_receiver, uci_manager, uci_notf_receiver);
+        let mut actor = SessionManagerActor::new(cmd_receiver, uci_manager, session_notf_receiver);
         tokio::spawn(async move { actor.run().await });
 
         Self { cmd_sender }
@@ -117,7 +117,7 @@ struct SessionManagerActor<T: UciManager> {
     // The UciManager for delegating UCI requests.
     uci_manager: T,
     // Receive the notification from |uci_manager|.
-    uci_notf_receiver: mpsc::UnboundedReceiver<UciNotification>,
+    session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
 
     active_sessions: BTreeMap<SessionId, UwbSession>,
 }
@@ -126,9 +126,9 @@ impl<T: UciManager> SessionManagerActor<T> {
     fn new(
         cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<Result<()>>)>,
         uci_manager: T,
-        uci_notf_receiver: mpsc::UnboundedReceiver<UciNotification>,
+        session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
     ) -> Self {
-        Self { cmd_receiver, uci_manager, uci_notf_receiver, active_sessions: BTreeMap::new() }
+        Self { cmd_receiver, uci_manager, session_notf_receiver, active_sessions: BTreeMap::new() }
     }
 
     async fn run(&mut self) {
@@ -146,10 +146,8 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
 
-                Some(uci_notf) = self.uci_notf_receiver.recv() => {
-                    if let UciNotification::Session(notf) = uci_notf {
-                        self.handle_uci_notification(notf);
-                    }
+                Some(notf) = self.session_notf_receiver.recv() => {
+                    self.handle_uci_notification(notf);
                 }
             }
         }
@@ -315,7 +313,7 @@ mod tests {
     use crate::session::params::fira_app_config_params::*;
     use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
-    use crate::uci::notification::RangingMeasurements;
+    use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::uci::params::{
         ControleeStatus, MulticastUpdateStatusCode, RangingMeasurementType, ReasonCode,
         SetAppConfigResponse, ShortAddressTwoWayRangingMeasurement,
@@ -323,18 +321,16 @@ mod tests {
     use crate::utils::init_test_logging;
 
     fn generate_params() -> AppConfigParams {
-        AppConfigParams::Fira(
-            FiraAppConfigParamsBuilder::new()
-                .device_type(DeviceType::Controller)
-                .multi_node_mode(MultiNodeMode::Unicast)
-                .device_mac_address(UwbAddress::Short([1, 2]))
-                .dst_mac_address(vec![UwbAddress::Short([3, 4])])
-                .device_role(DeviceRole::Initiator)
-                .vendor_id([0xFE, 0xDC])
-                .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56])
-                .build()
-                .unwrap(),
-        )
+        FiraAppConfigParamsBuilder::new()
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56])
+            .build()
+            .unwrap()
     }
 
     async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)
@@ -346,7 +342,8 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         setup_uci_manager_fn(&mut uci_manager);
-        let _ = uci_manager.open_hal(notf_sender).await;
+        uci_manager.set_session_notification_sender(notf_sender).await;
+        let _ = uci_manager.open_hal().await;
         (SessionManager::new(uci_manager.clone(), notf_receiver), uci_manager)
     }
 
