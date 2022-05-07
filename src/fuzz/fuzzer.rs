@@ -1,6 +1,9 @@
 #![no_main]
 #![allow(missing_docs)]
 
+use android_hardware_uwb::aidl::android::hardware::uwb::{
+    UwbEvent::UwbEvent, UwbStatus::UwbStatus,
+};
 use libfuzzer_sys::{arbitrary::Arbitrary, fuzz_target};
 use log::{error, info};
 use num_traits::cast::FromPrimitive;
@@ -9,12 +12,13 @@ use tokio::sync::mpsc;
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, AndroidGetPowerStatsRspBuilder,
     AndroidSetCountryCodeCmdBuilder, AndroidSetCountryCodeRspBuilder, DeviceResetRspBuilder,
-    GetCapsInfoCmdBuilder, GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder,
-    PowerStats, RangeStartCmdBuilder, RangeStartRspBuilder, RangeStopCmdBuilder,
-    RangeStopRspBuilder, SessionDeinitCmdBuilder, SessionDeinitRspBuilder,
-    SessionGetAppConfigCmdBuilder, SessionGetAppConfigRspBuilder, SessionGetCountCmdBuilder,
-    SessionGetCountRspBuilder, SessionGetStateCmdBuilder, SessionGetStateRspBuilder,
-    SessionInitCmdBuilder, SessionInitRspBuilder, SessionSetAppConfigRspBuilder, SessionState,
+    DeviceState, DeviceStatusNtfBuilder, GenericErrorBuilder, GetCapsInfoCmdBuilder,
+    GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, PowerStats,
+    RangeStartCmdBuilder, RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder,
+    ReasonCode, SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
+    SessionGetAppConfigRspBuilder, SessionGetCountCmdBuilder, SessionGetCountRspBuilder,
+    SessionGetStateCmdBuilder, SessionGetStateRspBuilder, SessionInitCmdBuilder,
+    SessionInitRspBuilder, SessionSetAppConfigRspBuilder, SessionState, SessionStatusNtfBuilder,
     SessionType, SessionUpdateControllerMulticastListRspBuilder, StatusCode, UciCommandPacket,
     UciPacketChild, UciPacketPacket, UciVendor_9_ResponseBuilder,
 };
@@ -25,36 +29,91 @@ use uwb_uci_rust::uci::{
     uci_hmsgs, uci_hrcv, Dispatcher, DispatcherImpl, HalCallback, JNICommand, SyncUwbAdaptation,
 };
 
-fn create_dispatcher_with_mock_adaptation(msgs: Vec<JNICommand>) -> Result<DispatcherImpl, UwbErr> {
+#[derive(Debug, Clone, Arbitrary)]
+enum UciNotification {
+    GenericError { status: u8 },
+    DeviceStatusNtf { device_state: u8 },
+    SessionStatusNtf { session_id: u32, session_state: u8, reason_code: u8 },
+}
+
+#[derive(Debug, Clone, Arbitrary)]
+enum Command {
+    JNICmd(JNICommand),
+    UciNtf(UciNotification),
+}
+
+fn create_dispatcher_with_mock_adaptation(
+    msgs: Vec<Command>,
+) -> Result<(DispatcherImpl, mpsc::UnboundedSender<HalCallback>), UwbErr> {
     let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-    let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender));
+    let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender.clone()));
     let mut mock_event_manager = MockEventManager::new();
     for msg in &msgs {
         match msg {
-            JNICommand::Enable => {
-                mock_adaptation.expect_hal_open(Ok(()));
-                mock_adaptation.expect_core_initialization(Ok(()));
-            }
-            JNICommand::Disable(_graceful) => {
-                mock_adaptation.expect_hal_close(Ok(()));
-            }
-            _ => {
-                let (cmd, rsp) = match generate_fake_cmd_rsp(msg) {
-                    Ok((command, response)) => (command, response),
-                    Err(e) => {
+            Command::JNICmd(cmd) => match cmd {
+                JNICommand::Enable => {
+                    mock_adaptation.expect_hal_open(Ok(()));
+                    mock_adaptation.expect_core_initialization(Ok(()));
+                }
+                JNICommand::Disable(_graceful) => {
+                    break;
+                }
+                _ => {
+                    let (cmd, rsp) = match generate_fake_cmd_rsp(cmd) {
+                        Ok((command, response)) => (command, response),
+                        Err(e) => {
+                            mock_adaptation.clear_expected_calls();
+                            mock_event_manager.clear_expected_calls();
+                            return Err(e);
+                        }
+                    };
+                    mock_adaptation.expect_send_uci_message(cmd, Some(rsp), None, Ok(()))
+                }
+            },
+            Command::UciNtf(ntf) => match ntf {
+                UciNotification::GenericError { status } => {
+                    if StatusCode::from_u8(*status).is_none() {
                         mock_adaptation.clear_expected_calls();
-                        return Err(e);
+                        mock_event_manager.clear_expected_calls();
+                        return Err(UwbErr::InvalidArgs);
                     }
-                };
-                mock_adaptation.expect_send_uci_message(cmd, Some(rsp), None, Ok(()));
-            }
+                    mock_event_manager.expect_core_generic_error_notification_received(Ok(()))
+                }
+                UciNotification::DeviceStatusNtf { device_state } => {
+                    if DeviceState::from_u8(*device_state).is_none() {
+                        mock_adaptation.clear_expected_calls();
+                        mock_event_manager.clear_expected_calls();
+                        return Err(UwbErr::InvalidArgs);
+                    }
+                    mock_event_manager.expect_device_status_notification_received(Ok(()))
+                }
+                UciNotification::SessionStatusNtf {
+                    session_id: _session_ids,
+                    session_state,
+                    reason_code,
+                } => {
+                    if SessionState::from_u8(*session_state).is_none()
+                        || ReasonCode::from_u8(*reason_code).is_none()
+                        || *session_state == 0
+                    {
+                        mock_adaptation.clear_expected_calls();
+                        mock_event_manager.clear_expected_calls();
+                        return Err(UwbErr::InvalidArgs);
+                    }
+                    mock_event_manager.expect_session_status_notification_received(Ok(()))
+                }
+            },
         }
     }
-    DispatcherImpl::new_for_testing(
-        mock_event_manager,
-        mock_adaptation as SyncUwbAdaptation,
-        rsp_receiver,
-    )
+    mock_adaptation.expect_hal_close(Ok(()));
+    Ok((
+        DispatcherImpl::new_for_testing(
+            mock_event_manager,
+            mock_adaptation as SyncUwbAdaptation,
+            rsp_receiver,
+        )?,
+        rsp_sender,
+    ))
 }
 
 fn generate_fake_cmd_rsp(
@@ -214,22 +273,68 @@ fn generate_fake_cmd_rsp(
     }
 }
 
-fn consume_command(msgs: Vec<JNICommand>) -> Result<(), UwbErr> {
-    let mut mock_dispatcher = create_dispatcher_with_mock_adaptation(msgs.clone())?;
+fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
+    let (mut mock_dispatcher, mut rsp_sender) =
+        create_dispatcher_with_mock_adaptation(msgs.clone())?;
     for msg in msgs {
         match msg {
-            JNICommand::Enable => {
-                mock_dispatcher.send_jni_command(JNICommand::Enable)?;
-            }
-            _ => {
-                mock_dispatcher.block_on_jni_command(msg)?;
+            Command::JNICmd(cmd) => match cmd {
+                JNICommand::Enable => {
+                    mock_dispatcher.send_jni_command(JNICommand::Enable)?;
+                }
+                JNICommand::Disable(_graceful) => {
+                    break;
+                }
+                _ => {
+                    mock_dispatcher.block_on_jni_command(cmd)?;
+                }
+            },
+            Command::UciNtf(ntf) => {
+                let evt = match ntf {
+                    UciNotification::GenericError { status } => {
+                        uci_hrcv::UciNotification::GenericError(
+                            GenericErrorBuilder {
+                                status: StatusCode::from_u8(status).ok_or(UwbErr::InvalidArgs)?,
+                            }
+                            .build(),
+                        )
+                    }
+                    UciNotification::DeviceStatusNtf { device_state } => {
+                        uci_hrcv::UciNotification::DeviceStatusNtf(
+                            DeviceStatusNtfBuilder {
+                                device_state: DeviceState::from_u8(device_state)
+                                    .ok_or(UwbErr::InvalidArgs)?,
+                            }
+                            .build(),
+                        )
+                    }
+                    UciNotification::SessionStatusNtf {
+                        session_id,
+                        session_state,
+                        reason_code,
+                    } => uci_hrcv::UciNotification::SessionStatusNtf(
+                        SessionStatusNtfBuilder {
+                            session_id,
+                            session_state: SessionState::from_u8(session_state)
+                                .ok_or(UwbErr::InvalidArgs)?,
+                            reason_code: ReasonCode::from_u8(reason_code)
+                                .ok_or(UwbErr::InvalidArgs)?,
+                        }
+                        .build(),
+                    ),
+                };
+                rsp_sender
+                    .send(HalCallback::UciNtf(evt))
+                    .unwrap_or_else(|e| error!("Error sending uci notification: {:?}", e));
             }
         }
     }
+    mock_dispatcher.send_jni_command(JNICommand::Disable(true))?;
+    mock_dispatcher.wait_for_exit()?;
     Ok(())
 }
 
-fuzz_target!(|msgs: Vec<JNICommand>| {
+fuzz_target!(|msgs: Vec<Command>| {
     match consume_command(msgs) {
         Ok(()) => info!("fuzzing success"),
         Err(e) => error!("fuzzing failed: {:?}", e),
