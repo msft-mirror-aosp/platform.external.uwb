@@ -17,7 +17,8 @@ use android_hardware_uwb::binder::{
 use async_trait::async_trait;
 use binder::IBinder;
 use binder_tokio::{Tokio, TokioRuntime};
-use log::{error, warn};
+use log::error;
+#[cfg(target_os = "android")]
 use rustutils::system_properties;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -112,18 +113,15 @@ pub struct UwbAdaptationImpl {
 }
 
 impl UwbAdaptationImpl {
-    async fn new_with_args(
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-        hal: Strong<dyn IUwbChipAsync<Tokio>>,
-        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
-    ) -> Result<Self> {
-        let mode = match system_properties::read("persist.uwb.uci_logger_mode") {
+    #[cfg(target_os = "android")]
+    fn get_uci_log_mode() -> UciLogMode {
+        match system_properties::read("persist.uwb.uci_logger_mode") {
             Ok(Some(logger_mode)) => match logger_mode.as_str() {
                 "disabled" => UciLogMode::Disabled,
                 "filtered" => UciLogMode::Filtered,
                 "enabled" => UciLogMode::Enabled,
                 str => {
-                    warn!("Logger mode not recognized! Value: {:?}", str);
+                    error!("Logger mode not recognized! Value: {:?}", str);
                     UCI_LOG_DEFAULT
                 }
             },
@@ -132,9 +130,25 @@ impl UwbAdaptationImpl {
                 error!("Failed to get uci_logger_mode {:?}", e);
                 UCI_LOG_DEFAULT
             }
-        };
-        let logger =
-            UciLoggerImpl::new(mode, Arc::new(Mutex::new(RealFileFactory::default()))).await;
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn get_uci_log_mode() -> UciLogMode {
+        // system_properties is not supported on host builds.
+        UCI_LOG_DEFAULT
+    }
+
+    async fn new_with_args(
+        rsp_sender: mpsc::UnboundedSender<HalCallback>,
+        hal: Strong<dyn IUwbChipAsync<Tokio>>,
+        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
+    ) -> Result<Self> {
+        let logger = UciLoggerImpl::new(
+            UwbAdaptationImpl::get_uci_log_mode(),
+            Arc::new(Mutex::new(RealFileFactory::default())),
+        )
+        .await;
         Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger), hal_death_recipient })
     }
 
