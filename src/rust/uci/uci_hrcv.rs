@@ -23,7 +23,7 @@ pub enum UciMessage {
     Notification(UciNotification),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UciResponse {
     GetDeviceInfoRsp(GetDeviceInfoRspPacket),
     GetCapsInfoRsp(GetCapsInfoRspPacket),
@@ -43,9 +43,10 @@ pub enum UciResponse {
     AndroidSetCountryCodeRsp(AndroidSetCountryCodeRspPacket),
     AndroidGetPowerStatsRsp(AndroidGetPowerStatsRspPacket),
     RawVendorRsp(UciResponsePacket),
+    DisableRsp,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UciNotification {
     GenericError(GenericErrorPacket),
     DeviceStatusNtf(DeviceStatusNtfPacket),

@@ -145,6 +145,7 @@ enum {
   UWA_DM_SEND_BLINK_DATA_NTF_EVT,        /* Blink Data Tx ntf event*/
   UWA_DM_CONFORMANCE_NTF_EVT,            /* Conformance Test Ntf Event */
   UWA_DM_SET_COUNTRY_CODE_RSP_EVT,       /* Country code update resp event */
+  UWA_VENDOR_SPECIFIC_UCI_NTF_EVT,       /* Proprietary Ntf Event */
 };
 
 /* UWA_DM callback events for UWB RF events */
@@ -337,6 +338,12 @@ typedef struct {
   uint8_t data[CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH];
 } tUWA_CONFORMANCE_TEST_DATA;
 
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWA_VENDOR_SPECIFIC_NTF;
+
 /* Union of all DM callback structures */
 typedef union {
   tUWA_STATUS status;                /* UWA_DM_ENABLE_EVT        */
@@ -367,6 +374,7 @@ typedef union {
       sMulticast_list_ntf; /*UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT*/
   tUWA_SEND_BLINK_DATA_NTF sBlink_data_ntf; /*UWA_DM_SEND_BLINK_DATA_NTF_EVT*/
   tUWA_CONFORMANCE_TEST_DATA sConformance_ntf; /* UWA_DM_CONFORMANCE_NTF_EVT */
+  tUWA_VENDOR_SPECIFIC_NTF sVendor_specific_ntf; /*Vendor Specific ntf data */
   void* p_vs_evt_data;                         /* Vendor-specific evt data */
 } tUWA_DM_CBACK_DATA;
 
