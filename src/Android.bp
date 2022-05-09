@@ -183,6 +183,7 @@ rust_defaults {
         "libasync_trait",
     ],
     min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_library {
@@ -196,6 +197,9 @@ rust_test {
     defaults: ["libuwb_core_defaults"],
     rustlibs: [
         "libenv_logger",
+    ],
+    test_suites: [
+      "general-tests",
     ],
 }
 
