@@ -23,7 +23,7 @@ use uwb_uci_packets::{Packet, UciCommandPacket};
 use crate::uci::command::UciCommand;
 use crate::uci::error::{Error, Result};
 use crate::uci::message::UciMessage;
-use crate::uci::notification::UciNotification;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
@@ -566,7 +566,7 @@ impl<T: UciHal> UciManagerActor<T> {
         }
 
         match notf.clone() {
-            UciNotification::CoreDeviceStatus(status) => {
+            UciNotification::Core(CoreNotification::DeviceStatus(status)) => {
                 if let Some(result_sender) = self.open_hal_result_sender.take() {
                     let result = match status {
                         DeviceState::DeviceStateReady | DeviceState::DeviceStateActive => {
@@ -577,7 +577,11 @@ impl<T: UciHal> UciManagerActor<T> {
                     let _ = result_sender.send(result);
                 }
             }
-            UciNotification::SessionStatus { session_id, session_state, reason_code: _ } => {
+            UciNotification::Session(SessionNotification::Status {
+                session_id,
+                session_state,
+                reason_code: _,
+            }) => {
                 if matches!(session_state, SessionState::SessionStateInit) {
                     if let Err(e) = self.hal.notify_session_initialized(session_id).await {
                         warn!("notify_session_initialized() failed: {:?}", e);
