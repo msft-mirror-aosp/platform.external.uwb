@@ -401,6 +401,12 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
       dm_cback_data.status = UWB_STATUS_FAILED;
       (*uwa_dm_cb.p_dm_cback)(UWA_DM_UWBS_RESP_TIMEOUT_EVT, &dm_cback_data);
     } break;
+    case UWB_VENDOR_SPECIFIC_UCI_NTF_EVT:
+    {
+      dm_cback_data.sVendor_specific_ntf.len = p_data->sVendor_specific_ntf.len;
+      memcpy((uint8_t*)dm_cback_data.sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.len);
+      (*uwa_dm_cb.p_dm_cback)(UWA_VENDOR_SPECIFIC_UCI_NTF_EVT, &dm_cback_data);
+    } break;
     default:
       UCI_TRACE_E("unknown event.");
       break;
@@ -1342,6 +1348,9 @@ std::string uwa_dm_uwb_revt_2_str(tUWB_RESPONSE_EVT event) {
 
     case UWB_CONFORMANCE_TEST_DATA:
       return "UWB_CONFORMANCE_TEST_DATA";
+
+    case UWB_VENDOR_SPECIFIC_UCI_NTF_EVT:
+      return "UWB_VENDOR_SPECIfIC_UCI_NTF_EVT";
 
     default:
       return "unknown revt";

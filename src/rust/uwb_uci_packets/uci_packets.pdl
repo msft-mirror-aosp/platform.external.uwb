@@ -74,11 +74,15 @@ enum StatusCode : 8 {
     UCI_STATUS_COMMAND_RETRY = 0x0A,
 
     // UWB Session Specific Status Codes
-    UCI_STATUS_SESSSION_NOT_EXIST = 0x11,
-    UCI_STATUS_SESSSION_DUPLICATE = 0x12,
-    UCI_STATUS_SESSSION_ACTIVE = 0x13,
-    UCI_STATUS_MAX_SESSSIONS_EXCEEDED = 0x14,
+    UCI_STATUS_SESSION_NOT_EXIST = 0x11,
+    UCI_STATUS_SESSION_DUPLICATE = 0x12,
+    UCI_STATUS_SESSION_ACTIVE = 0x13,
+    UCI_STATUS_MAX_SESSIONS_EXCEEDED = 0x14,
     UCI_STATUS_SESSION_NOT_CONFIGURED = 0x15,
+    UCI_STATUS_ACTIVE_SESSIONS_ONGOING = 0x16,
+    UCI_STATUS_MULTICAST_LIST_FULL = 0x17,
+    UCI_STATUS_ADDRESS_NOT_FOUND = 0x18,
+    UCI_STATUS_ADDRESS_ALREADY_PRESENT = 0x19,
 
     // UWB Ranging Session Specific Status Codes
     UCI_STATUS_RANGING_TX_FAILED = 0x20,
@@ -93,6 +97,10 @@ enum StatusCode : 8 {
     // UWB Data Session Specific Status Codes
     UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
     UCI_STATUS_DATA_RX_CRC_ERROR = 0x31,
+
+    // Vendor Specific Status Codes
+    UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
+    UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
 }
 
 enum ResetConfig : 8 {
@@ -196,6 +204,8 @@ enum CapTlvType : 8 {
     CCC_SUPPORTED_UWB_CONFIGS = 0xA5,
     CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA6,
     CCC_SUPPORTED_RAN_MULTIPLIER = 0xA7,
+
+    SUPPORTED_POWER_STATS = 0xC0,
 }
 
 
@@ -258,7 +268,9 @@ enum MessageType: 3 {
     NOTIFICATION = 0x03,
 }
 
-packet UciPacket {
+// UCI packet description in compliance with the FIRA UCI spec.
+// Only this packet should be sent/expected across the HAL interface.
+packet UciPacketHal; {
     group_id: GroupId,
     packet_boundary_flag: PacketBoundaryFlag,
     message_type: MessageType,
@@ -269,16 +281,33 @@ packet UciPacket {
     _payload_,
 }
 
-// TODO(b/202760099): Handle fragmentation of packets if the size exceed max allowed.
-packet UciCommand : UciPacket (message_type = COMMAND, packet_boundary_flag = COMPLETE) {
+// This packet definition is used throughout the stack that holds a complete (i.e unfragmented) UCI
+// command/response/notification.
+// UciPacket needs to be converted to one or more UciPacketHal fragments before sending to the HAL.
+// One or more UciPacketHal fragments needs to be converted to UciPacket when receiving from the HAL.
+// TODO(b/202760099): Handle fragmentation more cleanly in the PDL.
+packet UciPacket {
+    group_id: GroupId,
+     // This field is different from |UciPacketHal| to provide a placeholder for PBF flag.
+    _reserved_: 1,
+    message_type: MessageType,
+    opcode: 6,
+    _reserved_: 2,
+    _reserved_: 8,
+     // This field is different from |UciPacketHal| to allow holding large unfragmented packet.
+    _size_(_payload_): 32,
     _payload_,
 }
 
-packet UciResponse : UciPacket (message_type = RESPONSE, packet_boundary_flag = COMPLETE) {
+packet UciCommand : UciPacket (message_type = COMMAND) {
     _payload_,
 }
 
-packet UciNotification : UciPacket (message_type = NOTIFICATION, packet_boundary_flag = COMPLETE) {
+packet UciResponse : UciPacket (message_type = RESPONSE) {
+    _payload_,
+}
+
+packet UciNotification : UciPacket (message_type = NOTIFICATION) {
     _payload_,
 }
 
@@ -336,7 +365,7 @@ packet DeviceResetCmd : CoreCommand (opcode = 0x0) { //CORE_DEVICE_RESET
 }
 
 test DeviceResetCmd {
-    "\x20\x00\x00\x01\x00",
+    "\x20\x00\x00\x01\x00\x00\x00\x00",
 }
 
 packet DeviceResetRsp : CoreResponse (opcode = 0x0) { //CORE_DEVICE_RESET
@@ -344,7 +373,7 @@ packet DeviceResetRsp : CoreResponse (opcode = 0x0) { //CORE_DEVICE_RESET
 }
 
 test DeviceResetRsp {
-    "\x40\x00\x00\x01\x00",
+    "\x40\x00\x00\x01\x00\x00\x00\x00",
 }
 
 packet DeviceStatusNtf : CoreNotification (opcode = 0x1) { //CORE_DEVICE_STATUS_NTF
@@ -352,14 +381,14 @@ packet DeviceStatusNtf : CoreNotification (opcode = 0x1) { //CORE_DEVICE_STATUS_
 }
 
 test DeviceStatusNtf {
-    "\x60\x01\x00\x01\x01",
+    "\x60\x01\x00\x01\x00\x00\x00\x01",
 }
 
 packet GetDeviceInfoCmd : CoreCommand (opcode = 0x2) { //CORE_DEVICE_INFO
 }
 
 test GetDeviceInfoCmd {
-    "\x20\x02\x00\x00",
+    "\x20\x02\x00\x00\x00\x00\x00",
 }
 
 packet GetDeviceInfoRsp : CoreResponse (opcode = 0x2) { //CORE_DEVICE_INFO
@@ -373,14 +402,14 @@ packet GetDeviceInfoRsp : CoreResponse (opcode = 0x2) { //CORE_DEVICE_INFO
 }
 
 test GetDeviceInfoRsp {
-    "\x40\x02\x00\x0b\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
+    "\x40\x02\x00\x0b\x00\x00\x00\x01\x01\x00\x02\x00\x03\x00\x04\x00\x01\x0a",
 }
 
 packet GetCapsInfoCmd : CoreCommand (opcode = 0x3) { //CORE_GET_CAPS_INFO
 }
 
 test GetCapsInfoCmd {
-    "\x20\x03\x00\x00",
+    "\x20\x03\x00\x00\x00\x00\x00",
 }
 
 struct CapTlv {
@@ -397,10 +426,10 @@ packet GetCapsInfoRsp : CoreResponse (opcode = 0x3) { //CORE_GET_CAPS_INFO
 }
 
 test GetCapsInfoRsp {
-    "\x40\x03\x00\x05\x00\x01\x00\x01\x01",
+    "\x40\x03\x00\x05\x00\x00\x00\x00\x01\x00\x01\x01",
 }
 
-struct DeviceConfigTLV {
+struct DeviceConfigTlv {
     cfg_id: DeviceConfigId,
     _count_(v): 8,
     v: 8[],
@@ -408,11 +437,11 @@ struct DeviceConfigTLV {
 
 packet SetConfigCmd : CoreCommand (opcode = 0x4) { //CORE_SET_CONFIG
     _count_(tlvs): 8,
-    tlvs: DeviceConfigTLV[],
+    tlvs: DeviceConfigTlv[],
 }
 
 test SetConfigCmd {
-    "\x20\x04\x00\x03\x01\x01\x00",
+    "\x20\x04\x00\x03\x00\x00\x00\x01\x01\x00",
 }
 
 struct DeviceConfigStatus {
@@ -427,7 +456,7 @@ packet SetConfigRsp : CoreResponse (opcode = 0x4) { //CORE_SET_CONFIG
 }
 
 test SetConfigRsp {
-    "\x40\x04\x00\x04\x01\x01\x01\x01",
+    "\x40\x04\x00\x04\x00\x00\x00\x01\x01\x01\x01",
 }
 
 packet GetConfigCmd : CoreCommand (opcode = 0x5) { //CORE_GET_CONFIG
@@ -436,17 +465,17 @@ packet GetConfigCmd : CoreCommand (opcode = 0x5) { //CORE_GET_CONFIG
 }
 
 test GetConfigCmd {
-    "\x20\x05\x00\x02\x01\x01",
+    "\x20\x05\x00\x02\x00\x00\x00\x01\x01",
 }
 
 packet GetConfigRsp : CoreResponse (opcode = 0x5) { //CORE_GET_CONFIG
     status: StatusCode,
     _count_(tlvs): 8,
-    tlvs: DeviceConfigTLV[]
+    tlvs: DeviceConfigTlv[]
 }
 
 test GetConfigRsp {
-    "\x40\x05\x00\x05\x01\x01\x00\x01\x01",
+    "\x40\x05\x00\x05\x00\x00\x00\x01\x01\x00\x01\x01",
 }
 
 packet GenericError : CoreNotification (opcode = 0x7) { //CORE_GENERIC_ERROR_NTF
@@ -454,7 +483,7 @@ packet GenericError : CoreNotification (opcode = 0x7) { //CORE_GENERIC_ERROR_NTF
 }
 
 test GenericError {
-    "\x60\x07\x00\x01\x01",
+    "\x60\x07\x00\x01\x00\x00\x00\x01",
 }
 
 packet SessionInitCmd : SessionCommand (opcode = 0x0) { //SESSION_INIT
@@ -463,7 +492,7 @@ packet SessionInitCmd : SessionCommand (opcode = 0x0) { //SESSION_INIT
 }
 
 test SessionInitCmd {
-    "\x22\x00\x00\x05\x01\x02\x03\x04\x01",
+    "\x21\x00\x00\x05\x00\x00\x00\x01\x02\x03\x04\x01",
 }
 
 packet SessionInitRsp : SessionResponse (opcode = 0x0) { //SESSION_INIT
@@ -471,7 +500,7 @@ packet SessionInitRsp : SessionResponse (opcode = 0x0) { //SESSION_INIT
 }
 
 test SessionInitRsp {
-    "\x41\x00\x00\x01\x11",
+    "\x41\x00\x00\x01\x00\x00\x00\x11",
 }
 
 packet SessionDeinitCmd : SessionCommand (opcode = 0x1) { //SESSION_DEINIT
@@ -479,7 +508,7 @@ packet SessionDeinitCmd : SessionCommand (opcode = 0x1) { //SESSION_DEINIT
 }
 
 test SessionDeinitCmd {
-    "\x21\x01\x00\x04\x01\x02\x03\x04",
+    "\x21\x01\x00\x04\x00\x00\x00\x01\x02\x03\x04",
 }
 
 packet SessionDeinitRsp : SessionResponse (opcode = 0x1) { //SESSION_DEINIT
@@ -487,7 +516,7 @@ packet SessionDeinitRsp : SessionResponse (opcode = 0x1) { //SESSION_DEINIT
 }
 
 test SessionDeinitRsp {
-    "\x41\x01\x00\x01\x00",
+    "\x41\x01\x00\x01\x00\x00\x00\x00",
 }
 
 packet SessionStatusNtf : SessionNotification (opcode = 0x2) { //SESSION_STATUS_NTF
@@ -497,7 +526,7 @@ packet SessionStatusNtf : SessionNotification (opcode = 0x2) { //SESSION_STATUS_
 }
 
 test SessionStatusNtf {
-    "\x61\x02\x00\x06\x01\x02\x03\x04\x02\x21",
+    "\x61\x02\x00\x06\x00\x00\x00\x01\x02\x03\x04\x02\x21",
 }
 
 struct AppConfigTlv {
@@ -513,7 +542,7 @@ packet SessionSetAppConfigCmd : SessionCommand (opcode = 0x3) { //SESSION_SET_AP
 }
 
 test SessionSetAppConfigCmd {
-    "\x21\x03\x00\x05\x01\x02\x03\x04\x00",
+    "\x21\x03\x00\x05\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
 struct AppConfigStatus {
@@ -528,7 +557,7 @@ packet SessionSetAppConfigRsp : SessionResponse (opcode = 0x3) { //SESSION_SET_A
 }
 
 test SessionSetAppConfigRsp {
-    "\x41\x03\x00\x04\x01\x01\x01\x00",
+    "\x41\x03\x00\x04\x00\x00\x00\x01\x01\x01\x00",
 }
 
 packet SessionGetAppConfigCmd : SessionCommand (opcode = 0x4) { //SESSION_GET_APP_CONFIG
@@ -538,7 +567,7 @@ packet SessionGetAppConfigCmd : SessionCommand (opcode = 0x4) { //SESSION_GET_AP
 }
 
 test SessionGetAppConfigCmd {
-    "\x21\x04\x00\x05\x01\x02\x03\x04\x00",
+    "\x21\x04\x00\x05\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
 packet SessionGetAppConfigRsp : SessionResponse (opcode = 0x4) { //SESSION_GET_APP_CONFIG
@@ -548,14 +577,14 @@ packet SessionGetAppConfigRsp : SessionResponse (opcode = 0x4) { //SESSION_GET_A
 }
 
 test SessionGetAppConfigRsp {
-    "\x41\x04\x00\x02\x01\x00",
+    "\x41\x04\x00\x02\x00\x00\x00\x01\x00",
 }
 
 packet SessionGetCountCmd : SessionCommand (opcode = 0x5) { //SESSION_GET_COUNT
 }
 
 test SessionGetCountCmd {
-    "\x21\x05\x00\x00",
+    "\x21\x05\x00\x00\x00\x00\x00",
 }
 
 packet SessionGetCountRsp : SessionResponse (opcode = 0x5) { //SESSION_GET_COUNT
@@ -564,7 +593,7 @@ packet SessionGetCountRsp : SessionResponse (opcode = 0x5) { //SESSION_GET_COUNT
 }
 
 test SessionGetCountRsp {
-    "\x41\x05\x00\x02\x00\x01",
+    "\x41\x05\x00\x02\x00\x00\x00\x00\x01",
 }
 
 packet SessionGetStateCmd : SessionCommand (opcode = 0x6) { //SESSION_GET_STATE
@@ -572,7 +601,7 @@ packet SessionGetStateCmd : SessionCommand (opcode = 0x6) { //SESSION_GET_STATE
 }
 
 test SessionGetStateCmd {
-    "\x21\x06\x00\x04\x00\x01\x02\x03",
+    "\x21\x06\x00\x04\x00\x00\x00\x00\x01\x02\x03",
 }
 
 packet SessionGetStateRsp : SessionResponse (opcode = 0x6) { //SESSION_GET_STATE
@@ -581,7 +610,7 @@ packet SessionGetStateRsp : SessionResponse (opcode = 0x6) { //SESSION_GET_STATE
 }
 
 test SessionGetStateRsp {
-    "\x41\x06\x00\x02\x00\x01",
+    "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
 struct Controlee {
@@ -589,15 +618,20 @@ struct Controlee {
     subsession_id: 32,
 }
 
+enum UpdateMulticastListAction: 8 {
+    ADD_CONTROLEE = 0,
+    REMOVE_CONTROLEE = 1,
+}
+
 packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_id: 32,
-    action: 8,
+    action: UpdateMulticastListAction,
     _count_(controlees): 8,
     controlees: Controlee[],
 }
 
 test SessionUpdateControllerMulticastListCmd {
-    "\x21\x07\x00\x06\x00\x01\x02\x03\x04\x00",
+    "\x21\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x01\x00",
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
@@ -605,13 +639,13 @@ packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) 
 }
 
 test SessionUpdateControllerMulticastListRsp {
-    "\x41\x07\x00\x01\x00",
+    "\x41\x07\x00\x01\x00\x00\x00\x00",
 }
 
 struct ControleeStatus {
     mac_address: 16,
     subsession_id: 32,
-    status: 8,
+    status: MulticastUpdateStatusCode,
 }
 
 packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
@@ -622,7 +656,7 @@ packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0
 }
 
 test SessionUpdateControllerMulticastListNtf {
-    "\x61\x07\x00\x06\x00\x01\x02\x03\x04\x00",
+    "\x61\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
 
@@ -631,7 +665,7 @@ packet RangeStartCmd : RangingCommand (opcode = 0x0) { //RANGE_START
 }
 
 test RangeStartCmd {
-    "\x22\x00\x00\x04\x00\x01\x02\x03",
+    "\x22\x00\x00\x04\x00\x00\x00\x00\x01\x02\x03",
 }
 
 packet RangeStartRsp : RangingResponse (opcode = 0x0) { //RANGE_START
@@ -639,7 +673,7 @@ packet RangeStartRsp : RangingResponse (opcode = 0x0) { //RANGE_START
 }
 
 test RangeStartRsp {
-    "\x42\x00\x00\x01\x00",
+    "\x42\x00\x00\x01\x00\x00\x00\x00",
 }
 
 struct ShortAddressTwoWayRangingMeasurement {
@@ -699,7 +733,7 @@ packet ShortMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO
 }
 
 test ShortMacTwoWayRangeDataNtf {
-    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
@@ -708,7 +742,7 @@ packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = 
 }
 
 test ExtendedMacTwoWayRangeDataNtf {
-    "\x62\x00\x00\x19\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
@@ -716,7 +750,7 @@ packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
 }
 
 test RangeStopCmd {
-    "\x22\x01\x00\x04\x00\x02\x03\x04",
+    "\x22\x01\x00\x04\x00\x00\x00\x00\x02\x03\x04",
 }
 
 packet RangeStopRsp : RangingResponse (opcode = 0x1) { //RANGE_STOP
@@ -724,7 +758,7 @@ packet RangeStopRsp : RangingResponse (opcode = 0x1) { //RANGE_STOP
 }
 
 test RangeStopRsp {
-    "\x42\x01\x00\x01\x00",
+    "\x42\x01\x00\x01\x00\x00\x00\x00",
 }
 
 packet RangeGetRangingCountCmd : RangingCommand (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
@@ -732,7 +766,7 @@ packet RangeGetRangingCountCmd : RangingCommand (opcode = 0x3) { //RANGE_GET_RAN
 }
 
 test RangeGetRangingCountCmd {
-    "\x22\x03\x00\x04\x00\x02\x03\x04",
+    "\x22\x03\x00\x04\x00\x00\x00\x00\x02\x03\x04",
 }
 
 packet RangeGetRangingCountRsp : RangingResponse (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
@@ -741,14 +775,14 @@ packet RangeGetRangingCountRsp : RangingResponse (opcode = 0x3) { //RANGE_GET_RA
 }
 
 test RangeGetRangingCountRsp {
-    "\x42\x03\x00\x05\x00\x02\x03\x04\x05",
+    "\x42\x03\x00\x05\x00\x00\x00\x00\x02\x03\x04\x05",
 }
 
 packet AndroidGetPowerStatsCmd: AndroidCommand (opcode = 0x0) { //ANDROID_GET_POWER_STATS
 }
 
 test AndroidGetPowerStatsCmd {
-    "\x2e\x00\x00\x00",
+    "\x2c\x00\x00\x00\x00\x00\x00",
 }
 
 struct PowerStats {
@@ -764,7 +798,7 @@ packet AndroidGetPowerStatsRsp : AndroidResponse (opcode = 0x0) { //ANDROID_GET_
 }
 
 test AndroidGetPowerStatsRsp {
-    "\x4e\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x4c\x00\x00\x11\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
@@ -773,7 +807,7 @@ packet AndroidSetCountryCodeCmd: AndroidCommand (opcode = 0x1) { //ANDROID_SET_C
 
 // Set country code to US.
 test AndroidSetCountryCodeCmd {
-    "\x2e\x01\x00\x02\x55\x53",
+    "\x2c\x01\x00\x02\x00\x00\x00\x55\x53",
 }
 
 packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET_COUNTRY_CODE
@@ -781,7 +815,7 @@ packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET
 }
 
 test AndroidSetCountryCodeRsp {
-    "\x4e\x01\x00\x01\x00",
+    "\x4c\x01\x00\x01\x00\x00\x00\x00",
 }
 
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {
