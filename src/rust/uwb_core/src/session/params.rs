@@ -15,7 +15,7 @@
 pub mod ccc_app_config_params;
 pub mod ccc_started_app_config_params;
 pub mod fira_app_config_params;
-mod utils;
+pub(super) mod utils;
 
 use std::collections::HashMap;
 
@@ -29,7 +29,7 @@ type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
 /// The application configuration parameters of the UWB session. It is used to generate the
 /// parameters for the SESSION_SET_APP_CONFIG_CMD, or converted from the result of the
 /// SESSION_GET_APP_CONFIG_CMD.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppConfigParams {
     Fira(FiraAppConfigParams),
     Ccc(CccAppConfigParams),

@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::session::error::{Error, Result};
 use crate::session::params::AppConfigParams;
-use crate::session::uwb_session::UwbSession;
+use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification, SessionRangeData};
 use crate::uci::params::{
     Controlee, SessionId, SessionState, SessionType, UpdateMulticastListAction,
@@ -33,7 +33,7 @@ const MAX_SESSION_COUNT: usize = 5;
 /// UciManager.
 /// Using the actor model, SessionManager delegates the requests to SessionManagerActor.
 pub(crate) struct SessionManager {
-    cmd_sender: mpsc::UnboundedSender<(SessionCommand, oneshot::Sender<Result<()>>)>,
+    cmd_sender: mpsc::UnboundedSender<(SessionCommand, ResponseSender)>,
 }
 
 impl SessionManager {
@@ -62,7 +62,8 @@ impl SessionManager {
                 params,
                 range_data_sender,
             })
-            .await;
+            .await
+            .map(|_| ());
         if result.is_err() && result != Err(Error::DuplicatedSessionId(session_id)) {
             let _ = self.deinit_session(session_id).await;
         }
@@ -70,19 +71,25 @@ impl SessionManager {
     }
 
     async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
-        self.send_cmd(SessionCommand::DeinitSession { session_id }).await
+        self.send_cmd(SessionCommand::DeinitSession { session_id }).await?;
+        Ok(())
     }
 
-    async fn start_ranging(&mut self, session_id: SessionId) -> Result<()> {
-        self.send_cmd(SessionCommand::StartRanging { session_id }).await
+    async fn start_ranging(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.send_cmd(SessionCommand::StartRanging { session_id }).await? {
+            SessionResponse::AppConfigParams(params) => Ok(params),
+            _ => panic!("start_ranging() should reply AppConfigParams result"),
+        }
     }
 
     async fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
-        self.send_cmd(SessionCommand::StopRanging { session_id }).await
+        self.send_cmd(SessionCommand::StopRanging { session_id }).await?;
+        Ok(())
     }
 
     async fn reconfigure(&mut self, session_id: SessionId, params: AppConfigParams) -> Result<()> {
-        self.send_cmd(SessionCommand::Reconfigure { session_id, params }).await
+        self.send_cmd(SessionCommand::Reconfigure { session_id, params }).await?;
+        Ok(())
     }
 
     async fn update_controller_multicast_list(
@@ -96,11 +103,12 @@ impl SessionManager {
             action,
             controlees,
         })
-        .await
+        .await?;
+        Ok(())
     }
 
     // Send the |cmd| to the SessionManagerActor.
-    async fn send_cmd(&self, cmd: SessionCommand) -> Result<()> {
+    async fn send_cmd(&self, cmd: SessionCommand) -> Result<SessionResponse> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
@@ -112,7 +120,7 @@ impl SessionManager {
 
 struct SessionManagerActor<T: UciManager> {
     // Receive the commands and the corresponding response senders from SessionManager.
-    cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<Result<()>>)>,
+    cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, ResponseSender)>,
 
     // The UciManager for delegating UCI requests.
     uci_manager: T,
@@ -124,7 +132,7 @@ struct SessionManagerActor<T: UciManager> {
 
 impl<T: UciManager> SessionManagerActor<T> {
     fn new(
-        cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, oneshot::Sender<Result<()>>)>,
+        cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, ResponseSender)>,
         uci_manager: T,
         session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
     ) -> Self {
@@ -153,7 +161,7 @@ impl<T: UciManager> SessionManagerActor<T> {
         }
     }
 
-    fn handle_cmd(&mut self, cmd: SessionCommand, result_sender: oneshot::Sender<Result<()>>) {
+    fn handle_cmd(&mut self, cmd: SessionCommand, result_sender: ResponseSender) {
         match cmd {
             SessionCommand::InitSession { session_id, session_type, params, range_data_sender } => {
                 if self.active_sessions.contains_key(&session_id) {
@@ -310,13 +318,19 @@ enum SessionCommand {
 mod tests {
     use super::*;
 
+    use std::collections::HashMap;
+
+    use crate::session::params::ccc_app_config_params::*;
+    use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::session::params::fira_app_config_params::*;
+    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
     use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::uci::params::{
-        ControleeStatus, MulticastUpdateStatusCode, RangingMeasurementType, ReasonCode,
-        SetAppConfigResponse, ShortAddressTwoWayRangingMeasurement,
+        AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
+        RangingMeasurementType, ReasonCode, SetAppConfigResponse,
+        ShortAddressTwoWayRangingMeasurement,
     };
     use crate::utils::init_test_logging;
 
@@ -470,13 +484,93 @@ mod tests {
             .await;
 
         let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
+            .init_session(session_id, session_type, params.clone(), mpsc::unbounded_channel().0)
             .await;
         assert_eq!(result, Ok(()));
         let result = session_manager.start_ranging(session_id).await;
-        assert_eq!(result, Ok(()));
+        assert_eq!(result, Ok(params));
         let result = session_manager.stop_ranging(session_id).await;
         assert_eq!(result, Ok(()));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_ccc_start_ranging() {
+        let session_id = 0x123;
+        let session_type = SessionType::Ccc;
+        // params that is passed to UciManager::session_set_app_config().
+        let params = CccAppConfigParamsBuilder::new()
+            .protocol_version(CccProtocolVersion { major: 2, minor: 1 })
+            .uwb_config(CccUwbConfig::Config0)
+            .pulse_shape_combo(CccPulseShapeCombo {
+                initiator_tx: PulseShape::PrecursorFree,
+                responder_tx: PulseShape::PrecursorFreeSpecial,
+            })
+            .ran_multiplier(3)
+            .channel_number(CccUwbChannel::Channel9)
+            .chaps_per_slot(ChapsPerSlot::Value9)
+            .num_responder_nodes(1)
+            .slots_per_rr(3)
+            .sync_code_index(12)
+            .hopping_mode(CccHoppingMode::ContinuousAes)
+            .build()
+            .unwrap();
+        let tlvs = params.generate_tlvs();
+        // The params that is received from UciManager::session_get_app_config().
+        let received_config_map = HashMap::from([
+            (AppConfigTlvType::StsIndex, u32_to_bytes(3)),
+            (AppConfigTlvType::CccHopModeKey, u32_to_bytes(5)),
+            (AppConfigTlvType::CccUwbTime0, u64_to_bytes(7)),
+            (AppConfigTlvType::RangingInterval, u32_to_bytes(96)),
+            (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(9)),
+        ]);
+        let received_tlvs = received_config_map
+            .iter()
+            .map(|(key, value)| AppConfigTlv { cfg_id: *key, v: value.clone() })
+            .collect();
+        let started_params =
+            CccStartedAppConfigParams::from_config_map(received_config_map).unwrap();
+
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                let state_init_notf = vec![UciNotification::Session(SessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateInit,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                })];
+                let state_idle_notf = vec![UciNotification::Session(SessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateIdle,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                })];
+                let state_active_notf =
+                    vec![UciNotification::Session(SessionNotification::Status {
+                        session_id,
+                        session_state: SessionState::SessionStateActive,
+                        reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                    })];
+                uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    tlvs,
+                    state_idle_notf,
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_range_start(session_id, state_active_notf, Ok(()));
+                uci_manager.expect_session_get_app_config(session_id, vec![], Ok(received_tlvs));
+            })
+            .await;
+
+        let result = session_manager
+            .init_session(session_id, session_type, params.clone(), mpsc::unbounded_channel().0)
+            .await;
+        assert_eq!(result, Ok(()));
+        let result = session_manager.start_ranging(session_id).await;
+        assert_eq!(result, Ok(AppConfigParams::CccStarted(started_params)));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
