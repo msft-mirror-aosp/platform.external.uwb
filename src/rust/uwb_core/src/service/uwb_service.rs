@@ -122,8 +122,12 @@ impl<U: UciManager> UwbServiceActor<U> {
                     Error::UciError
                 })?;
 
-                self.session_manager =
-                    Some(SessionManager::new(self.uci_manager.clone(), uci_notf_receiver));
+                self.session_manager = Some(SessionManager::new(
+                    self.uci_manager.clone(),
+                    uci_notf_receiver,
+                    // TODO(akahuang): handle the notification from SessionManager.
+                    mpsc::unbounded_channel().0,
+                ));
                 Ok(())
             }
             UwbCommand::Disable => {
