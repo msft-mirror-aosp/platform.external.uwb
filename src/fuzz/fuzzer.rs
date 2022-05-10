@@ -11,16 +11,20 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, AndroidGetPowerStatsRspBuilder,
-    AndroidSetCountryCodeCmdBuilder, AndroidSetCountryCodeRspBuilder, DeviceResetRspBuilder,
-    DeviceState, DeviceStatusNtfBuilder, GenericErrorBuilder, GetCapsInfoCmdBuilder,
-    GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder, GetDeviceInfoRspBuilder, PowerStats,
-    RangeStartCmdBuilder, RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder,
-    ReasonCode, SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
+    AndroidSetCountryCodeCmdBuilder, AndroidSetCountryCodeRspBuilder, ControleeStatus,
+    DeviceResetRspBuilder, DeviceState, DeviceStatusNtfBuilder,
+    ExtendedAddressTwoWayRangingMeasurement, ExtendedMacTwoWayRangeDataNtfBuilder,
+    GenericErrorBuilder, GetCapsInfoCmdBuilder, GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder,
+    GetDeviceInfoRspBuilder, MulticastUpdateStatusCode, PowerStats, RangeStartCmdBuilder,
+    RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder, ReasonCode,
+    SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
     SessionGetAppConfigRspBuilder, SessionGetCountCmdBuilder, SessionGetCountRspBuilder,
     SessionGetStateCmdBuilder, SessionGetStateRspBuilder, SessionInitCmdBuilder,
     SessionInitRspBuilder, SessionSetAppConfigRspBuilder, SessionState, SessionStatusNtfBuilder,
-    SessionType, SessionUpdateControllerMulticastListRspBuilder, StatusCode, UciCommandPacket,
-    UciPacketChild, UciPacketPacket, UciVendor_9_ResponseBuilder,
+    SessionType, SessionUpdateControllerMulticastListNtfBuilder,
+    SessionUpdateControllerMulticastListRspBuilder, ShortAddressTwoWayRangingMeasurement,
+    ShortMacTwoWayRangeDataNtfBuilder, StatusCode, UciCommandPacket, UciPacketChild,
+    UciPacketPacket, UciVendor_9_ResponseBuilder,
 };
 use uwb_uci_rust::adaptation::mock_adaptation::MockUwbAdaptation;
 use uwb_uci_rust::error::UwbErr;
@@ -31,9 +35,127 @@ use uwb_uci_rust::uci::{
 
 #[derive(Debug, Clone, Arbitrary)]
 enum UciNotification {
-    GenericError { status: u8 },
-    DeviceStatusNtf { device_state: u8 },
-    SessionStatusNtf { session_id: u32, session_state: u8, reason_code: u8 },
+    GenericError {
+        status: u8,
+    },
+    DeviceStatusNtf {
+        device_state: u8,
+    },
+    SessionStatusNtf {
+        session_id: u32,
+        session_state: u8,
+        reason_code: u8,
+    },
+    ShortMacTwoWayRangeDataNtf {
+        sequence_number: u32,
+        session_id: u32,
+        rcr_indicator: u8,
+        current_ranging_interval: u32,
+        two_way_ranging_measurements: Vec<ShortAddressMeasurement>,
+    },
+    ExtendedMacTwoWayRangeDataNtf {
+        sequence_number: u32,
+        session_id: u32,
+        rcr_indicator: u8,
+        current_ranging_interval: u32,
+        two_way_ranging_measurements: Vec<ExtendedAddressMeasurement>,
+    },
+    SessionUpdateControllerMulticastListNtf {
+        session_id: u32,
+        remaining_multicast_list_size: u8,
+        controlee_status: Vec<MockControleeStatus>,
+    },
+}
+
+#[derive(Debug, Clone, Arbitrary)]
+struct ShortAddressMeasurement {
+    mac_address: u16,
+    status: u8,
+    nlos: u8,
+    distance: u16,
+    aoa_azimuth: u16,
+    aoa_azimuth_fom: u8,
+    aoa_elevation: u16,
+    aoa_elevation_fom: u8,
+    aoa_destination_azimuth: u16,
+    aoa_destination_azimuth_fom: u8,
+    aoa_destination_elevation: u16,
+    aoa_destination_elevation_fom: u8,
+    slot_index: u8,
+}
+
+impl ShortAddressMeasurement {
+    fn convert(&self) -> Result<ShortAddressTwoWayRangingMeasurement, UwbErr> {
+        Ok(ShortAddressTwoWayRangingMeasurement {
+            mac_address: self.mac_address,
+            status: StatusCode::from_u8(self.status).ok_or(UwbErr::InvalidArgs)?,
+            nlos: self.nlos,
+            distance: self.distance,
+            aoa_azimuth: self.aoa_azimuth,
+            aoa_azimuth_fom: self.aoa_azimuth_fom,
+            aoa_elevation: self.aoa_elevation,
+            aoa_elevation_fom: self.aoa_elevation_fom,
+            aoa_destination_azimuth: self.aoa_destination_azimuth,
+            aoa_destination_azimuth_fom: self.aoa_destination_azimuth_fom,
+            aoa_destination_elevation: self.aoa_destination_elevation,
+            aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
+            slot_index: self.slot_index,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Arbitrary)]
+struct ExtendedAddressMeasurement {
+    mac_address: u64,
+    status: u8,
+    nlos: u8,
+    distance: u16,
+    aoa_azimuth: u16,
+    aoa_azimuth_fom: u8,
+    aoa_elevation: u16,
+    aoa_elevation_fom: u8,
+    aoa_destination_azimuth: u16,
+    aoa_destination_azimuth_fom: u8,
+    aoa_destination_elevation: u16,
+    aoa_destination_elevation_fom: u8,
+    slot_index: u8,
+}
+
+impl ExtendedAddressMeasurement {
+    fn convert(&self) -> Result<ExtendedAddressTwoWayRangingMeasurement, UwbErr> {
+        Ok(ExtendedAddressTwoWayRangingMeasurement {
+            mac_address: self.mac_address,
+            status: StatusCode::from_u8(self.status).ok_or(UwbErr::InvalidArgs)?,
+            nlos: self.nlos,
+            distance: self.distance,
+            aoa_azimuth: self.aoa_azimuth,
+            aoa_azimuth_fom: self.aoa_azimuth_fom,
+            aoa_elevation: self.aoa_elevation,
+            aoa_elevation_fom: self.aoa_elevation_fom,
+            aoa_destination_azimuth: self.aoa_destination_azimuth,
+            aoa_destination_azimuth_fom: self.aoa_destination_azimuth_fom,
+            aoa_destination_elevation: self.aoa_destination_elevation,
+            aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
+            slot_index: self.slot_index,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Arbitrary)]
+struct MockControleeStatus {
+    mac_address: u16,
+    subsession_id: u32,
+    status: u8,
+}
+
+impl MockControleeStatus {
+    fn convert(&self) -> Result<ControleeStatus, UwbErr> {
+        Ok(ControleeStatus {
+            mac_address: self.mac_address,
+            subsession_id: self.subsession_id,
+            status: MulticastUpdateStatusCode::from_u8(self.status).ok_or(UwbErr::InvalidArgs)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Arbitrary)]
@@ -88,7 +210,7 @@ fn create_dispatcher_with_mock_adaptation(
                     mock_event_manager.expect_device_status_notification_received(Ok(()))
                 }
                 UciNotification::SessionStatusNtf {
-                    session_id: _session_ids,
+                    session_id: _session_id,
                     session_state,
                     reason_code,
                 } => {
@@ -101,6 +223,55 @@ fn create_dispatcher_with_mock_adaptation(
                         return Err(UwbErr::InvalidArgs);
                     }
                     mock_event_manager.expect_session_status_notification_received(Ok(()))
+                }
+                UciNotification::ShortMacTwoWayRangeDataNtf {
+                    sequence_number: _sequence_number,
+                    session_id: _session_id,
+                    rcr_indicator: _rcr_indicator,
+                    current_ranging_interval: _current_ranging_interval,
+                    two_way_ranging_measurements,
+                } => {
+                    for measurement in two_way_ranging_measurements.iter() {
+                        if StatusCode::from_u8(measurement.status).is_none() {
+                            mock_adaptation.clear_expected_calls();
+                            mock_event_manager.clear_expected_calls();
+                            return Err(UwbErr::InvalidArgs);
+                        }
+                    }
+                    mock_event_manager.expect_short_range_data_notification_received(Ok(()))
+                }
+                UciNotification::ExtendedMacTwoWayRangeDataNtf {
+                    sequence_number: _sequence_number,
+                    session_id: _session_id,
+                    rcr_indicator: _rcr_indicator,
+                    current_ranging_interval: _current_ranging_interval,
+                    two_way_ranging_measurements,
+                } => {
+                    for measurement in two_way_ranging_measurements.iter() {
+                        if StatusCode::from_u8(measurement.status).is_none() {
+                            mock_adaptation.clear_expected_calls();
+                            mock_event_manager.clear_expected_calls();
+                            return Err(UwbErr::InvalidArgs);
+                        }
+                    }
+                    mock_event_manager.expect_extended_range_data_notification_received(Ok(()))
+                }
+                UciNotification::SessionUpdateControllerMulticastListNtf {
+                    session_id: _session_id,
+                    remaining_multicast_list_size: _remaining_multicast_list_size,
+                    controlee_status,
+                } => {
+                    for status in controlee_status.iter() {
+                        if MulticastUpdateStatusCode::from_u8(status.status).is_none() {
+                            mock_adaptation.clear_expected_calls();
+                            mock_event_manager.clear_expected_calls();
+                            return Err(UwbErr::InvalidArgs);
+                        }
+                    }
+                    mock_event_manager
+                        .expect_session_update_controller_multicast_list_notification_received(Ok(
+                            (),
+                        ))
                 }
             },
         }
@@ -322,6 +493,68 @@ fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
                         }
                         .build(),
                     ),
+                    UciNotification::ShortMacTwoWayRangeDataNtf {
+                        sequence_number,
+                        session_id,
+                        rcr_indicator,
+                        current_ranging_interval,
+                        two_way_ranging_measurements,
+                    } => {
+                        let mut measurements = Vec::new();
+                        for measurement in two_way_ranging_measurements.iter() {
+                            measurements.push(measurement.convert()?);
+                        }
+                        uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(
+                            ShortMacTwoWayRangeDataNtfBuilder {
+                                sequence_number,
+                                session_id,
+                                rcr_indicator,
+                                current_ranging_interval,
+                                two_way_ranging_measurements: measurements,
+                            }
+                            .build(),
+                        )
+                    }
+                    UciNotification::ExtendedMacTwoWayRangeDataNtf {
+                        sequence_number,
+                        session_id,
+                        rcr_indicator,
+                        current_ranging_interval,
+                        two_way_ranging_measurements,
+                    } => {
+                        let mut measurements = Vec::new();
+                        for measurement in two_way_ranging_measurements.iter() {
+                            measurements.push(measurement.convert()?);
+                        }
+                        uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(
+                            ExtendedMacTwoWayRangeDataNtfBuilder {
+                                sequence_number,
+                                session_id,
+                                rcr_indicator,
+                                current_ranging_interval,
+                                two_way_ranging_measurements: measurements,
+                            }
+                            .build(),
+                        )
+                    }
+                    UciNotification::SessionUpdateControllerMulticastListNtf {
+                        session_id,
+                        remaining_multicast_list_size,
+                        controlee_status,
+                    } => {
+                        let mut status_vec = Vec::new();
+                        for status in controlee_status.iter() {
+                            status_vec.push(status.convert()?);
+                        }
+                        uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(
+                            SessionUpdateControllerMulticastListNtfBuilder {
+                                session_id,
+                                remaining_multicast_list_size,
+                                controlee_status: status_vec,
+                            }
+                            .build(),
+                        )
+                    }
                 };
                 rsp_sender
                     .send(HalCallback::UciNtf(evt))
