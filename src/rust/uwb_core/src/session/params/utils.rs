@@ -16,39 +16,39 @@ use std::convert::TryInto;
 
 use log::error;
 
-pub(super) fn u8_to_bytes(value: u8) -> Vec<u8> {
+pub fn u8_to_bytes(value: u8) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
 
-pub(super) fn u16_to_bytes(value: u16) -> Vec<u8> {
+pub fn u16_to_bytes(value: u16) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
 
-pub(super) fn u32_to_bytes(value: u32) -> Vec<u8> {
+pub fn u32_to_bytes(value: u32) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
 
-pub(super) fn u64_to_bytes(value: u64) -> Vec<u8> {
+pub fn u64_to_bytes(value: u64) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
 
-pub(super) fn bytes_to_u8(value: Vec<u8>) -> Option<u8> {
+pub fn bytes_to_u8(value: Vec<u8>) -> Option<u8> {
     Some(u8::from_le_bytes(value.try_into().ok()?))
 }
 
-pub(super) fn bytes_to_u16(value: Vec<u8>) -> Option<u16> {
+pub fn bytes_to_u16(value: Vec<u8>) -> Option<u16> {
     Some(u16::from_le_bytes(value.try_into().ok()?))
 }
 
-pub(super) fn bytes_to_u32(value: Vec<u8>) -> Option<u32> {
+pub fn bytes_to_u32(value: Vec<u8>) -> Option<u32> {
     Some(u32::from_le_bytes(value.try_into().ok()?))
 }
 
-pub(super) fn bytes_to_u64(value: Vec<u8>) -> Option<u64> {
+pub fn bytes_to_u64(value: Vec<u8>) -> Option<u64> {
     Some(u64::from_le_bytes(value.try_into().ok()?))
 }
 
-pub(super) fn validate(value: bool, err_msg: &str) -> Option<()> {
+pub fn validate(value: bool, err_msg: &str) -> Option<()> {
     match value {
         true => Some(()),
         false => {
