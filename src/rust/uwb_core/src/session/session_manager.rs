@@ -61,7 +61,7 @@ impl SessionManager {
         Self { cmd_sender }
     }
 
-    async fn init_session(
+    pub async fn init_session(
         &mut self,
         session_id: SessionId,
         session_type: SessionType,
@@ -77,29 +77,33 @@ impl SessionManager {
         result
     }
 
-    async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
+    pub async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
         self.send_cmd(SessionCommand::DeinitSession { session_id }).await?;
         Ok(())
     }
 
-    async fn start_ranging(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+    pub async fn start_ranging(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
         match self.send_cmd(SessionCommand::StartRanging { session_id }).await? {
             SessionResponse::AppConfigParams(params) => Ok(params),
             _ => panic!("start_ranging() should reply AppConfigParams result"),
         }
     }
 
-    async fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
+    pub async fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
         self.send_cmd(SessionCommand::StopRanging { session_id }).await?;
         Ok(())
     }
 
-    async fn reconfigure(&mut self, session_id: SessionId, params: AppConfigParams) -> Result<()> {
+    pub async fn reconfigure(
+        &mut self,
+        session_id: SessionId,
+        params: AppConfigParams,
+    ) -> Result<()> {
         self.send_cmd(SessionCommand::Reconfigure { session_id, params }).await?;
         Ok(())
     }
 
-    async fn update_controller_multicast_list(
+    pub async fn update_controller_multicast_list(
         &mut self,
         session_id: SessionId,
         action: UpdateMulticastListAction,
@@ -333,26 +337,15 @@ enum SessionCommand {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod test_utils {
     use super::*;
 
-    use std::collections::HashMap;
-
     use crate::session::params::ccc_app_config_params::*;
-    use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::session::params::fira_app_config_params::*;
-    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
-    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
-    use crate::uci::notification::{RangingMeasurements, UciNotification};
-    use crate::uci::params::{
-        AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
-        RangingMeasurementType, ReasonCode, SetAppConfigResponse,
-        ShortAddressTwoWayRangingMeasurement,
-    };
     use crate::utils::init_test_logging;
 
-    fn generate_params() -> AppConfigParams {
+    pub fn generate_params() -> AppConfigParams {
         FiraAppConfigParamsBuilder::new()
             .device_type(DeviceType::Controller)
             .multi_node_mode(MultiNodeMode::Unicast)
@@ -365,7 +358,7 @@ mod tests {
             .unwrap()
     }
 
-    fn generate_ccc_params() -> AppConfigParams {
+    pub fn generate_ccc_params() -> AppConfigParams {
         CccAppConfigParamsBuilder::new()
             .protocol_version(CccProtocolVersion { major: 2, minor: 1 })
             .uwb_config(CccUwbConfig::Config0)
@@ -384,7 +377,7 @@ mod tests {
             .unwrap()
     }
 
-    async fn setup_session_manager<F>(
+    pub(super) async fn setup_session_manager<F>(
         setup_uci_manager_fn: F,
     ) -> (SessionManager, MockUciManager, mpsc::UnboundedReceiver<SessionNotification>)
     where
@@ -405,6 +398,24 @@ mod tests {
             session_notf_receiver,
         )
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_utils::*;
+    use super::*;
+
+    use std::collections::HashMap;
+
+    use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
+    use crate::uci::error::StatusCode;
+    use crate::uci::notification::{RangingMeasurements, UciNotification};
+    use crate::uci::params::{
+        AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
+        RangingMeasurementType, ReasonCode, SetAppConfigResponse,
+        ShortAddressTwoWayRangingMeasurement,
+    };
 
     #[tokio::test]
     async fn test_init_deinit_session() {
