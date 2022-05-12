@@ -28,6 +28,13 @@ use crate::uci::uci_manager::UciManager;
 
 const MAX_SESSION_COUNT: usize = 5;
 
+/// The notifications that are sent from SessionManager to its caller.
+#[derive(Debug, PartialEq)]
+pub(crate) enum SessionNotification {
+    SessionDeinited { session_id: SessionId },
+    RangeDataReceived { session_id: SessionId, range_data: SessionRangeData },
+}
+
 /// The SessionManager organizes the state machine of the existing UWB ranging sessions, sends
 /// the session-related requests to the UciManager, and handles the session notifications from the
 /// UciManager.
@@ -40,9 +47,15 @@ impl SessionManager {
     pub fn new<T: UciManager>(
         uci_manager: T,
         uci_notf_receiver: mpsc::UnboundedReceiver<UciSessionNotification>,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = SessionManagerActor::new(cmd_receiver, uci_manager, uci_notf_receiver);
+        let mut actor = SessionManagerActor::new(
+            cmd_receiver,
+            uci_manager,
+            uci_notf_receiver,
+            session_notf_sender,
+        );
         tokio::spawn(async move { actor.run().await });
 
         Self { cmd_sender }
@@ -53,15 +66,9 @@ impl SessionManager {
         session_id: SessionId,
         session_type: SessionType,
         params: AppConfigParams,
-        range_data_sender: mpsc::UnboundedSender<SessionRangeData>,
     ) -> Result<()> {
         let result = self
-            .send_cmd(SessionCommand::InitSession {
-                session_id,
-                session_type,
-                params,
-                range_data_sender,
-            })
+            .send_cmd(SessionCommand::InitSession { session_id, session_type, params })
             .await
             .map(|_| ());
         if result.is_err() && result != Err(Error::DuplicatedSessionId(session_id)) {
@@ -121,6 +128,8 @@ impl SessionManager {
 struct SessionManagerActor<T: UciManager> {
     // Receive the commands and the corresponding response senders from SessionManager.
     cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, ResponseSender)>,
+    // Send the notification to SessionManager's caller.
+    session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
 
     // The UciManager for delegating UCI requests.
     uci_manager: T,
@@ -135,8 +144,15 @@ impl<T: UciManager> SessionManagerActor<T> {
         cmd_receiver: mpsc::UnboundedReceiver<(SessionCommand, ResponseSender)>,
         uci_manager: T,
         uci_notf_receiver: mpsc::UnboundedReceiver<UciSessionNotification>,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     ) -> Self {
-        Self { cmd_receiver, uci_manager, uci_notf_receiver, active_sessions: BTreeMap::new() }
+        Self {
+            cmd_receiver,
+            session_notf_sender,
+            uci_manager,
+            uci_notf_receiver,
+            active_sessions: BTreeMap::new(),
+        }
     }
 
     async fn run(&mut self) {
@@ -163,7 +179,7 @@ impl<T: UciManager> SessionManagerActor<T> {
 
     fn handle_cmd(&mut self, cmd: SessionCommand, result_sender: ResponseSender) {
         match cmd {
-            SessionCommand::InitSession { session_id, session_type, params, range_data_sender } => {
+            SessionCommand::InitSession { session_id, session_type, params } => {
                 if self.active_sessions.contains_key(&session_id) {
                     let _ = result_sender.send(Err(Error::DuplicatedSessionId(session_id)));
                     return;
@@ -179,12 +195,8 @@ impl<T: UciManager> SessionManagerActor<T> {
                     return;
                 }
 
-                let mut session = UwbSession::new(
-                    self.uci_manager.clone(),
-                    session_id,
-                    session_type,
-                    range_data_sender,
-                );
+                let mut session =
+                    UwbSession::new(self.uci_manager.clone(), session_id, session_type);
                 session.initialize(params, result_sender);
 
                 // We store the session first. If the initialize() fails, then SessionManager will
@@ -250,6 +262,9 @@ impl<T: UciManager> SessionManagerActor<T> {
                 if session_state == SessionState::SessionStateDeinit {
                     debug!("Session {:?} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
+                    let _ = self
+                        .session_notf_sender
+                        .send(SessionNotification::SessionDeinited { session_id });
                     return;
                 }
 
@@ -276,10 +291,14 @@ impl<T: UciManager> SessionManagerActor<T> {
                     );
                 }
             },
-            UciSessionNotification::RangeData(data) => {
-                match self.active_sessions.get_mut(&data.session_id) {
-                    Some(session) => session.on_range_data_received(data),
-                    None => warn!("Received range data of the unknown Session: {:?}", data),
+            UciSessionNotification::RangeData(range_data) => {
+                if self.active_sessions.get(&range_data.session_id).is_some() {
+                    let _ = self.session_notf_sender.send(SessionNotification::RangeDataReceived {
+                        session_id: range_data.session_id,
+                        range_data,
+                    });
+                } else {
+                    warn!("Received range data of the unknown Session: {:?}", range_data);
                 }
             }
         }
@@ -292,7 +311,6 @@ enum SessionCommand {
         session_id: SessionId,
         session_type: SessionType,
         params: AppConfigParams,
-        range_data_sender: mpsc::UnboundedSender<SessionRangeData>,
     },
     DeinitSession {
         session_id: SessionId,
@@ -366,18 +384,26 @@ mod tests {
             .unwrap()
     }
 
-    async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)
+    async fn setup_session_manager<F>(
+        setup_uci_manager_fn: F,
+    ) -> (SessionManager, MockUciManager, mpsc::UnboundedReceiver<SessionNotification>)
     where
         F: FnOnce(&mut MockUciManager),
     {
         init_test_logging();
-        let (notf_sender, notf_receiver) = mpsc::unbounded_channel();
+        let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
+        let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         setup_uci_manager_fn(&mut uci_manager);
-        uci_manager.set_session_notification_sender(notf_sender).await;
+        uci_manager.set_session_notification_sender(uci_notf_sender).await;
         let _ = uci_manager.open_hal().await;
-        (SessionManager::new(uci_manager.clone(), notf_receiver), uci_manager)
+
+        (
+            SessionManager::new(uci_manager.clone(), uci_notf_receiver, session_notf_sender),
+            uci_manager,
+            session_notf_receiver,
+        )
     }
 
     #[tokio::test]
@@ -387,7 +413,7 @@ mod tests {
         let params = generate_params();
 
         let tlvs = params.generate_tlvs();
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, mut session_notf_receiver) =
             setup_session_manager(move |uci_manager| {
                 let init_notfs = vec![UciNotification::Session(UciSessionNotification::Status {
                     session_id,
@@ -400,6 +426,11 @@ mod tests {
                         session_state: SessionState::SessionStateIdle,
                         reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
                     })];
+                let deinit_notfs = vec![UciNotification::Session(UciSessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateDeinit,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                })];
                 uci_manager.expect_session_init(session_id, session_type, init_notfs, Ok(()));
                 uci_manager.expect_session_set_app_config(
                     session_id,
@@ -410,7 +441,7 @@ mod tests {
                         config_status: vec![],
                     }),
                 );
-                uci_manager.expect_session_deinit(session_id, Ok(()));
+                uci_manager.expect_session_deinit(session_id, deinit_notfs, Ok(()));
             })
             .await;
 
@@ -419,20 +450,19 @@ mod tests {
         assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
 
         // Initialize a normal session should be successful.
-        let result = session_manager
-            .init_session(session_id, session_type, params.clone(), mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
         assert_eq!(result, Ok(()));
 
         // Initialize a session multiple times without deinitialize should fail.
-        let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
 
-        // Deinitialize the session should be successful.
+        // Deinitialize the session should be successful, and should receive the deinitialized
+        // notification.
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Ok(()));
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(session_notf, SessionNotification::SessionDeinited { session_id });
 
         // Deinit a session after deinitialized should fail.
         let result = session_manager.deinit_session(session_id).await;
@@ -447,16 +477,14 @@ mod tests {
         let session_type = SessionType::FiraRangingSession;
         let params = generate_params();
 
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let notfs = vec![]; // Not sending SessionStatus notification.
                 uci_manager.expect_session_init(session_id, session_type, notfs, Ok(()));
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Err(Error::Timeout));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
@@ -469,7 +497,7 @@ mod tests {
         let params = generate_params();
         let tlvs = params.generate_tlvs();
 
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let state_init_notf =
                     vec![UciNotification::Session(UciSessionNotification::Status {
@@ -504,9 +532,7 @@ mod tests {
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params.clone(), mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.start_ranging(session_id).await;
         assert_eq!(result, Ok(params));
@@ -538,7 +564,7 @@ mod tests {
         let started_params =
             CccStartedAppConfigParams::from_config_map(received_config_map).unwrap();
 
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let state_init_notf =
                     vec![UciNotification::Session(UciSessionNotification::Status {
@@ -573,9 +599,7 @@ mod tests {
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params.clone(), mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
         assert_eq!(result, Ok(()));
         let result = session_manager.start_ranging(session_id).await;
         assert_eq!(result, Ok(AppConfigParams::CccStarted(started_params)));
@@ -593,7 +617,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let state_init_notf =
                     vec![UciNotification::Session(UciSessionNotification::Status {
@@ -638,9 +662,7 @@ mod tests {
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Ok(()));
         let result =
             session_manager.update_controller_multicast_list(session_id, action, controlees).await;
@@ -658,7 +680,7 @@ mod tests {
         let action = UpdateMulticastListAction::AddControlee;
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let state_init_notf =
                     vec![UciNotification::Session(UciSessionNotification::Status {
@@ -685,9 +707,7 @@ mod tests {
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Ok(()));
         // CCC session doesn't support update_controller_multicast_list.
         let result =
@@ -707,7 +727,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let state_init_notf =
                     vec![UciNotification::Session(UciSessionNotification::Status {
@@ -741,9 +761,7 @@ mod tests {
             })
             .await;
 
-        let result = session_manager
-            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
-            .await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Ok(()));
         // This method should timeout waiting for the notification.
         let result =
@@ -784,7 +802,7 @@ mod tests {
         };
 
         let range_data_clone = range_data.clone();
-        let (mut session_manager, mut mock_uci_manager) =
+        let (mut session_manager, mut mock_uci_manager, mut session_notf_receiver) =
             setup_session_manager(move |uci_manager| {
                 let init_notfs = vec![UciNotification::Session(UciSessionNotification::Status {
                     session_id,
@@ -812,13 +830,11 @@ mod tests {
             })
             .await;
 
-        let (range_data_sender, mut range_data_receiver) = mpsc::unbounded_channel();
-        let result =
-            session_manager.init_session(session_id, session_type, params, range_data_sender).await;
+        let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Ok(()));
 
-        let received_range_data = range_data_receiver.recv().await.unwrap();
-        assert_eq!(received_range_data, range_data);
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(session_notf, SessionNotification::RangeDataReceived { session_id, range_data });
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
