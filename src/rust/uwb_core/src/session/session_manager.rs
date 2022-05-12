@@ -347,6 +347,25 @@ mod tests {
             .unwrap()
     }
 
+    fn generate_ccc_params() -> AppConfigParams {
+        CccAppConfigParamsBuilder::new()
+            .protocol_version(CccProtocolVersion { major: 2, minor: 1 })
+            .uwb_config(CccUwbConfig::Config0)
+            .pulse_shape_combo(CccPulseShapeCombo {
+                initiator_tx: PulseShape::PrecursorFree,
+                responder_tx: PulseShape::PrecursorFreeSpecial,
+            })
+            .ran_multiplier(3)
+            .channel_number(CccUwbChannel::Channel9)
+            .chaps_per_slot(ChapsPerSlot::Value9)
+            .num_responder_nodes(1)
+            .slots_per_rr(3)
+            .sync_code_index(12)
+            .hopping_mode(CccHoppingMode::ContinuousAes)
+            .build()
+            .unwrap()
+    }
+
     async fn setup_session_manager<F>(setup_uci_manager_fn: F) -> (SessionManager, MockUciManager)
     where
         F: FnOnce(&mut MockUciManager),
@@ -500,22 +519,7 @@ mod tests {
         let session_id = 0x123;
         let session_type = SessionType::Ccc;
         // params that is passed to UciManager::session_set_app_config().
-        let params = CccAppConfigParamsBuilder::new()
-            .protocol_version(CccProtocolVersion { major: 2, minor: 1 })
-            .uwb_config(CccUwbConfig::Config0)
-            .pulse_shape_combo(CccPulseShapeCombo {
-                initiator_tx: PulseShape::PrecursorFree,
-                responder_tx: PulseShape::PrecursorFreeSpecial,
-            })
-            .ran_multiplier(3)
-            .channel_number(CccUwbChannel::Channel9)
-            .chaps_per_slot(ChapsPerSlot::Value9)
-            .num_responder_nodes(1)
-            .slots_per_rr(3)
-            .sync_code_index(12)
-            .hopping_mode(CccHoppingMode::ContinuousAes)
-            .build()
-            .unwrap();
+        let params = generate_ccc_params();
         let tlvs = params.generate_tlvs();
         // The params that is received from UciManager::session_get_app_config().
         let received_config_map = HashMap::from([
@@ -635,6 +639,52 @@ mod tests {
         let result =
             session_manager.update_controller_multicast_list(session_id, action, controlees).await;
         assert_eq!(result, Ok(()));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_ccc_update_controller_multicast_list() {
+        let session_id = 0x123;
+        let session_type = SessionType::Ccc;
+        let params = generate_ccc_params();
+        let tlvs = params.generate_tlvs();
+        let action = UpdateMulticastListAction::AddControlee;
+        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+
+        let (mut session_manager, mut mock_uci_manager) =
+            setup_session_manager(move |uci_manager| {
+                let state_init_notf = vec![UciNotification::Session(SessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateInit,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                })];
+                let state_idle_notf = vec![UciNotification::Session(SessionNotification::Status {
+                    session_id,
+                    session_state: SessionState::SessionStateIdle,
+                    reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+                })];
+                uci_manager.expect_session_init(session_id, session_type, state_init_notf, Ok(()));
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    tlvs,
+                    state_idle_notf,
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+            })
+            .await;
+
+        let result = session_manager
+            .init_session(session_id, session_type, params, mpsc::unbounded_channel().0)
+            .await;
+        assert_eq!(result, Ok(()));
+        // CCC session doesn't support update_controller_multicast_list.
+        let result =
+            session_manager.update_controller_multicast_list(session_id, action, controlees).await;
+        assert_eq!(result, Err(Error::InvalidArguments));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }

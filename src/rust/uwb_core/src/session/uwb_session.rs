@@ -310,6 +310,11 @@ impl<T: UciManager> UwbSessionActor<T> {
         controlees: Vec<Controlee>,
         notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
     ) -> Result<Response> {
+        if self.session_type == SessionType::Ccc {
+            error!("Cannot update multicast list for CCC session");
+            return Err(Error::InvalidArguments);
+        }
+
         let state = *self.state_receiver.borrow();
         if !matches!(state, SessionState::SessionStateIdle | SessionState::SessionStateActive) {
             error!("Cannot update multicast list at state {:?}", state);
