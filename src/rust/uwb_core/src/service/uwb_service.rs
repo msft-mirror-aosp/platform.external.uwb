@@ -22,7 +22,8 @@ use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, RawVendorMessage, SessionId, SessionType, UpdateMulticastListAction,
+    Controlee, CountryCode, PowerStats, RawVendorMessage, SessionId, SessionType,
+    UpdateMulticastListAction,
 };
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
@@ -126,7 +127,21 @@ impl UwbService {
         Ok(())
     }
 
-    // Send the |cmd| to UwbServiceActor.
+    /// Set the country code. Android-specific method.
+    pub async fn android_set_country_code(&mut self, country_code: CountryCode) -> Result<()> {
+        self.send_cmd(Command::AndroidSetCountryCode { country_code }).await?;
+        Ok(())
+    }
+
+    /// Get the power statistics. Android-specific method.
+    pub async fn android_get_power_stats(&mut self) -> Result<PowerStats> {
+        match self.send_cmd(Command::AndroidGetPowerStats).await? {
+            Response::PowerStats(stats) => Ok(stats),
+            _ => panic!("android_get_power_stats() should return PowerStats"),
+        }
+    }
+
+    /// Send the |cmd| to UwbServiceActor.
     async fn send_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
@@ -317,6 +332,20 @@ impl<U: UciManager> UwbServiceActor<U> {
                     Err(Error::Reject)
                 }
             }
+            Command::AndroidSetCountryCode { country_code } => {
+                self.uci_manager.android_set_country_code(country_code).await.map_err(|e| {
+                    error!("android_set_country_code failed: {:?}", e);
+                    Error::UciError
+                })?;
+                Ok(Response::Null)
+            }
+            Command::AndroidGetPowerStats => {
+                let stats = self.uci_manager.android_get_power_stats().await.map_err(|e| {
+                    error!("android_get_power_stats failed: {:?}", e);
+                    Error::UciError
+                })?;
+                Ok(Response::PowerStats(stats))
+            }
         }
     }
 
@@ -373,12 +402,17 @@ enum Command {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
     },
+    AndroidSetCountryCode {
+        country_code: CountryCode,
+    },
+    AndroidGetPowerStats,
 }
 
 #[derive(Debug)]
 enum Response {
     Null,
     AppConfigParams(AppConfigParams),
+    PowerStats(PowerStats),
 }
 type ResponseSender = oneshot::Sender<Result<Response>>;
 
@@ -386,7 +420,9 @@ type ResponseSender = oneshot::Sender<Result<Response>>;
 mod tests {
     use super::*;
     use crate::session::session_manager::test_utils::generate_params;
+    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::params::power_stats_eq;
 
     #[tokio::test]
     async fn test_open_close_uci() {
@@ -424,5 +460,33 @@ mod tests {
         assert!(result.is_err());
         let result = service.update_controller_multicast_list(session_id, action, controlees).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_android_set_country_code() {
+        let country_code = CountryCode::new(b"US").unwrap();
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+
+        let result = service.android_set_country_code(country_code).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_android_get_power_stats() {
+        let stats = PowerStats {
+            status: StatusCode::UciStatusOk,
+            idle_time_ms: 123,
+            tx_time_ms: 456,
+            rx_time_ms: 789,
+            total_wake_count: 5,
+        };
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+
+        let result = service.android_get_power_stats().await.unwrap();
+        assert!(power_stats_eq(&result, &stats));
     }
 }
