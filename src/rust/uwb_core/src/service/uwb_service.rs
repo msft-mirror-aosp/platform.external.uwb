@@ -115,15 +115,19 @@ impl<U: UciManager> UwbServiceActor<U> {
                     return Ok(());
                 }
 
-                let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
-                self.uci_manager.set_session_notification_sender(session_notf_sender).await;
+                let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
+                self.uci_manager.set_session_notification_sender(uci_notf_sender).await;
                 self.uci_manager.open_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
                     Error::UciError
                 })?;
 
-                self.session_manager =
-                    Some(SessionManager::new(self.uci_manager.clone(), session_notf_receiver));
+                self.session_manager = Some(SessionManager::new(
+                    self.uci_manager.clone(),
+                    uci_notf_receiver,
+                    // TODO(akahuang): handle the notification from SessionManager.
+                    mpsc::unbounded_channel().0,
+                ));
                 Ok(())
             }
             UwbCommand::Disable => {
