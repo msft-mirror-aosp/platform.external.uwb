@@ -18,7 +18,7 @@
 //! The library provides the core logic of Ultra-wide band (UWB) technology.
 
 pub(crate) mod session;
-pub(crate) mod uci;
 pub(crate) mod utils;
 
 pub mod service;
+pub mod uci;
