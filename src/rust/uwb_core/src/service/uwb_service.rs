@@ -29,12 +29,14 @@ use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 
 /// The notification that is sent from UwbService to its caller.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum UwbNotification {
     /// Notify the session with the id |session_id| is de-initialized.
     SessionDeinited { session_id: SessionId },
     /// Notify the ranging data of the session with the id |session_id| is received.
     RangeDataReceived { session_id: SessionId, range_data: SessionRangeData },
+    /// Notify the vendor notification is received.
+    VendorNotification { gid: u32, oid: u32, payload: Vec<u8> },
 }
 
 /// The entry class (a.k.a top shim) of the core library. The class accepts requests from the
@@ -370,8 +372,12 @@ impl<U: UciManager> UwbServiceActor<U> {
         }
     }
 
-    async fn handle_vendor_notification(&mut self, _notf: RawVendorMessage) {
-        // TODO(akahuang): handle the vendor notification.
+    async fn handle_vendor_notification(&mut self, notf: RawVendorMessage) {
+        let _ = self.notf_sender.send(UwbNotification::VendorNotification {
+            gid: notf.gid,
+            oid: notf.oid,
+            payload: notf.payload,
+        });
     }
 }
 
@@ -422,6 +428,7 @@ mod tests {
     use crate::session::session_manager::test_utils::generate_params;
     use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::notification::UciNotification;
     use crate::uci::params::power_stats_eq;
 
     #[tokio::test]
@@ -488,5 +495,25 @@ mod tests {
 
         let result = service.android_get_power_stats().await.unwrap();
         assert!(power_stats_eq(&result, &stats));
+    }
+
+    #[tokio::test]
+    async fn test_vendor_notification() {
+        let gid = 5;
+        let oid = 7;
+        let payload = vec![0x13, 0x47];
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_open_hal(
+            vec![UciNotification::Vendor(RawVendorMessage { gid, oid, payload: payload.clone() })],
+            Ok(()),
+        );
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new_with_args(notf_sender, uci_manager);
+        service.enable().await.unwrap();
+
+        let expected_notf = UwbNotification::VendorNotification { gid, oid, payload };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
     }
 }

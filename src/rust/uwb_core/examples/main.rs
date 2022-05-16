@@ -57,6 +57,12 @@ async fn main() {
                 UwbNotification::RangeDataReceived { session_id, range_data } => {
                     debug!("Received range data {:?} from Session {:?}", range_data, session_id);
                 }
+                UwbNotification::VendorNotification { gid, oid, payload } => {
+                    debug!(
+                        "Received vendor notification: gid={}, oid={}, payload={:?}",
+                        gid, oid, payload
+                    );
+                }
             }
         }
     });
