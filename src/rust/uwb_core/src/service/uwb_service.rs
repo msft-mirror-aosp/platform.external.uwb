@@ -25,8 +25,7 @@ use crate::uci::params::{
     Controlee, CountryCode, PowerStats, RawVendorMessage, SessionId, SessionType,
     UpdateMulticastListAction,
 };
-use crate::uci::uci_hal::UciHal;
-use crate::uci::uci_manager::{UciManager, UciManagerImpl};
+use crate::uci::uci_manager::UciManager;
 
 /// The notification that is sent from UwbService to its caller.
 #[derive(Debug, PartialEq)]
@@ -48,12 +47,7 @@ pub struct UwbService {
 
 impl UwbService {
     /// Create a new UwbService instance.
-    pub fn new<U: UciHal>(notf_sender: mpsc::UnboundedSender<UwbNotification>, uci_hal: U) -> Self {
-        let uci_manager = UciManagerImpl::new(uci_hal);
-        Self::new_with_args(notf_sender, uci_manager)
-    }
-
-    fn new_with_args<U: UciManager>(
+    pub(super) fn new<U: UciManager>(
         notf_sender: mpsc::UnboundedSender<UwbNotification>,
         uci_manager: U,
     ) -> Self {
@@ -436,7 +430,7 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         uci_manager.expect_close_hal(Ok(()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.enable().await;
         assert!(result.is_ok());
@@ -453,7 +447,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.init_session(session_id, session_type, params.clone()).await;
         assert!(result.is_err());
@@ -474,7 +468,7 @@ mod tests {
         let country_code = CountryCode::new(b"US").unwrap();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.android_set_country_code(country_code).await;
         assert!(result.is_ok());
@@ -491,7 +485,7 @@ mod tests {
         };
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.android_get_power_stats().await.unwrap();
         assert!(power_stats_eq(&result, &stats));
@@ -509,7 +503,7 @@ mod tests {
             Ok(()),
         );
         let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
-        let mut service = UwbService::new_with_args(notf_sender, uci_manager);
+        let mut service = UwbService::new(notf_sender, uci_manager);
         service.enable().await.unwrap();
 
         let expected_notf = UwbNotification::VendorNotification { gid, oid, payload };
