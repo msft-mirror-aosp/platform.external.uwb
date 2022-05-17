@@ -53,7 +53,7 @@ pub(crate) enum SessionNotification {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SessionRangeData {
+pub struct SessionRangeData {
     pub sequence_number: u32,
     pub session_id: SessionId,
     pub current_ranging_interval_ms: u32,
@@ -62,7 +62,7 @@ pub(crate) struct SessionRangeData {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum RangingMeasurements {
+pub enum RangingMeasurements {
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 }
@@ -279,5 +279,37 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> UciRes
             }
         }
         _ => Err(Error::Specialize(evt.to_vec())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_ranging_measurements_trait() {
+        let empty_short_ranging_measurements = RangingMeasurements::Short(vec![]);
+        assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
+        let extended_ranging_measurements =
+            RangingMeasurements::Extended(vec![ExtendedAddressTwoWayRangingMeasurement {
+                mac_address: 0x1234_5678_90ab,
+                status: StatusCode::UciStatusOk,
+                nlos: 0,
+                distance: 4,
+                aoa_azimuth: 5,
+                aoa_azimuth_fom: 6,
+                aoa_elevation: 7,
+                aoa_elevation_fom: 8,
+                aoa_destination_azimuth: 9,
+                aoa_destination_azimuth_fom: 10,
+                aoa_destination_elevation: 11,
+                aoa_destination_elevation_fom: 12,
+                slot_index: 0,
+            }]);
+        let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
+        assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
+        let empty_extended_ranging_measurements = RangingMeasurements::Extended(vec![]);
+        assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
+        //short and extended measurements are unequal even if both are empty:
+        assert_ne!(empty_short_ranging_measurements, empty_extended_ranging_measurements);
     }
 }
