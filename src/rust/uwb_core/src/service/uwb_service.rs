@@ -18,7 +18,12 @@ use log::{debug, error};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::service::error::{Error, Result};
-use crate::session::session_manager::SessionManager;
+use crate::session::params::AppConfigParams;
+use crate::session::session_manager::{SessionManager, SessionNotification};
+use crate::uci::notification::CoreNotification;
+use crate::uci::params::{
+    Controlee, RawVendorMessage, SessionId, SessionType, UpdateMulticastListAction,
+};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 
@@ -29,7 +34,7 @@ use crate::uci::mock_uci_manager::MockUciManager;
 /// client, and delegates the requests to other components. It should provide the
 /// backward-compatible interface for the client of the library.
 pub struct UwbService {
-    cmd_sender: mpsc::UnboundedSender<(UwbCommand, oneshot::Sender<Result<()>>)>,
+    cmd_sender: mpsc::UnboundedSender<(Command, ResponseSender)>,
 }
 
 impl UwbService {
@@ -55,16 +60,71 @@ impl UwbService {
 
     /// Enable the UWB service.
     pub async fn enable(&mut self) -> Result<()> {
-        self.send_cmd(UwbCommand::Enable).await
+        self.send_cmd(Command::Enable).await?;
+        Ok(())
     }
 
     /// Disable the UWB service.
     pub async fn disable(&mut self) -> Result<()> {
-        self.send_cmd(UwbCommand::Disable).await
+        self.send_cmd(Command::Disable).await?;
+        Ok(())
     }
 
-    // Send the |cmd| to the SessionManagerActor.
-    async fn send_cmd(&self, cmd: UwbCommand) -> Result<()> {
+    /// Initialize a new ranging session with the given parameters.
+    pub async fn init_session(
+        &mut self,
+        session_id: SessionId,
+        session_type: SessionType,
+        params: AppConfigParams,
+    ) -> Result<()> {
+        self.send_cmd(Command::InitSession { session_id, session_type, params }).await?;
+        Ok(())
+    }
+
+    /// Destroy the session.
+    pub async fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
+        self.send_cmd(Command::DeinitSession { session_id }).await?;
+        Ok(())
+    }
+
+    /// Start ranging of the session.
+    pub async fn start_ranging(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.send_cmd(Command::StartRanging { session_id }).await? {
+            Response::AppConfigParams(params) => Ok(params),
+            _ => panic!("start_ranging() should return AppConfigParams"),
+        }
+    }
+
+    /// Stop ranging.
+    pub async fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
+        self.send_cmd(Command::StopRanging { session_id }).await?;
+        Ok(())
+    }
+
+    /// Reconfigure the parameters of the session.
+    pub async fn reconfigure(
+        &mut self,
+        session_id: SessionId,
+        params: AppConfigParams,
+    ) -> Result<()> {
+        self.send_cmd(Command::Reconfigure { session_id, params }).await?;
+        Ok(())
+    }
+
+    /// Update the list of the controlees to the ongoing session.
+    pub async fn update_controller_multicast_list(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: Vec<Controlee>,
+    ) -> Result<()> {
+        self.send_cmd(Command::UpdateControllerMulticastList { session_id, action, controlees })
+            .await?;
+        Ok(())
+    }
+
+    // Send the |cmd| to UwbServiceActor.
+    async fn send_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
@@ -75,17 +135,27 @@ impl UwbService {
 }
 
 struct UwbServiceActor<U: UciManager> {
-    cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<Result<()>>)>,
+    cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
     uci_manager: U,
     session_manager: Option<SessionManager>,
+    core_notf_receiver: mpsc::UnboundedReceiver<CoreNotification>,
+    session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
+    vendor_notf_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
 }
 
 impl<U: UciManager> UwbServiceActor<U> {
     fn new(
-        cmd_receiver: mpsc::UnboundedReceiver<(UwbCommand, oneshot::Sender<Result<()>>)>,
+        cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
         uci_manager: U,
     ) -> Self {
-        Self { cmd_receiver, uci_manager, session_manager: None }
+        Self {
+            cmd_receiver,
+            uci_manager,
+            session_manager: None,
+            core_notf_receiver: mpsc::unbounded_channel().1,
+            session_notf_receiver: mpsc::unbounded_channel().1,
+            vendor_notf_receiver: mpsc::unbounded_channel().1,
+        }
     }
 
     async fn run(&mut self) {
@@ -103,55 +173,208 @@ impl<U: UciManager> UwbServiceActor<U> {
                         }
                     }
                 }
+                Some(core_notf) = self.core_notf_receiver.recv() => {
+                    self.handle_core_notification(core_notf).await;
+                }
+                Some(session_notf) = self.session_notf_receiver.recv() => {
+                    self.handle_session_notification(session_notf).await;
+                }
+                Some(vendor_notf) = self.vendor_notf_receiver.recv() => {
+                    self.handle_vendor_notification(vendor_notf).await;
+                }
             }
         }
     }
 
-    async fn handle_cmd(&mut self, cmd: UwbCommand) -> Result<()> {
+    async fn handle_cmd(&mut self, cmd: Command) -> Result<Response> {
         match cmd {
-            UwbCommand::Enable => {
+            Command::Enable => {
                 if self.session_manager.is_some() {
                     debug!("The service is already enabled, skip.");
-                    return Ok(());
+                    return Ok(Response::Null);
                 }
 
-                let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
-                self.uci_manager.set_session_notification_sender(session_notf_sender).await;
+                let (core_notf_sender, core_notf_receiver) = mpsc::unbounded_channel();
+                let (uci_session_notf_sender, uci_session_notf_receiver) =
+                    mpsc::unbounded_channel();
+                let (vendor_notf_sender, vendor_notf_receiver) = mpsc::unbounded_channel();
+                self.uci_manager.set_core_notification_sender(core_notf_sender).await;
+                self.uci_manager.set_session_notification_sender(uci_session_notf_sender).await;
+                self.uci_manager.set_vendor_notification_sender(vendor_notf_sender).await;
+
                 self.uci_manager.open_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
                     Error::UciError
                 })?;
 
-                self.session_manager =
-                    Some(SessionManager::new(self.uci_manager.clone(), session_notf_receiver));
-                Ok(())
+                let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
+                self.core_notf_receiver = core_notf_receiver;
+                self.session_notf_receiver = session_notf_receiver;
+                self.vendor_notf_receiver = vendor_notf_receiver;
+                self.session_manager = Some(SessionManager::new(
+                    self.uci_manager.clone(),
+                    uci_session_notf_receiver,
+                    session_notf_sender,
+                ));
+                Ok(Response::Null)
             }
-            UwbCommand::Disable => {
+            Command::Disable => {
                 if self.session_manager.is_none() {
                     debug!("The service is already disabled, skip.");
-                    return Ok(());
+                    return Ok(Response::Null);
                 }
 
+                self.core_notf_receiver = mpsc::unbounded_channel().1;
+                self.session_notf_receiver = mpsc::unbounded_channel().1;
+                self.vendor_notf_receiver = mpsc::unbounded_channel().1;
                 self.session_manager = None;
                 self.uci_manager.close_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
                     Error::UciError
                 })?;
-                Ok(())
+                Ok(Response::Null)
+            }
+            Command::InitSession { session_id, session_type, params } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    session_manager.init_session(session_id, session_type, params).await.map_err(
+                        |e| {
+                            error!("init_session failed: {:?}", e);
+                            Error::SessionError
+                        },
+                    )?;
+                    Ok(Response::Null)
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
+            }
+            Command::DeinitSession { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    session_manager.deinit_session(session_id).await.map_err(|e| {
+                        error!("deinit_session failed: {:?}", e);
+                        Error::SessionError
+                    })?;
+                    Ok(Response::Null)
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
+            }
+            Command::StartRanging { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    let params = session_manager.start_ranging(session_id).await.map_err(|e| {
+                        error!("start_ranging failed: {:?}", e);
+                        Error::SessionError
+                    })?;
+                    Ok(Response::AppConfigParams(params))
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
+            }
+            Command::StopRanging { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    session_manager.stop_ranging(session_id).await.map_err(|e| {
+                        error!("stop_ranging failed: {:?}", e);
+                        Error::SessionError
+                    })?;
+                    Ok(Response::Null)
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
+            }
+            Command::Reconfigure { session_id, params } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    session_manager.reconfigure(session_id, params).await.map_err(|e| {
+                        error!("reconfigure failed: {:?}", e);
+                        Error::SessionError
+                    })?;
+                    Ok(Response::Null)
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
+            }
+            Command::UpdateControllerMulticastList { session_id, action, controlees } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    session_manager
+                        .update_controller_multicast_list(session_id, action, controlees)
+                        .await
+                        .map_err(|e| {
+                            error!("update_controller_multicast_list failed: {:?}", e);
+                            Error::SessionError
+                        })?;
+                    Ok(Response::Null)
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::Reject)
+                }
             }
         }
+    }
+
+    async fn handle_core_notification(&mut self, notf: CoreNotification) {
+        // TODO(akahuang): handle the UCI core notification.
+        match notf {
+            CoreNotification::DeviceStatus(_state) => {}
+            CoreNotification::GenericError(_status) => {}
+        }
+    }
+
+    async fn handle_session_notification(&mut self, notf: SessionNotification) {
+        // TODO(akahuang): handle the notification from SessionManager.
+        match notf {
+            SessionNotification::SessionDeinited { session_id: _ } => {}
+            SessionNotification::RangeDataReceived { session_id: _, range_data: _ } => {}
+        }
+    }
+
+    async fn handle_vendor_notification(&mut self, _notf: RawVendorMessage) {
+        // TODO(akahuang): handle the vendor notification.
     }
 }
 
 #[derive(Debug)]
-enum UwbCommand {
+enum Command {
     Enable,
     Disable,
+    InitSession {
+        session_id: SessionId,
+        session_type: SessionType,
+        params: AppConfigParams,
+    },
+    DeinitSession {
+        session_id: SessionId,
+    },
+    StartRanging {
+        session_id: SessionId,
+    },
+    StopRanging {
+        session_id: SessionId,
+    },
+    Reconfigure {
+        session_id: SessionId,
+        params: AppConfigParams,
+    },
+    UpdateControllerMulticastList {
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: Vec<Controlee>,
+    },
 }
+
+#[derive(Debug)]
+enum Response {
+    Null,
+    AppConfigParams(AppConfigParams),
+}
+type ResponseSender = oneshot::Sender<Result<Response>>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::session_manager::test_utils::generate_params;
 
     #[tokio::test]
     async fn test_open_close_uci() {
@@ -164,5 +387,30 @@ mod tests {
         assert!(result.is_ok());
         let result = service.disable().await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_api_without_enabled() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+        let params = generate_params();
+        let action = UpdateMulticastListAction::AddControlee;
+        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+
+        let uci_manager = MockUciManager::new();
+        let mut service = UwbService::new_for_testing(uci_manager);
+
+        let result = service.init_session(session_id, session_type, params.clone()).await;
+        assert!(result.is_err());
+        let result = service.deinit_session(session_id).await;
+        assert!(result.is_err());
+        let result = service.start_ranging(session_id).await;
+        assert!(result.is_err());
+        let result = service.stop_ranging(session_id).await;
+        assert!(result.is_err());
+        let result = service.reconfigure(session_id, params).await;
+        assert!(result.is_err());
+        let result = service.update_controller_multicast_list(session_id, action, controlees).await;
+        assert!(result.is_err());
     }
 }
