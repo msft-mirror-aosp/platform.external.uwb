@@ -121,11 +121,17 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_deinit(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::SessionDeinit { expected_session_id, out });
+    pub fn expect_session_deinit(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionDeinit {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
     pub fn expect_session_set_app_config(
@@ -441,10 +447,11 @@ impl UciManager for MockUciManager {
     async fn session_deinit(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionDeinit { expected_session_id, out })
+            Some(ExpectedCall::SessionDeinit { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
@@ -715,6 +722,7 @@ enum ExpectedCall {
     },
     SessionDeinit {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     SessionSetAppConfig {
