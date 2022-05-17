@@ -15,12 +15,17 @@
 //! Provide the error and result type for the UwbService.
 
 /// The error code for service module.
+// TODO(akahuang): organize the error enum to more meaningful way.
 #[derive(Debug)]
 pub enum Error {
     /// Failed to transmit the message via tokio's channel.
     TokioFailure,
     /// Error occurs at the UCI stack.
     UciError,
+    /// Error occurs at the Session stack.
+    SessionError,
+    /// Reject the request.
+    Reject,
 }
 
 /// The result type returned by UwbService.
