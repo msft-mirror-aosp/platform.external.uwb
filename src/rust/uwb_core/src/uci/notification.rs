@@ -53,7 +53,7 @@ pub(crate) enum SessionNotification {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SessionRangeData {
+pub struct SessionRangeData {
     pub sequence_number: u32,
     pub session_id: SessionId,
     pub current_ranging_interval_ms: u32,
@@ -62,7 +62,7 @@ pub(crate) struct SessionRangeData {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum RangingMeasurements {
+pub enum RangingMeasurements {
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 }
