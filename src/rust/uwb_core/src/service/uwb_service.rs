@@ -20,15 +20,24 @@ use tokio::sync::{mpsc, oneshot};
 use crate::service::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
-use crate::uci::notification::CoreNotification;
+use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, RawVendorMessage, SessionId, SessionType, UpdateMulticastListAction,
+    Controlee, CountryCode, PowerStats, RawVendorMessage, SessionId, SessionType,
+    UpdateMulticastListAction,
 };
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 
-#[cfg(test)]
-use crate::uci::mock_uci_manager::MockUciManager;
+/// The notification that is sent from UwbService to its caller.
+#[derive(Debug, PartialEq)]
+pub enum UwbNotification {
+    /// Notify the session with the id |session_id| is de-initialized.
+    SessionDeinited { session_id: SessionId },
+    /// Notify the ranging data of the session with the id |session_id| is received.
+    RangeDataReceived { session_id: SessionId, range_data: SessionRangeData },
+    /// Notify the vendor notification is received.
+    VendorNotification { gid: u32, oid: u32, payload: Vec<u8> },
+}
 
 /// The entry class (a.k.a top shim) of the core library. The class accepts requests from the
 /// client, and delegates the requests to other components. It should provide the
@@ -39,20 +48,17 @@ pub struct UwbService {
 
 impl UwbService {
     /// Create a new UwbService instance.
-    pub fn new<U: UciHal>(uci_hal: U) -> Self {
+    pub fn new<U: UciHal>(notf_sender: mpsc::UnboundedSender<UwbNotification>, uci_hal: U) -> Self {
         let uci_manager = UciManagerImpl::new(uci_hal);
-        let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = UwbServiceActor::new(cmd_receiver, uci_manager);
-        tokio::spawn(async move { actor.run().await });
-
-        Self { cmd_sender }
+        Self::new_with_args(notf_sender, uci_manager)
     }
 
-    #[cfg(test)]
-    fn new_for_testing(uci_manager: MockUciManager) -> Self {
+    fn new_with_args<U: UciManager>(
+        notf_sender: mpsc::UnboundedSender<UwbNotification>,
+        uci_manager: U,
+    ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        // TODO(akahuang): Change to use MockSessionManager.
-        let mut actor = UwbServiceActor::new(cmd_receiver, uci_manager);
+        let mut actor = UwbServiceActor::new(cmd_receiver, notf_sender, uci_manager);
         tokio::spawn(async move { actor.run().await });
 
         Self { cmd_sender }
@@ -123,7 +129,21 @@ impl UwbService {
         Ok(())
     }
 
-    // Send the |cmd| to UwbServiceActor.
+    /// Set the country code. Android-specific method.
+    pub async fn android_set_country_code(&mut self, country_code: CountryCode) -> Result<()> {
+        self.send_cmd(Command::AndroidSetCountryCode { country_code }).await?;
+        Ok(())
+    }
+
+    /// Get the power statistics. Android-specific method.
+    pub async fn android_get_power_stats(&mut self) -> Result<PowerStats> {
+        match self.send_cmd(Command::AndroidGetPowerStats).await? {
+            Response::PowerStats(stats) => Ok(stats),
+            _ => panic!("android_get_power_stats() should return PowerStats"),
+        }
+    }
+
+    /// Send the |cmd| to UwbServiceActor.
     async fn send_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
@@ -136,6 +156,7 @@ impl UwbService {
 
 struct UwbServiceActor<U: UciManager> {
     cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
+    notf_sender: mpsc::UnboundedSender<UwbNotification>,
     uci_manager: U,
     session_manager: Option<SessionManager>,
     core_notf_receiver: mpsc::UnboundedReceiver<CoreNotification>,
@@ -146,10 +167,12 @@ struct UwbServiceActor<U: UciManager> {
 impl<U: UciManager> UwbServiceActor<U> {
     fn new(
         cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
+        notf_sender: mpsc::UnboundedSender<UwbNotification>,
         uci_manager: U,
     ) -> Self {
         Self {
             cmd_receiver,
+            notf_sender,
             uci_manager,
             session_manager: None,
             core_notf_receiver: mpsc::unbounded_channel().1,
@@ -311,6 +334,20 @@ impl<U: UciManager> UwbServiceActor<U> {
                     Err(Error::Reject)
                 }
             }
+            Command::AndroidSetCountryCode { country_code } => {
+                self.uci_manager.android_set_country_code(country_code).await.map_err(|e| {
+                    error!("android_set_country_code failed: {:?}", e);
+                    Error::UciError
+                })?;
+                Ok(Response::Null)
+            }
+            Command::AndroidGetPowerStats => {
+                let stats = self.uci_manager.android_get_power_stats().await.map_err(|e| {
+                    error!("android_get_power_stats failed: {:?}", e);
+                    Error::UciError
+                })?;
+                Ok(Response::PowerStats(stats))
+            }
         }
     }
 
@@ -323,15 +360,24 @@ impl<U: UciManager> UwbServiceActor<U> {
     }
 
     async fn handle_session_notification(&mut self, notf: SessionNotification) {
-        // TODO(akahuang): handle the notification from SessionManager.
         match notf {
-            SessionNotification::SessionDeinited { session_id: _ } => {}
-            SessionNotification::RangeDataReceived { session_id: _, range_data: _ } => {}
+            SessionNotification::SessionDeinited { session_id } => {
+                let _ = self.notf_sender.send(UwbNotification::SessionDeinited { session_id });
+            }
+            SessionNotification::RangeDataReceived { session_id, range_data } => {
+                let _ = self
+                    .notf_sender
+                    .send(UwbNotification::RangeDataReceived { session_id, range_data });
+            }
         }
     }
 
-    async fn handle_vendor_notification(&mut self, _notf: RawVendorMessage) {
-        // TODO(akahuang): handle the vendor notification.
+    async fn handle_vendor_notification(&mut self, notf: RawVendorMessage) {
+        let _ = self.notf_sender.send(UwbNotification::VendorNotification {
+            gid: notf.gid,
+            oid: notf.oid,
+            payload: notf.payload,
+        });
     }
 }
 
@@ -362,12 +408,17 @@ enum Command {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
     },
+    AndroidSetCountryCode {
+        country_code: CountryCode,
+    },
+    AndroidGetPowerStats,
 }
 
 #[derive(Debug)]
 enum Response {
     Null,
     AppConfigParams(AppConfigParams),
+    PowerStats(PowerStats),
 }
 type ResponseSender = oneshot::Sender<Result<Response>>;
 
@@ -375,13 +426,17 @@ type ResponseSender = oneshot::Sender<Result<Response>>;
 mod tests {
     use super::*;
     use crate::session::session_manager::test_utils::generate_params;
+    use crate::uci::error::StatusCode;
+    use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::notification::UciNotification;
+    use crate::uci::params::power_stats_eq;
 
     #[tokio::test]
     async fn test_open_close_uci() {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         uci_manager.expect_close_hal(Ok(()));
-        let mut service = UwbService::new_for_testing(uci_manager);
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.enable().await;
         assert!(result.is_ok());
@@ -398,7 +453,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
-        let mut service = UwbService::new_for_testing(uci_manager);
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.init_session(session_id, session_type, params.clone()).await;
         assert!(result.is_err());
@@ -412,5 +467,53 @@ mod tests {
         assert!(result.is_err());
         let result = service.update_controller_multicast_list(session_id, action, controlees).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_android_set_country_code() {
+        let country_code = CountryCode::new(b"US").unwrap();
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+
+        let result = service.android_set_country_code(country_code).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_android_get_power_stats() {
+        let stats = PowerStats {
+            status: StatusCode::UciStatusOk,
+            idle_time_ms: 123,
+            tx_time_ms: 456,
+            rx_time_ms: 789,
+            total_wake_count: 5,
+        };
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
+        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+
+        let result = service.android_get_power_stats().await.unwrap();
+        assert!(power_stats_eq(&result, &stats));
+    }
+
+    #[tokio::test]
+    async fn test_vendor_notification() {
+        let gid = 5;
+        let oid = 7;
+        let payload = vec![0x13, 0x47];
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_open_hal(
+            vec![UciNotification::Vendor(RawVendorMessage { gid, oid, payload: payload.clone() })],
+            Ok(()),
+        );
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new_with_args(notf_sender, uci_manager);
+        service.enable().await.unwrap();
+
+        let expected_notf = UwbNotification::VendorNotification { gid, oid, payload };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
     }
 }
