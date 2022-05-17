@@ -19,8 +19,11 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::service::error::{Error, Result};
 use crate::session::params::AppConfigParams;
-use crate::session::session_manager::SessionManager;
-use crate::uci::params::{Controlee, SessionId, SessionType, UpdateMulticastListAction};
+use crate::session::session_manager::{SessionManager, SessionNotification};
+use crate::uci::notification::CoreNotification;
+use crate::uci::params::{
+    Controlee, RawVendorMessage, SessionId, SessionType, UpdateMulticastListAction,
+};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 
@@ -135,6 +138,9 @@ struct UwbServiceActor<U: UciManager> {
     cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
     uci_manager: U,
     session_manager: Option<SessionManager>,
+    core_notf_receiver: mpsc::UnboundedReceiver<CoreNotification>,
+    session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
+    vendor_notf_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
 }
 
 impl<U: UciManager> UwbServiceActor<U> {
@@ -142,7 +148,14 @@ impl<U: UciManager> UwbServiceActor<U> {
         cmd_receiver: mpsc::UnboundedReceiver<(Command, ResponseSender)>,
         uci_manager: U,
     ) -> Self {
-        Self { cmd_receiver, uci_manager, session_manager: None }
+        Self {
+            cmd_receiver,
+            uci_manager,
+            session_manager: None,
+            core_notf_receiver: mpsc::unbounded_channel().1,
+            session_notf_receiver: mpsc::unbounded_channel().1,
+            vendor_notf_receiver: mpsc::unbounded_channel().1,
+        }
     }
 
     async fn run(&mut self) {
@@ -160,6 +173,15 @@ impl<U: UciManager> UwbServiceActor<U> {
                         }
                     }
                 }
+                Some(core_notf) = self.core_notf_receiver.recv() => {
+                    self.handle_core_notification(core_notf).await;
+                }
+                Some(session_notf) = self.session_notf_receiver.recv() => {
+                    self.handle_session_notification(session_notf).await;
+                }
+                Some(vendor_notf) = self.vendor_notf_receiver.recv() => {
+                    self.handle_vendor_notification(vendor_notf).await;
+                }
             }
         }
     }
@@ -172,18 +194,27 @@ impl<U: UciManager> UwbServiceActor<U> {
                     return Ok(Response::Null);
                 }
 
-                let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
-                self.uci_manager.set_session_notification_sender(uci_notf_sender).await;
+                let (core_notf_sender, core_notf_receiver) = mpsc::unbounded_channel();
+                let (uci_session_notf_sender, uci_session_notf_receiver) =
+                    mpsc::unbounded_channel();
+                let (vendor_notf_sender, vendor_notf_receiver) = mpsc::unbounded_channel();
+                self.uci_manager.set_core_notification_sender(core_notf_sender).await;
+                self.uci_manager.set_session_notification_sender(uci_session_notf_sender).await;
+                self.uci_manager.set_vendor_notification_sender(vendor_notf_sender).await;
+
                 self.uci_manager.open_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
                     Error::UciError
                 })?;
 
+                let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
+                self.core_notf_receiver = core_notf_receiver;
+                self.session_notf_receiver = session_notf_receiver;
+                self.vendor_notf_receiver = vendor_notf_receiver;
                 self.session_manager = Some(SessionManager::new(
                     self.uci_manager.clone(),
-                    uci_notf_receiver,
-                    // TODO(akahuang): handle the notification from SessionManager.
-                    mpsc::unbounded_channel().0,
+                    uci_session_notf_receiver,
+                    session_notf_sender,
                 ));
                 Ok(Response::Null)
             }
@@ -193,6 +224,9 @@ impl<U: UciManager> UwbServiceActor<U> {
                     return Ok(Response::Null);
                 }
 
+                self.core_notf_receiver = mpsc::unbounded_channel().1;
+                self.session_notf_receiver = mpsc::unbounded_channel().1;
+                self.vendor_notf_receiver = mpsc::unbounded_channel().1;
                 self.session_manager = None;
                 self.uci_manager.close_hal().await.map_err(|e| {
                     error!("Failed to open the UCI HAL: ${:?}", e);
@@ -278,6 +312,26 @@ impl<U: UciManager> UwbServiceActor<U> {
                 }
             }
         }
+    }
+
+    async fn handle_core_notification(&mut self, notf: CoreNotification) {
+        // TODO(akahuang): handle the UCI core notification.
+        match notf {
+            CoreNotification::DeviceStatus(_state) => {}
+            CoreNotification::GenericError(_status) => {}
+        }
+    }
+
+    async fn handle_session_notification(&mut self, notf: SessionNotification) {
+        // TODO(akahuang): handle the notification from SessionManager.
+        match notf {
+            SessionNotification::SessionDeinited { session_id: _ } => {}
+            SessionNotification::RangeDataReceived { session_id: _, range_data: _ } => {}
+        }
+    }
+
+    async fn handle_vendor_notification(&mut self, _notf: RawVendorMessage) {
+        // TODO(akahuang): handle the vendor notification.
     }
 }
 
