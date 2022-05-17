@@ -203,6 +203,25 @@ rust_test {
     ],
 }
 
+rust_binary {
+    name: "uwb_core_examples",
+    srcs: ["rust/uwb_core/examples/main.rs"],
+    rustlibs: [
+        "libenv_logger",
+        "liblog_rust",
+        "libtokio",
+        "libuwb_core",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+
+    lints: "android",
+    clippy_lints: "android",
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
+}
+
 rust_fuzz {
     name: "uwb_uci_rust_fuzzer",
     srcs: [
