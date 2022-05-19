@@ -16,3 +16,8 @@
 
 pub mod error;
 pub mod uwb_service;
+pub mod uwb_service_builder;
+
+// Re-export the public elements.
+pub use uwb_service::{UwbNotification, UwbService};
+pub use uwb_service_builder::UwbServiceBuilder;
