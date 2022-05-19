@@ -183,6 +183,7 @@ rust_defaults {
         "libasync_trait",
     ],
     min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_library {
@@ -197,6 +198,28 @@ rust_test {
     rustlibs: [
         "libenv_logger",
     ],
+    test_suites: [
+      "general-tests",
+    ],
+}
+
+rust_binary {
+    name: "uwb_core_examples",
+    srcs: ["rust/uwb_core/examples/main.rs"],
+    rustlibs: [
+        "libenv_logger",
+        "liblog_rust",
+        "libtokio",
+        "libuwb_core",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+
+    lints: "android",
+    clippy_lints: "android",
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_fuzz {
@@ -205,6 +228,7 @@ rust_fuzz {
         "fuzz/fuzzer.rs",
     ],
     rustlibs: [
+        "android.hardware.uwb-V1-rust",
         "libarbitrary",
         "liblog_rust",
         "libnum_traits",
