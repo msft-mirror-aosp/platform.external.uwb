@@ -12,26 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::uci::params::{SessionId, SessionState};
-
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
-    #[error("Error occurs inside UciManager")]
-    Uci,
-    #[error("Failed to pass the message via tokio")]
-    TokioFailure,
+    #[error("Bad parameters")]
+    BadParameters,
     #[error("Max session exceeded")]
     MaxSessionsExceeded,
-    #[error("Duplicated SessionId: {0}")]
-    DuplicatedSessionId(SessionId),
-    #[error("Unknown SessionId: {0}")]
-    UnknownSessionId(SessionId),
-    #[error("Invalid arguments")]
-    InvalidArguments,
-    #[error("Wrong SessionState: {0}")]
-    WrongState(SessionState),
-    #[error("Notification is not received in timeout")]
+    #[error("Max ranging round retries reached")]
+    MaxRrRetryReached,
+    #[error("The session fails with a protocol specific reason")]
+    ProtocolSpecific,
+    #[error("The remote device has requested to change the session")]
+    RemoteRequest,
+    #[error("The response or notification is not received in timeout")]
     Timeout,
-}
+    #[error("The command should be retried")]
+    CommandRetry,
+    #[error("Duplicated SessionId")]
+    DuplicatedSessionId,
+    #[error("The unknown error")]
+    Unknown,
 
+    #[cfg(test)]
+    #[error("The result of the mock method is not assigned")]
+    MockUndefined,
+}
 pub type Result<T> = std::result::Result<T, Error>;

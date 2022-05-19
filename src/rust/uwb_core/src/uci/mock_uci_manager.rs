@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
-use crate::uci::error::{Error, Result};
+use crate::error::{Error, Result};
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::params::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
@@ -311,9 +311,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -326,9 +326,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -343,9 +343,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -358,9 +358,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -373,9 +373,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -393,9 +393,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -413,9 +413,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -438,9 +438,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -456,9 +456,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -483,9 +483,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -506,9 +506,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -521,9 +521,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -538,9 +538,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -570,9 +570,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -588,9 +588,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -606,9 +606,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -623,9 +623,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -640,9 +640,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -655,9 +655,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -680,9 +680,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 }
