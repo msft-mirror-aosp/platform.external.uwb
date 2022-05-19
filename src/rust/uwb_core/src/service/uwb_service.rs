@@ -139,6 +139,19 @@ impl UwbService {
         }
     }
 
+    /// Send a vendor-specific UCI message.
+    pub async fn send_vendor_cmd(
+        &mut self,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawVendorMessage> {
+        match self.send_cmd(Command::SendVendorCmd { gid, oid, payload }).await? {
+            Response::RawVendorMessage(msg) => Ok(msg),
+            _ => panic!("send_vendor_cmd() should return RawVendorMessage"),
+        }
+    }
+
     /// Send the |cmd| to UwbServiceActor.
     async fn send_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -344,6 +357,14 @@ impl<U: UciManager> UwbServiceActor<U> {
                 })?;
                 Ok(Response::PowerStats(stats))
             }
+            Command::SendVendorCmd { gid, oid, payload } => {
+                let msg =
+                    self.uci_manager.raw_vendor_cmd(gid, oid, payload).await.map_err(|e| {
+                        error!("android_get_power_stats failed: {:?}", e);
+                        Error::UciError
+                    })?;
+                Ok(Response::RawVendorMessage(msg))
+            }
         }
     }
 
@@ -413,6 +434,11 @@ enum Command {
         country_code: CountryCode,
     },
     AndroidGetPowerStats,
+    SendVendorCmd {
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    },
 }
 
 #[derive(Debug)]
@@ -420,6 +446,7 @@ enum Response {
     Null,
     AppConfigParams(AppConfigParams),
     PowerStats(PowerStats),
+    RawVendorMessage(RawVendorMessage),
 }
 type ResponseSender = oneshot::Sender<Result<Response>>;
 
@@ -609,6 +636,26 @@ mod tests {
 
         let result = service.android_get_power_stats().await.unwrap();
         assert!(power_stats_eq(&result, &stats));
+    }
+
+    #[tokio::test]
+    async fn test_send_vendor_cmd() {
+        let gid = 0x09;
+        let oid = 0x35;
+        let cmd_payload = vec![0x12, 0x34];
+        let resp_payload = vec![0x56, 0x78];
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_raw_vendor_cmd(
+            gid,
+            oid,
+            cmd_payload.clone(),
+            Ok(RawVendorMessage { gid, oid, payload: resp_payload.clone() }),
+        );
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
+
+        let result = service.send_vendor_cmd(gid, oid, cmd_payload).await.unwrap();
+        assert_eq!(result, RawVendorMessage { gid, oid, payload: resp_payload });
     }
 
     #[tokio::test]
