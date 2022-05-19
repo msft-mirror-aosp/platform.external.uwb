@@ -351,11 +351,10 @@ pub(crate) mod test_utils {
 
     use crate::session::params::ccc_app_config_params::*;
     use crate::session::params::fira_app_config_params::*;
-    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::uci::params::{
-        RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement,
+        RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement, StatusCode,
     };
     use crate::utils::init_test_logging;
 
@@ -464,11 +463,10 @@ mod tests {
 
     use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
-    use crate::uci::error::StatusCode;
     use crate::uci::notification::UciNotification;
     use crate::uci::params::{
         AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
-        SetAppConfigResponse,
+        SetAppConfigResponse, StatusCode,
     };
 
     #[tokio::test]

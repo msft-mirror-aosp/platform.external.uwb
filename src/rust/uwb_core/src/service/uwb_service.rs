@@ -456,10 +456,9 @@ mod tests {
     use crate::session::session_manager::test_utils::{
         generate_params, range_data_notf, session_range_data, session_status_notf,
     };
-    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
-    use crate::uci::params::{power_stats_eq, SessionState, SetAppConfigResponse};
+    use crate::uci::params::{power_stats_eq, SessionState, SetAppConfigResponse, StatusCode};
 
     #[tokio::test]
     async fn test_open_close_uci() {

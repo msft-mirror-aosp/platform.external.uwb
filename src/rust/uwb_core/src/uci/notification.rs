@@ -18,10 +18,11 @@ use std::iter::zip;
 use num_traits::ToPrimitive;
 use uwb_uci_packets::Packet;
 
-use crate::uci::error::{Error, Result as UciResult, StatusCode};
+use crate::uci::error::{Error, Result as UciResult};
 use crate::uci::params::{
     ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
     RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
+    StatusCode,
 };
 
 #[derive(Debug, Clone)]

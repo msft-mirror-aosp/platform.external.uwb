@@ -703,10 +703,10 @@ mod tests {
     use bytes::Bytes;
     use num_traits::ToPrimitive;
 
-    use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::params::{
         app_config_tlvs_eq, cap_tlv_eq, device_config_tlvs_eq, power_stats_eq, CapTlvType,
+        StatusCode,
     };
     use crate::utils::init_test_logging;
 

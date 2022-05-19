@@ -23,10 +23,9 @@ use tokio::time::timeout;
 use crate::session::error::{Error, Result};
 use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::session::params::AppConfigParams;
-use crate::uci::error::StatusCode;
 use crate::uci::params::{
     Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
-    UpdateMulticastListAction,
+    StatusCode, UpdateMulticastListAction,
 };
 use crate::uci::uci_manager::UciManager;
 
