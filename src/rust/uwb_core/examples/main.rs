@@ -55,10 +55,13 @@ async fn main() {
                 UwbNotification::UciDeviceStatus(state) => {
                     debug!("UCI device status: {:?}", state);
                 }
-                UwbNotification::SessionDeinited { session_id } => {
-                    debug!("Session {:?} is de-initialized", session_id);
+                UwbNotification::SessionState { session_id, session_state, reason_code } => {
+                    debug!(
+                        "Session {:?}'s state is changed to {:?}, reason: {:?}",
+                        session_id, session_state, reason_code
+                    );
                 }
-                UwbNotification::RangeDataReceived { session_id, range_data } => {
+                UwbNotification::RangeData { session_id, range_data } => {
                     debug!("Received range data {:?} from Session {:?}", range_data, session_id);
                 }
                 UwbNotification::VendorNotification { gid, oid, payload } => {

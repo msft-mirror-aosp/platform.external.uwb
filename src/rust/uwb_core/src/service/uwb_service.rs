@@ -22,8 +22,8 @@ use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, SessionId, SessionType,
-    UpdateMulticastListAction,
+    Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, ReasonCode, SessionId,
+    SessionState, SessionType, UpdateMulticastListAction,
 };
 use crate::uci::uci_manager::UciManager;
 
@@ -33,9 +33,9 @@ pub enum UwbNotification {
     /// Notify the status of the UCI device.
     UciDeviceStatus(DeviceState),
     /// Notify the session with the id |session_id| is de-initialized.
-    SessionDeinited { session_id: SessionId },
+    SessionState { session_id: SessionId, session_state: SessionState, reason_code: ReasonCode },
     /// Notify the ranging data of the session with the id |session_id| is received.
-    RangeDataReceived { session_id: SessionId, range_data: SessionRangeData },
+    RangeData { session_id: SessionId, range_data: SessionRangeData },
     /// Notify the vendor notification is received.
     VendorNotification { gid: u32, oid: u32, payload: Vec<u8> },
 }
@@ -359,13 +359,16 @@ impl<U: UciManager> UwbServiceActor<U> {
 
     async fn handle_session_notification(&mut self, notf: SessionNotification) {
         match notf {
-            SessionNotification::SessionDeinited { session_id } => {
-                let _ = self.notf_sender.send(UwbNotification::SessionDeinited { session_id });
+            SessionNotification::SessionState { session_id, session_state, reason_code } => {
+                let _ = self.notf_sender.send(UwbNotification::SessionState {
+                    session_id,
+                    session_state,
+                    reason_code,
+                });
             }
-            SessionNotification::RangeDataReceived { session_id, range_data } => {
-                let _ = self
-                    .notf_sender
-                    .send(UwbNotification::RangeDataReceived { session_id, range_data });
+            SessionNotification::RangeData { session_id, range_data } => {
+                let _ =
+                    self.notf_sender.send(UwbNotification::RangeData { session_id, range_data });
             }
         }
     }
@@ -492,22 +495,65 @@ mod tests {
         // Initialize a normal session.
         let result = service.init_session(session_id, session_type, params.clone()).await;
         assert!(result.is_ok());
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            UwbNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateInit,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            UwbNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateIdle,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         // Start the ranging process, and should receive the range data.
         let result = service.start_ranging(session_id).await;
         assert!(result.is_ok());
         let session_notf = notf_receiver.recv().await.unwrap();
-        assert_eq!(session_notf, UwbNotification::RangeDataReceived { session_id, range_data });
+        assert_eq!(
+            session_notf,
+            UwbNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateActive,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(session_notf, UwbNotification::RangeData { session_id, range_data });
 
         // Stop the ranging process.
         let result = service.stop_ranging(session_id).await;
         assert!(result.is_ok());
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            UwbNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateIdle,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         // Deinitialize the session, and should receive the deinitialized notification.
         let result = service.deinit_session(session_id).await;
         assert!(result.is_ok());
         let session_notf = notf_receiver.recv().await.unwrap();
-        assert_eq!(session_notf, UwbNotification::SessionDeinited { session_id });
+        assert_eq!(
+            session_notf,
+            UwbNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateDeinit,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         assert!(uci_manager.wait_expected_calls_done().await);
     }

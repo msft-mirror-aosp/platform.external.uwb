@@ -22,7 +22,7 @@ use crate::session::params::AppConfigParams;
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, SessionId, SessionState, SessionType, UpdateMulticastListAction,
+    Controlee, ReasonCode, SessionId, SessionState, SessionType, UpdateMulticastListAction,
 };
 use crate::uci::uci_manager::UciManager;
 
@@ -31,8 +31,8 @@ const MAX_SESSION_COUNT: usize = 5;
 /// The notifications that are sent from SessionManager to its caller.
 #[derive(Debug, PartialEq)]
 pub(crate) enum SessionNotification {
-    SessionDeinited { session_id: SessionId },
-    RangeDataReceived { session_id: SessionId, range_data: SessionRangeData },
+    SessionState { session_id: SessionId, session_state: SessionState, reason_code: ReasonCode },
+    RangeData { session_id: SessionId, range_data: SessionRangeData },
 }
 
 /// The SessionManager organizes the state machine of the existing UWB ranging sessions, sends
@@ -266,14 +266,23 @@ impl<T: UciManager> SessionManagerActor<T> {
                 if session_state == SessionState::SessionStateDeinit {
                     debug!("Session {:?} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
-                    let _ = self
-                        .session_notf_sender
-                        .send(SessionNotification::SessionDeinited { session_id });
+                    let _ = self.session_notf_sender.send(SessionNotification::SessionState {
+                        session_id,
+                        session_state,
+                        reason_code,
+                    });
                     return;
                 }
 
                 match self.active_sessions.get_mut(&session_id) {
-                    Some(session) => session.on_session_status_changed(session_state),
+                    Some(session) => {
+                        session.on_session_status_changed(session_state);
+                        let _ = self.session_notf_sender.send(SessionNotification::SessionState {
+                            session_id,
+                            session_state,
+                            reason_code,
+                        });
+                    }
                     None => {
                         warn!(
                             "Received notification of the unknown Session {:?}: {:?}, {:?}",
@@ -297,7 +306,7 @@ impl<T: UciManager> SessionManagerActor<T> {
             },
             UciSessionNotification::RangeData(range_data) => {
                 if self.active_sessions.get(&range_data.session_id).is_some() {
-                    let _ = self.session_notf_sender.send(SessionNotification::RangeDataReceived {
+                    let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_id,
                         range_data,
                     });
@@ -501,6 +510,24 @@ mod tests {
         // Initialize a normal session should be successful.
         let result = session_manager.init_session(session_id, session_type, params.clone()).await;
         assert_eq!(result, Ok(()));
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            SessionNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateInit,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            SessionNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateIdle,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         // Initialize a session multiple times without deinitialize should fail.
         let result = session_manager.init_session(session_id, session_type, params).await;
@@ -511,7 +538,14 @@ mod tests {
         let result = session_manager.deinit_session(session_id).await;
         assert_eq!(result, Ok(()));
         let session_notf = session_notf_receiver.recv().await.unwrap();
-        assert_eq!(session_notf, SessionNotification::SessionDeinited { session_id });
+        assert_eq!(
+            session_notf,
+            SessionNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateDeinit,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         // Deinit a session after deinitialized should fail.
         let result = session_manager.deinit_session(session_id).await;
@@ -819,9 +853,27 @@ mod tests {
 
         let result = session_manager.init_session(session_id, session_type, params).await;
         assert_eq!(result, Ok(()));
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            SessionNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateInit,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
+        let session_notf = session_notf_receiver.recv().await.unwrap();
+        assert_eq!(
+            session_notf,
+            SessionNotification::SessionState {
+                session_id,
+                session_state: SessionState::SessionStateIdle,
+                reason_code: ReasonCode::StateChangeWithSessionManagementCommands
+            }
+        );
 
         let session_notf = session_notf_receiver.recv().await.unwrap();
-        assert_eq!(session_notf, SessionNotification::RangeDataReceived { session_id, range_data });
+        assert_eq!(session_notf, SessionNotification::RangeData { session_id, range_data });
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
