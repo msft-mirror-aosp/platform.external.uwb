@@ -42,6 +42,7 @@ pub fn device_config_status_eq(a: &DeviceConfigStatus, b: &DeviceConfigStatus) -
     a.cfg_id == b.cfg_id && a.status == b.status
 }
 
+#[allow(dead_code)]
 pub fn power_stats_eq(a: &PowerStats, b: &PowerStats) -> bool {
     a.status == b.status
         && a.idle_time_ms == b.idle_time_ms
@@ -50,24 +51,29 @@ pub fn power_stats_eq(a: &PowerStats, b: &PowerStats) -> bool {
         && a.total_wake_count == b.total_wake_count
 }
 
+#[allow(dead_code)]
 pub fn cap_tlv_eq(a: &CapTlv, b: &CapTlv) -> bool {
     a.t == b.t && a.v == b.v
 }
 
+#[allow(dead_code)]
 pub fn app_config_tlvs_eq(a: &[AppConfigTlv], b: &[AppConfigTlv]) -> bool {
     app_config_tlvs_to_map(a) == app_config_tlvs_to_map(b)
 }
 
+#[allow(dead_code)]
 fn app_config_tlvs_to_map(
     tlvs: &[AppConfigTlv],
 ) -> HashMap<AppConfigTlvType, &Vec<u8>, RandomState> {
     HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
 }
 
+#[allow(dead_code)]
 pub fn device_config_tlvs_eq(a: &[DeviceConfigTlv], b: &[DeviceConfigTlv]) -> bool {
     device_config_tlvs_to_map(a) == device_config_tlvs_to_map(b)
 }
 
+#[allow(dead_code)]
 fn device_config_tlvs_to_map(
     tlvs: &[DeviceConfigTlv],
 ) -> HashMap<DeviceConfigId, &Vec<u8>, RandomState> {
