@@ -22,15 +22,16 @@ use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, CountryCode, PowerStats, RawVendorMessage, SessionId, SessionType,
+    Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, SessionId, SessionType,
     UpdateMulticastListAction,
 };
-use crate::uci::uci_hal::UciHal;
-use crate::uci::uci_manager::{UciManager, UciManagerImpl};
+use crate::uci::uci_manager::UciManager;
 
 /// The notification that is sent from UwbService to its caller.
 #[derive(Debug, PartialEq)]
 pub enum UwbNotification {
+    /// Notify the status of the UCI device.
+    UciDeviceStatus(DeviceState),
     /// Notify the session with the id |session_id| is de-initialized.
     SessionDeinited { session_id: SessionId },
     /// Notify the ranging data of the session with the id |session_id| is received.
@@ -48,12 +49,7 @@ pub struct UwbService {
 
 impl UwbService {
     /// Create a new UwbService instance.
-    pub fn new<U: UciHal>(notf_sender: mpsc::UnboundedSender<UwbNotification>, uci_hal: U) -> Self {
-        let uci_manager = UciManagerImpl::new(uci_hal);
-        Self::new_with_args(notf_sender, uci_manager)
-    }
-
-    fn new_with_args<U: UciManager>(
+    pub(super) fn new<U: UciManager>(
         notf_sender: mpsc::UnboundedSender<UwbNotification>,
         uci_manager: U,
     ) -> Self {
@@ -352,9 +348,11 @@ impl<U: UciManager> UwbServiceActor<U> {
     }
 
     async fn handle_core_notification(&mut self, notf: CoreNotification) {
-        // TODO(akahuang): handle the UCI core notification.
+        debug!("Receive core notification: {:?}", notf);
         match notf {
-            CoreNotification::DeviceStatus(_state) => {}
+            CoreNotification::DeviceStatus(state) => {
+                let _ = self.notf_sender.send(UwbNotification::UciDeviceStatus(state));
+            }
             CoreNotification::GenericError(_status) => {}
         }
     }
@@ -425,18 +423,20 @@ type ResponseSender = oneshot::Sender<Result<Response>>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::session::session_manager::test_utils::generate_params;
+    use crate::session::session_manager::test_utils::{
+        generate_params, range_data_notf, session_range_data, session_status_notf,
+    };
     use crate::uci::error::StatusCode;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
-    use crate::uci::params::power_stats_eq;
+    use crate::uci::params::{power_stats_eq, SessionState, SetAppConfigResponse};
 
     #[tokio::test]
     async fn test_open_close_uci() {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         uci_manager.expect_close_hal(Ok(()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.enable().await;
         assert!(result.is_ok());
@@ -445,7 +445,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_api_without_enabled() {
+    async fn test_session_e2e() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+        let params = generate_params();
+        let tlvs = params.generate_tlvs();
+        let range_data = session_range_data(session_id);
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_session_init(
+            session_id,
+            session_type,
+            vec![session_status_notf(session_id, SessionState::SessionStateInit)],
+            Ok(()),
+        );
+        uci_manager.expect_session_set_app_config(
+            session_id,
+            tlvs,
+            vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+            Ok(SetAppConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] }),
+        );
+        uci_manager.expect_range_start(
+            session_id,
+            vec![
+                session_status_notf(session_id, SessionState::SessionStateActive),
+                range_data_notf(range_data.clone()),
+            ],
+            Ok(()),
+        );
+        uci_manager.expect_range_stop(
+            session_id,
+            vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+            Ok(()),
+        );
+        uci_manager.expect_session_deinit(
+            session_id,
+            vec![session_status_notf(session_id, SessionState::SessionStateDeinit)],
+            Ok(()),
+        );
+
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new(notf_sender, uci_manager.clone());
+        service.enable().await.unwrap();
+
+        // Initialize a normal session.
+        let result = service.init_session(session_id, session_type, params.clone()).await;
+        assert!(result.is_ok());
+
+        // Start the ranging process, and should receive the range data.
+        let result = service.start_ranging(session_id).await;
+        assert!(result.is_ok());
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(session_notf, UwbNotification::RangeDataReceived { session_id, range_data });
+
+        // Stop the ranging process.
+        let result = service.stop_ranging(session_id).await;
+        assert!(result.is_ok());
+
+        // Deinitialize the session, and should receive the deinitialized notification.
+        let result = service.deinit_session(session_id).await;
+        assert!(result.is_ok());
+        let session_notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(session_notf, UwbNotification::SessionDeinited { session_id });
+
+        assert!(uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_api_without_enabled() {
         let session_id = 0x123;
         let session_type = SessionType::FiraRangingSession;
         let params = generate_params();
@@ -453,7 +521,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.init_session(session_id, session_type, params.clone()).await;
         assert!(result.is_err());
@@ -474,7 +542,7 @@ mod tests {
         let country_code = CountryCode::new(b"US").unwrap();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.android_set_country_code(country_code).await;
         assert!(result.is_ok());
@@ -491,7 +559,7 @@ mod tests {
         };
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
-        let mut service = UwbService::new_with_args(mpsc::unbounded_channel().0, uci_manager);
+        let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.android_get_power_stats().await.unwrap();
         assert!(power_stats_eq(&result, &stats));
@@ -509,10 +577,28 @@ mod tests {
             Ok(()),
         );
         let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
-        let mut service = UwbService::new_with_args(notf_sender, uci_manager);
+        let mut service = UwbService::new(notf_sender, uci_manager);
         service.enable().await.unwrap();
 
         let expected_notf = UwbNotification::VendorNotification { gid, oid, payload };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
+    }
+
+    #[tokio::test]
+    async fn test_core_device_status_notification() {
+        let state = DeviceState::DeviceStateReady;
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_open_hal(
+            vec![UciNotification::Core(CoreNotification::DeviceStatus(state))],
+            Ok(()),
+        );
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new(notf_sender, uci_manager);
+        service.enable().await.unwrap();
+
+        let expected_notf = UwbNotification::UciDeviceStatus(state);
         let notf = notf_receiver.recv().await.unwrap();
         assert_eq!(notf, expected_notf);
     }
