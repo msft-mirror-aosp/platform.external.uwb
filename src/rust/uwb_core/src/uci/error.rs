@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use uwb_uci_packets::StatusCode;
+use crate::uci::params::StatusCode;
 
 /// The error code for UCI module.
 #[derive(Debug, thiserror::Error, Clone)]
