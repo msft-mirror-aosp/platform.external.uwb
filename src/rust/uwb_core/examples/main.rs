@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use log::debug;
 use tokio::sync::mpsc;
 
-use uwb_core::service::{UwbNotification, UwbService};
+use uwb_core::service::{UwbNotification, UwbServiceBuilder};
 use uwb_core::uci::{RawUciMessage, UciHal, UciResult};
 
 /// A placeholder implementation for UciHal.
@@ -45,12 +45,16 @@ async fn main() {
 
     // Initialize the UWB service.
     let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
-    let mut service = UwbService::new(notf_sender, UciHalImpl {});
+    let mut service =
+        UwbServiceBuilder::new().uci_hal(UciHalImpl {}).notf_sender(notf_sender).build().unwrap();
 
     // Handle the notifications from UWB service at another tokio task.
     tokio::spawn(async move {
         while let Some(notf) = notf_receiver.recv().await {
             match notf {
+                UwbNotification::UciDeviceStatus(state) => {
+                    debug!("UCI device status: {:?}", state);
+                }
                 UwbNotification::SessionDeinited { session_id } => {
                     debug!("Session {:?} is de-initialized", session_id);
                 }
