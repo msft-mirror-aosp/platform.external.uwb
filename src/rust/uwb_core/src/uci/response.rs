@@ -18,10 +18,10 @@ use log::error;
 use num_traits::ToPrimitive;
 use uwb_uci_packets::Packet;
 
-use crate::uci::error::{Error, Result as UciResult, StatusCode};
+use crate::uci::error::{Error, Result as UciResult};
 use crate::uci::params::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse,
+    PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse, StatusCode,
 };
 
 #[derive(Debug)]

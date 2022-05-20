@@ -20,15 +20,13 @@
 use std::collections::{hash_map::RandomState, HashMap};
 use std::iter::{zip, FromIterator};
 
-use crate::uci::error::StatusCode;
-
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
     ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
     RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
-    ShortAddressTwoWayRangingMeasurement, UpdateMulticastListAction,
+    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 
 pub type SessionId = u32;
