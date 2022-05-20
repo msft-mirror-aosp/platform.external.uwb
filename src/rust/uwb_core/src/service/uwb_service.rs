@@ -22,7 +22,7 @@ use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::params::{
-    Controlee, CountryCode, PowerStats, RawVendorMessage, SessionId, SessionType,
+    Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, SessionId, SessionType,
     UpdateMulticastListAction,
 };
 use crate::uci::uci_manager::UciManager;
@@ -30,6 +30,8 @@ use crate::uci::uci_manager::UciManager;
 /// The notification that is sent from UwbService to its caller.
 #[derive(Debug, PartialEq)]
 pub enum UwbNotification {
+    /// Notify the status of the UCI device.
+    UciDeviceStatus(DeviceState),
     /// Notify the session with the id |session_id| is de-initialized.
     SessionDeinited { session_id: SessionId },
     /// Notify the ranging data of the session with the id |session_id| is received.
@@ -346,9 +348,11 @@ impl<U: UciManager> UwbServiceActor<U> {
     }
 
     async fn handle_core_notification(&mut self, notf: CoreNotification) {
-        // TODO(akahuang): handle the UCI core notification.
+        debug!("Receive core notification: {:?}", notf);
         match notf {
-            CoreNotification::DeviceStatus(_state) => {}
+            CoreNotification::DeviceStatus(state) => {
+                let _ = self.notf_sender.send(UwbNotification::UciDeviceStatus(state));
+            }
             CoreNotification::GenericError(_status) => {}
         }
     }
@@ -577,6 +581,24 @@ mod tests {
         service.enable().await.unwrap();
 
         let expected_notf = UwbNotification::VendorNotification { gid, oid, payload };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
+    }
+
+    #[tokio::test]
+    async fn test_core_device_status_notification() {
+        let state = DeviceState::DeviceStateReady;
+
+        let mut uci_manager = MockUciManager::new();
+        uci_manager.expect_open_hal(
+            vec![UciNotification::Core(CoreNotification::DeviceStatus(state))],
+            Ok(()),
+        );
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new(notf_sender, uci_manager);
+        service.enable().await.unwrap();
+
+        let expected_notf = UwbNotification::UciDeviceStatus(state);
         let notf = notf_receiver.recv().await.unwrap();
         assert_eq!(notf, expected_notf);
     }
