@@ -478,4 +478,102 @@ mod tests {
             }))
         );
     }
+
+    #[test]
+    fn test_session_notification_casting_from_session_status_ntf() {
+        let session_status_ntf = uwb_uci_packets::SessionStatusNtfBuilder {
+            session_id: 0x20,
+            session_state: uwb_uci_packets::SessionState::SessionStateActive,
+            reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+        }
+        .build();
+        let session_notification_packet =
+            uwb_uci_packets::SessionNotificationPacket::try_from(session_status_ntf).unwrap();
+        let session_notification =
+            SessionNotification::try_from(session_notification_packet).unwrap();
+        let uci_notification_from_session_status_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_session_status_ntf,
+            UciNotification::Session(SessionNotification::Status {
+                session_id: 0x20,
+                session_state: uwb_uci_packets::SessionState::SessionStateActive,
+                reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+            })
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_packet()
+    {
+        let controlee_status = uwb_uci_packets::ControleeStatus {
+            mac_address: 0xc0a8,
+            subsession_id: 0x30,
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
+        };
+        let another_controlee_status = uwb_uci_packets::ControleeStatus {
+            mac_address: 0xc0a9,
+            subsession_id: 0x31,
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
+        };
+        let session_update_controller_multicast_list_ntf =
+            uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
+                session_id: 0x32,
+                remaining_multicast_list_size: 0x2,
+                controlee_status: vec![controlee_status.clone(), another_controlee_status.clone()],
+            }
+            .build();
+        let session_notification_packet = uwb_uci_packets::SessionNotificationPacket::try_from(
+            session_update_controller_multicast_list_ntf,
+        )
+        .unwrap();
+        let session_notification =
+            SessionNotification::try_from(session_notification_packet).unwrap();
+        let uci_notification_from_session_update_controller_multicast_list_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_session_update_controller_multicast_list_ntf,
+            UciNotification::Session(SessionNotification::UpdateControllerMulticastList {
+                session_id: 0x32,
+                remaining_multicast_list_size: 0x2,
+                status_list: vec![controlee_status, another_controlee_status],
+            })
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)] //override snake case for vendor_A
+    fn test_vendor_notification_casting() {
+        let vendor_9_empty_notification: uwb_uci_packets::UciNotificationPacket =
+            uwb_uci_packets::UciVendor_9_NotificationBuilder { opcode: 0x40, payload: None }
+                .build()
+                .into();
+        let vendor_A_nonempty_notification: uwb_uci_packets::UciNotificationPacket =
+            uwb_uci_packets::UciVendor_A_NotificationBuilder {
+                opcode: 0x41,
+                payload: Some(bytes::Bytes::from_static(b"Placeholder notification.")),
+            }
+            .build()
+            .into();
+        let uci_notification_from_vendor_9 =
+            UciNotification::try_from(vendor_9_empty_notification).unwrap();
+        let uci_notification_from_vendor_A =
+            UciNotification::try_from(vendor_A_nonempty_notification).unwrap();
+        assert_eq!(
+            uci_notification_from_vendor_9,
+            UciNotification::Vendor(RawVendorMessage {
+                gid: 0x9, // per enum GroupId in uci_packets.pdl
+                oid: 0x40,
+                payload: vec![],
+            })
+        );
+        assert_eq!(
+            uci_notification_from_vendor_A,
+            UciNotification::Vendor(RawVendorMessage {
+                gid: 0xa,
+                oid: 0x41,
+                payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
+    }
 }
