@@ -168,6 +168,7 @@ impl MockUciManager {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
         expected_controlees: Vec<Controlee>,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
@@ -175,6 +176,7 @@ impl MockUciManager {
                 expected_session_id,
                 expected_action,
                 expected_controlees,
+                notfs,
                 out,
             },
         );
@@ -514,6 +516,7 @@ impl UciManager for MockUciManager {
                 expected_session_id,
                 expected_action,
                 expected_controlees,
+                notfs,
                 out,
             }) if expected_session_id == session_id
                 && expected_action == action
@@ -522,6 +525,9 @@ impl UciManager for MockUciManager {
                 }) =>
             {
                 self.expect_call_consumed.notify_one();
+                for notf in notfs.into_iter() {
+                    let _ = self.notf_sender.as_mut().unwrap().send(notf);
+                }
                 out
             }
             Some(call) => {
@@ -706,6 +712,7 @@ enum ExpectedCall {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
         expected_controlees: Vec<Controlee>,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     RangeStart {
