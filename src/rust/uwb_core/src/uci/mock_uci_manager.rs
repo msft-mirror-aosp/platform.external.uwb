@@ -40,6 +40,7 @@ pub(crate) struct MockUciManager {
     vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
 }
 
+#[allow(dead_code)]
 impl MockUciManager {
     pub fn new() -> Self {
         Self {
