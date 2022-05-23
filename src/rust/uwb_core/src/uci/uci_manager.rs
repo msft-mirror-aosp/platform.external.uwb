@@ -62,7 +62,7 @@ pub(crate) trait UciManager: 'static + Send + Clone {
     async fn open_hal(&mut self) -> Result<()>;
 
     // Close the UCI HAL.
-    async fn close_hal(&mut self) -> Result<()>;
+    async fn close_hal(&mut self, force: bool) -> Result<()>;
 
     // Send the standard UCI Commands.
     async fn device_reset(&mut self, reset_config: ResetConfig) -> Result<()>;
@@ -178,8 +178,8 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn close_hal(&mut self) -> Result<()> {
-        match self.send_cmd(UciManagerCmd::CloseHal).await {
+    async fn close_hal(&mut self, force: bool) -> Result<()> {
+        match self.send_cmd(UciManagerCmd::CloseHal { force }).await {
             Ok(UciResponse::CloseHal) => Ok(()),
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
@@ -544,18 +544,25 @@ impl<T: UciHal> UciManagerActor<T> {
                 }
             }
 
-            UciManagerCmd::CloseHal => {
-                if !self.is_hal_opened {
-                    warn!("The UCI HAL is already closed, skip.");
-                    let _ = result_sender.send(Err(Error::BadParameters));
-                    return;
-                }
-
-                let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
-                if result.is_ok() {
+            UciManagerCmd::CloseHal { force } => {
+                if force {
+                    debug!("Force closing the UCI HAL");
+                    let _ = self.hal.close().await;
                     self.on_hal_closed();
+                    let _ = result_sender.send(Ok(UciResponse::CloseHal));
+                } else {
+                    if !self.is_hal_opened {
+                        warn!("The UCI HAL is already closed, skip.");
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                        return;
+                    }
+
+                    let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
+                    if result.is_ok() {
+                        self.on_hal_closed();
+                    }
+                    let _ = result_sender.send(result);
                 }
-                let _ = result_sender.send(result);
             }
 
             UciManagerCmd::SendUciCommand { cmd } => {
@@ -693,7 +700,7 @@ enum UciManagerCmd {
     SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
     SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
     OpenHal,
-    CloseHal,
+    CloseHal { force: bool },
     SendUciCommand { cmd: UciCommand },
 }
 
@@ -755,7 +762,7 @@ mod tests {
         })
         .await;
 
-        let result = uci_manager.close_hal().await;
+        let result = uci_manager.close_hal(false).await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
@@ -779,7 +786,7 @@ mod tests {
         let mut hal = MockUciHal::new();
         let mut uci_manager = UciManagerImpl::new(hal.clone());
 
-        let result = uci_manager.close_hal().await;
+        let result = uci_manager.close_hal(false).await;
         assert!(matches!(result, Err(Error::BadParameters)));
         assert!(hal.wait_expected_calls_done().await);
     }
