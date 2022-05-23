@@ -15,10 +15,10 @@
 use std::convert::{TryFrom, TryInto};
 use std::iter::zip;
 
+use log::error;
 use num_traits::ToPrimitive;
-use uwb_uci_packets::Packet;
 
-use crate::uci::error::{Error, Result as UciResult};
+use crate::error::{Error, Result};
 use crate::uci::params::{
     ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
     RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
@@ -181,7 +181,9 @@ impl UciNotification {
 
 impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciNotificationPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        evt: uwb_uci_packets::UciNotificationPacket,
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
         match evt.specialize() {
             UciNotificationChild::CoreNotification(evt) => Ok(Self::Core(evt.try_into()?)),
@@ -193,28 +195,38 @@ impl TryFrom<uwb_uci_packets::UciNotificationPacket> for UciNotification {
             UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
-            _ => Err(Error::Specialize(evt.to_vec())),
+            _ => {
+                error!("Unknown UciNotificationPacket: {:?}", evt);
+                Err(Error::Unknown)
+            }
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::CoreNotificationPacket> for CoreNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::CoreNotificationPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        evt: uwb_uci_packets::CoreNotificationPacket,
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::CoreNotificationChild;
         match evt.specialize() {
             CoreNotificationChild::DeviceStatusNtf(evt) => {
                 Ok(Self::DeviceStatus(evt.get_device_state()))
             }
             CoreNotificationChild::GenericError(evt) => Ok(Self::GenericError(evt.get_status())),
-            _ => Err(Error::Specialize(evt.to_vec())),
+            _ => {
+                error!("Unknown CoreNotificationPacket: {:?}", evt);
+                Err(Error::Unknown)
+            }
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for SessionNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::SessionNotificationPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        evt: uwb_uci_packets::SessionNotificationPacket,
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionNotificationChild;
         match evt.specialize() {
             SessionNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
@@ -229,25 +241,35 @@ impl TryFrom<uwb_uci_packets::SessionNotificationPacket> for SessionNotification
                     status_list: evt.get_controlee_status().clone(),
                 })
             }
-            _ => Err(Error::Specialize(evt.to_vec())),
+            _ => {
+                error!("Unknown SessionNotificationPacket: {:?}", evt);
+                Err(Error::Unknown)
+            }
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::RangingNotificationPacket> for SessionNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::RangingNotificationPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        evt: uwb_uci_packets::RangingNotificationPacket,
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::RangingNotificationChild;
         match evt.specialize() {
             RangingNotificationChild::RangeDataNtf(evt) => evt.try_into(),
-            _ => Err(Error::Specialize(evt.to_vec())),
+            _ => {
+                error!("Unknown RangingNotificationPacket: {:?}", evt);
+                Err(Error::Unknown)
+            }
         }
     }
 }
 
 impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::RangeDataNtfPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        evt: uwb_uci_packets::RangeDataNtfPacket,
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::RangeDataNtfChild;
         let ranging_measurements = match evt.specialize() {
             RangeDataNtfChild::ShortMacTwoWayRangeDataNtf(evt) => {
@@ -256,7 +278,10 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
             RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
                 RangingMeasurements::Extended(evt.get_two_way_ranging_measurements().clone())
             }
-            _ => return Err(Error::Specialize(evt.to_vec())),
+            _ => {
+                error!("Unknown RangeDataNtfPacket: {:?}", evt);
+                return Err(Error::Unknown);
+            }
         };
         Ok(Self::RangeData(SessionRangeData {
             sequence_number: evt.get_sequence_number(),
@@ -270,20 +295,29 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
 
 impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::AndroidNotificationPacket) -> Result<Self, Self::Error> {
-        Err(Error::Specialize(evt.to_vec()))
+    fn try_from(
+        evt: uwb_uci_packets::AndroidNotificationPacket,
+    ) -> std::result::Result<Self, Self::Error> {
+        error!("Unknown AndroidNotificationPacket: {:?}", evt);
+        Err(Error::Unknown)
     }
 }
 
-fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> UciResult<UciNotification> {
+fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> Result<UciNotification> {
     Ok(UciNotification::Vendor(RawVendorMessage {
-        gid: evt.get_group_id().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
-        oid: evt.get_opcode().to_u32().ok_or_else(|| Error::Specialize(evt.clone().to_vec()))?,
+        gid: evt.get_group_id().to_u32().ok_or_else(|| {
+            error!("Failed to get gid from packet: {:?}", evt);
+            Error::Unknown
+        })?,
+        oid: evt.get_opcode().to_u32().ok_or_else(|| {
+            error!("Failed to get opcode from packet: {:?}", evt);
+            Error::Unknown
+        })?,
         payload: get_vendor_uci_payload(evt)?,
     }))
 }
 
-fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> UciResult<Vec<u8>> {
+fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> Result<Vec<u8>> {
     match evt.specialize() {
         uwb_uci_packets::UciNotificationChild::UciVendor_9_Notification(evt) => {
             match evt.specialize() {
@@ -325,7 +359,10 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> UciRes
                 uwb_uci_packets::UciVendor_F_NotificationChild::None => Ok(Vec::new()),
             }
         }
-        _ => Err(Error::Specialize(evt.to_vec())),
+        _ => {
+            error!("Unknown UciVendor packet: {:?}", evt);
+            Err(Error::Unknown)
+        }
     }
 }
 
