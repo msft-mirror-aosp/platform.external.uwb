@@ -18,22 +18,23 @@ use async_trait::async_trait;
 use log::debug;
 use tokio::sync::mpsc;
 
+use uwb_core::error::Result as UwbResult;
 use uwb_core::service::{UwbNotification, UwbServiceBuilder};
-use uwb_core::uci::{RawUciMessage, UciHal, UciResult};
+use uwb_core::uci::{RawUciMessage, UciHal};
 
 /// A placeholder implementation for UciHal.
 struct UciHalImpl {}
 #[async_trait]
 impl UciHal for UciHalImpl {
-    async fn open(&mut self, _msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UciResult<()> {
+    async fn open(&mut self, _msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UwbResult<()> {
         debug!("UciHalImpl::open() is called");
         Ok(())
     }
-    async fn close(&mut self) -> UciResult<()> {
+    async fn close(&mut self) -> UwbResult<()> {
         debug!("UciHalImpl::close() is called");
         Ok(())
     }
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UciResult<()> {
+    async fn send_command(&mut self, cmd: RawUciMessage) -> UwbResult<()> {
         debug!("UciHalImpl::send_command({:?}) is called", cmd);
         Ok(())
     }

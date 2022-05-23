@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use crate::uci::error::{Error, Result};
+use crate::error::{Error, Result};
 use crate::uci::params::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
@@ -77,7 +77,7 @@ mod tests {
             Ok(())
         }
         async fn close(&mut self) -> Result<()> {
-            Err(Error::HalFailed)
+            Err(Error::Unknown)
         }
         async fn send_command(&mut self, _: RawUciMessage) -> Result<()> {
             sleep(Duration::MAX).await;
@@ -102,7 +102,7 @@ mod tests {
     async fn test_fail() {
         let mut hal = setup_hal();
 
-        assert!(matches!(hal.close().await, Err(Error::HalFailed)));
+        assert!(matches!(hal.close().await, Err(Error::Unknown)));
     }
 
     #[tokio::test]

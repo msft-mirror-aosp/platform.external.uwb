@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::session::error::{Error, Result};
+use crate::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
@@ -71,7 +71,7 @@ impl SessionManager {
             .send_cmd(SessionCommand::InitSession { session_id, session_type, params })
             .await
             .map(|_| ());
-        if result.is_err() && result != Err(Error::DuplicatedSessionId(session_id)) {
+        if result.is_err() && result != Err(Error::DuplicatedSessionId) {
             let _ = self.deinit_session(session_id).await;
         }
         result
@@ -123,9 +123,12 @@ impl SessionManager {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
-            Error::TokioFailure
+            Error::Unknown
         })?;
-        result_receiver.await.unwrap_or(Err(Error::TokioFailure))
+        result_receiver.await.unwrap_or_else(|e| {
+            error!("Failed to receive the result for cmd: {:?}", e);
+            Err(Error::Unknown)
+        })
     }
 }
 
@@ -185,17 +188,22 @@ impl<T: UciManager> SessionManagerActor<T> {
         match cmd {
             SessionCommand::InitSession { session_id, session_type, params } => {
                 if self.active_sessions.contains_key(&session_id) {
-                    let _ = result_sender.send(Err(Error::DuplicatedSessionId(session_id)));
+                    warn!("Session {} already exists", session_id);
+                    let _ = result_sender.send(Err(Error::DuplicatedSessionId));
                     return;
                 }
                 if self.active_sessions.len() == MAX_SESSION_COUNT {
+                    warn!("The amount of active sessions already reached {}", MAX_SESSION_COUNT);
                     let _ = result_sender.send(Err(Error::MaxSessionsExceeded));
                     return;
                 }
 
                 if !params.is_type_matched(session_type) {
-                    error!("session_type {:?} doesn't match with the params", session_type);
-                    let _ = result_sender.send(Err(Error::InvalidArguments));
+                    warn!(
+                        "session_type {:?} doesn't match with the params {:?}",
+                        session_type, params
+                    );
+                    let _ = result_sender.send(Err(Error::BadParameters));
                     return;
                 }
 
@@ -210,7 +218,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::DeinitSession { session_id } => {
                 match self.active_sessions.remove(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(mut session) => {
                         session.deinitialize(result_sender);
@@ -220,7 +229,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::StartRanging { session_id } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.start_ranging(result_sender);
@@ -230,7 +240,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::StopRanging { session_id } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.stop_ranging(result_sender);
@@ -240,7 +251,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::Reconfigure { session_id, params } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.reconfigure(params, result_sender);
@@ -250,7 +262,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::UpdateControllerMulticastList { session_id, action, controlees } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.update_controller_multicast_list(action, controlees, result_sender);
@@ -264,7 +277,7 @@ impl<T: UciManager> SessionManagerActor<T> {
         match notf {
             UciSessionNotification::Status { session_id, session_state, reason_code } => {
                 if session_state == SessionState::SessionStateDeinit {
-                    debug!("Session {:?} is deinitialized", session_id);
+                    debug!("Session {} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
                     let _ = self.session_notf_sender.send(SessionNotification::SessionState {
                         session_id,
@@ -285,7 +298,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                     None => {
                         warn!(
-                            "Received notification of the unknown Session {:?}: {:?}, {:?}",
+                            "Received notification of the unknown Session {}: {:?}, {:?}",
                             session_id, session_state, reason_code
                         );
                     }
@@ -503,7 +516,7 @@ mod tests {
 
         // Deinit a session before initialized should fail.
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::BadParameters));
 
         // Initialize a normal session should be successful.
         let result = session_manager.init_session(session_id, session_type, params.clone()).await;
@@ -529,7 +542,7 @@ mod tests {
 
         // Initialize a session multiple times without deinitialize should fail.
         let result = session_manager.init_session(session_id, session_type, params).await;
-        assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
+        assert_eq!(result, Err(Error::DuplicatedSessionId));
 
         // Deinitialize the session should be successful, and should receive the deinitialized
         // notification.
@@ -547,7 +560,7 @@ mod tests {
 
         // Deinit a session after deinitialized should fail.
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::BadParameters));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
@@ -765,7 +778,7 @@ mod tests {
         // CCC session doesn't support update_controller_multicast_list.
         let result =
             session_manager.update_controller_multicast_list(session_id, action, controlees).await;
-        assert_eq!(result, Err(Error::InvalidArguments));
+        assert_eq!(result, Err(Error::BadParameters));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }

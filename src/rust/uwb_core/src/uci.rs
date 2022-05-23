@@ -14,9 +14,6 @@
 
 //! This module provides the functionalities related to UWB Command Interface (UCI).
 
-// TODO(akahuang): remove it after implementing the client of each component.
-#![allow(dead_code)]
-
 mod command;
 mod message;
 mod response;
@@ -35,5 +32,4 @@ pub(crate) mod mock_uci_hal;
 pub(crate) mod mock_uci_manager;
 
 // Re-export the public elements.
-pub use error::{Error as UciError, Result as UciResult};
 pub use uci_hal::{RawUciMessage, UciHal};

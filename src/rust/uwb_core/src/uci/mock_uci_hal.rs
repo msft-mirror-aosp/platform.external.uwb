@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
-use crate::uci::error::{Error, Result};
+use crate::error::{Error, Result};
 use crate::uci::params::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
