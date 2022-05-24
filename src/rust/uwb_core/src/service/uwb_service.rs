@@ -18,13 +18,13 @@ use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{Error, Result};
-use crate::session::params::AppConfigParams;
-use crate::session::session_manager::{SessionManager, SessionNotification};
-use crate::uci::notification::{CoreNotification, SessionRangeData};
-use crate::uci::params::{
+use crate::params::app_config_params::AppConfigParams;
+use crate::params::uci_packets::{
     Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, ReasonCode, SessionId,
     SessionState, SessionType, UpdateMulticastListAction,
 };
+use crate::session::session_manager::{SessionManager, SessionNotification};
+use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
 
 /// The notification that is sent from UwbService to its caller.
@@ -448,12 +448,12 @@ type ResponseSender = oneshot::Sender<Result<Response>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::params::uci_packets::{SessionState, SetAppConfigResponse, StatusCode};
     use crate::session::session_manager::test_utils::{
         generate_params, range_data_notf, session_range_data, session_status_notf,
     };
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
-    use crate::uci::params::{SessionState, SetAppConfigResponse, StatusCode};
 
     #[tokio::test]
     async fn test_open_close_uci() {

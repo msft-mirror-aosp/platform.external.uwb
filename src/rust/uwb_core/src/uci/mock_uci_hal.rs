@@ -21,7 +21,7 @@ use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
 use crate::error::{Error, Result};
-use crate::uci::params::SessionId;
+use crate::params::uci_packets::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
 /// The mock implementation of UciHal.
