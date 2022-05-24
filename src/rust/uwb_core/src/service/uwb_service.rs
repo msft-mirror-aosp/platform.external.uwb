@@ -28,6 +28,7 @@ use crate::uci::params::{
 use crate::uci::uci_manager::UciManager;
 
 /// The notification that is sent from UwbService to its caller.
+#[non_exhaustive] // Adding new enum fields doesn't break the downstream build.
 #[derive(Debug, PartialEq)]
 pub enum UwbNotification {
     /// Notify the UWB service has been reset due to internal error. All the sessions are closed.

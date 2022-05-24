@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[non_exhaustive] // Adding new enum fields doesn't break the downstream build.
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
     #[error("Bad parameters")]
