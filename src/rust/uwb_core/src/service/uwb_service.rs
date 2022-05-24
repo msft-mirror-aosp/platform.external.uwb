@@ -17,7 +17,7 @@
 use log::{debug, error};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::service::error::{Error, Result};
+use crate::error::{Error, Result};
 use crate::session::params::AppConfigParams;
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
@@ -157,9 +157,12 @@ impl UwbService {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
-            Error::TokioFailure
+            Error::Unknown
         })?;
-        result_receiver.await.unwrap_or(Err(Error::TokioFailure))
+        result_receiver.await.unwrap_or_else(|e| {
+            error!("Failed to receive the result for cmd: {:?}", e);
+            Err(Error::Unknown)
+        })
     }
 }
 
@@ -233,11 +236,7 @@ impl<U: UciManager> UwbServiceActor<U> {
                 self.uci_manager.set_core_notification_sender(core_notf_sender).await;
                 self.uci_manager.set_session_notification_sender(uci_session_notf_sender).await;
                 self.uci_manager.set_vendor_notification_sender(vendor_notf_sender).await;
-
-                self.uci_manager.open_hal().await.map_err(|e| {
-                    error!("Failed to open the UCI HAL: ${:?}", e);
-                    Error::UciError
-                })?;
+                self.uci_manager.open_hal().await?;
 
                 let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
                 self.core_notf_receiver = core_notf_receiver;
@@ -260,109 +259,75 @@ impl<U: UciManager> UwbServiceActor<U> {
                 self.session_notf_receiver = mpsc::unbounded_channel().1;
                 self.vendor_notf_receiver = mpsc::unbounded_channel().1;
                 self.session_manager = None;
-                self.uci_manager.close_hal().await.map_err(|e| {
-                    error!("Failed to open the UCI HAL: ${:?}", e);
-                    Error::UciError
-                })?;
+                self.uci_manager.close_hal().await?;
                 Ok(Response::Null)
             }
             Command::InitSession { session_id, session_type, params } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
-                    session_manager.init_session(session_id, session_type, params).await.map_err(
-                        |e| {
-                            error!("init_session failed: {:?}", e);
-                            Error::SessionError
-                        },
-                    )?;
+                    session_manager.init_session(session_id, session_type, params).await?;
                     Ok(Response::Null)
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::DeinitSession { session_id } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
-                    session_manager.deinit_session(session_id).await.map_err(|e| {
-                        error!("deinit_session failed: {:?}", e);
-                        Error::SessionError
-                    })?;
+                    session_manager.deinit_session(session_id).await?;
                     Ok(Response::Null)
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::StartRanging { session_id } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
-                    let params = session_manager.start_ranging(session_id).await.map_err(|e| {
-                        error!("start_ranging failed: {:?}", e);
-                        Error::SessionError
-                    })?;
+                    let params = session_manager.start_ranging(session_id).await?;
                     Ok(Response::AppConfigParams(params))
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::StopRanging { session_id } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
-                    session_manager.stop_ranging(session_id).await.map_err(|e| {
-                        error!("stop_ranging failed: {:?}", e);
-                        Error::SessionError
-                    })?;
+                    session_manager.stop_ranging(session_id).await?;
                     Ok(Response::Null)
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::Reconfigure { session_id, params } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
-                    session_manager.reconfigure(session_id, params).await.map_err(|e| {
-                        error!("reconfigure failed: {:?}", e);
-                        Error::SessionError
-                    })?;
+                    session_manager.reconfigure(session_id, params).await?;
                     Ok(Response::Null)
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::UpdateControllerMulticastList { session_id, action, controlees } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
                     session_manager
                         .update_controller_multicast_list(session_id, action, controlees)
-                        .await
-                        .map_err(|e| {
-                            error!("update_controller_multicast_list failed: {:?}", e);
-                            Error::SessionError
-                        })?;
+                        .await?;
                     Ok(Response::Null)
                 } else {
                     error!("The service is not enabled yet");
-                    Err(Error::Reject)
+                    Err(Error::BadParameters)
                 }
             }
             Command::AndroidSetCountryCode { country_code } => {
-                self.uci_manager.android_set_country_code(country_code).await.map_err(|e| {
-                    error!("android_set_country_code failed: {:?}", e);
-                    Error::UciError
-                })?;
+                self.uci_manager.android_set_country_code(country_code).await?;
                 Ok(Response::Null)
             }
             Command::AndroidGetPowerStats => {
-                let stats = self.uci_manager.android_get_power_stats().await.map_err(|e| {
-                    error!("android_get_power_stats failed: {:?}", e);
-                    Error::UciError
-                })?;
+                let stats = self.uci_manager.android_get_power_stats().await?;
                 Ok(Response::PowerStats(stats))
             }
             Command::SendVendorCmd { gid, oid, payload } => {
-                let msg =
-                    self.uci_manager.raw_vendor_cmd(gid, oid, payload).await.map_err(|e| {
-                        error!("android_get_power_stats failed: {:?}", e);
-                        Error::UciError
-                    })?;
+                let msg = self.uci_manager.raw_vendor_cmd(gid, oid, payload).await?;
                 Ok(Response::RawVendorMessage(msg))
             }
         }

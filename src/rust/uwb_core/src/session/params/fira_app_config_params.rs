@@ -18,7 +18,7 @@ use log::warn;
 
 use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::session::params::{AppConfigParams, AppConfigTlvMap};
-use crate::uci::params::{AppConfigTlvType, SessionState};
+use crate::uci::params::{AppConfigTlvType, SessionState, SubSessionId};
 use crate::utils::builder_field;
 
 // The default value of each parameters.
@@ -113,7 +113,7 @@ pub struct FiraAppConfigParams {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: u32,
+    sub_session_id: SubSessionId,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,

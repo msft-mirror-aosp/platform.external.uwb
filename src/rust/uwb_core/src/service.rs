@@ -14,7 +14,6 @@
 
 //! This module provides the public interface of the UWB core library.
 
-pub mod error;
 pub mod uwb_service;
 pub mod uwb_service_builder;
 
