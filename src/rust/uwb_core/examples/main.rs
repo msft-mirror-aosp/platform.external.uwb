@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use log::debug;
 use tokio::sync::mpsc;
 
-use uwb_core::error::Result as UwbResult;
+use uwb_core::error::{Error as UwbError, Result as UwbResult};
 use uwb_core::service::{UwbNotification, UwbServiceBuilder};
 use uwb_core::uci::{RawUciMessage, UciHal};
 
@@ -52,6 +52,9 @@ async fn main() {
     // Handle the notifications from UWB service at another tokio task.
     tokio::spawn(async move {
         while let Some(notf) = notf_receiver.recv().await {
+            // Enumerate the notification for backward-compatibility.
+            // WARNING: Modifying or removing the current fields are prohibited in general,
+            // unless we could confirm that there is no client using the modified field.
             match notf {
                 UwbNotification::ServiceReset { success } => {
                     debug!("UwbService is reset, success: {}", success);
@@ -74,10 +77,37 @@ async fn main() {
                         gid, oid, payload
                     );
                 }
+
+                // UwbNotification is non_exhaustive so we need to add a wild branch here.
+                // With this wild branch, adding a new enum field doesn't break the build.
+                _ => {
+                    debug!("Received unknown notifitication: {:?}", notf);
+                }
             }
         }
     });
 
     // Call the public methods of UWB service under tokio runtime.
-    let _ = service.enable().await;
+    let result: UwbResult<()> = service.enable().await;
+
+    // Enumerate the error code for backward-compatibility.
+    // WARNING: Modifying or removing the current fields are prohibited in general,
+    // unless we could confirm that there is no client using the modified field.
+    if let Err(err) = result {
+        match err {
+            UwbError::BadParameters => {}
+            UwbError::MaxSessionsExceeded => {}
+            UwbError::MaxRrRetryReached => {}
+            UwbError::ProtocolSpecific => {}
+            UwbError::RemoteRequest => {}
+            UwbError::Timeout => {}
+            UwbError::CommandRetry => {}
+            UwbError::DuplicatedSessionId => {}
+            UwbError::Unknown => {}
+
+            // UwbError is non_exhaustive so we need to add a wild branch here.
+            // With this wild branch, adding a new enum field doesn't break the build.
+            _ => debug!("Received unknown error: {:?}", err),
+        }
+    }
 }
