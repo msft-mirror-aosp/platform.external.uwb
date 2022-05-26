@@ -423,7 +423,7 @@ mod tests {
     };
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
-    use crate::uci::params::{power_stats_eq, SessionState, SetAppConfigResponse, StatusCode};
+    use crate::uci::params::{SessionState, SetAppConfigResponse, StatusCode};
 
     #[tokio::test]
     async fn test_open_close_uci() {
@@ -599,7 +599,7 @@ mod tests {
         let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.android_get_power_stats().await.unwrap();
-        assert!(power_stats_eq(&result, &stats));
+        assert_eq!(result, stats);
     }
 
     #[tokio::test]

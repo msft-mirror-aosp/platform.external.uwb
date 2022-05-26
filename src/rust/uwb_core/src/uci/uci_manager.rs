@@ -705,10 +705,7 @@ mod tests {
     use num_traits::ToPrimitive;
 
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::params::{
-        app_config_tlvs_eq, cap_tlv_eq, device_config_tlvs_eq, power_stats_eq, CapTlvType,
-        StatusCode,
-    };
+    use crate::uci::params::{CapTlvType, StatusCode};
     use crate::utils::init_test_logging;
 
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -856,7 +853,7 @@ mod tests {
 
         let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
         let result = uci_manager.core_get_caps_info().await.unwrap();
-        assert!(cap_tlv_eq(&result[0], &tlv));
+        assert_eq!(result[0], tlv);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -911,7 +908,7 @@ mod tests {
         }];
         CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
         let result = uci_manager.core_get_config(vec![config_id]).await.unwrap();
-        assert!(device_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1023,7 +1020,7 @@ mod tests {
         let expected_result =
             vec![AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] }];
         let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
-        assert!(app_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1201,7 +1198,7 @@ mod tests {
             total_wake_count: 5,
         };
         let result = uci_manager.android_get_power_stats().await.unwrap();
-        assert!(power_stats_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
