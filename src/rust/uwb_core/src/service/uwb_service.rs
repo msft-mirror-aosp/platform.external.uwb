@@ -14,7 +14,7 @@
 
 //! This module provides UwbService and its related components.
 
-use log::{debug, error};
+use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{Error, Result};
@@ -30,6 +30,8 @@ use crate::uci::uci_manager::UciManager;
 /// The notification that is sent from UwbService to its caller.
 #[derive(Debug, PartialEq)]
 pub enum UwbNotification {
+    /// Notify the UWB service has been reset due to internal error. All the sessions are closed.
+    ServiceReset { success: bool },
     /// Notify the status of the UCI device.
     UciDeviceStatus(DeviceState),
     /// Notify the session with the id |session_id| is de-initialized.
@@ -204,7 +206,16 @@ impl<U: UciManager> UwbServiceActor<U> {
                         },
                         Some((cmd, result_sender)) => {
                             let result = self.handle_cmd(cmd).await;
+                            let timeout_occurs = matches!(result, Err(Error::Timeout));
                             let _ = result_sender.send(result);
+
+                            // The UCI HAL might be stuck at a weird state when the timeout occurs.
+                            // Reset the HAL and clear the internal state, and hope the HAL goes
+                            // back to the normal situation.
+                            if timeout_occurs {
+                                warn!("The command timeout, reset the service.");
+                                self.reset_service().await;
+                            }
                         }
                     }
                 }
@@ -224,42 +235,11 @@ impl<U: UciManager> UwbServiceActor<U> {
     async fn handle_cmd(&mut self, cmd: Command) -> Result<Response> {
         match cmd {
             Command::Enable => {
-                if self.session_manager.is_some() {
-                    debug!("The service is already enabled, skip.");
-                    return Ok(Response::Null);
-                }
-
-                let (core_notf_sender, core_notf_receiver) = mpsc::unbounded_channel();
-                let (uci_session_notf_sender, uci_session_notf_receiver) =
-                    mpsc::unbounded_channel();
-                let (vendor_notf_sender, vendor_notf_receiver) = mpsc::unbounded_channel();
-                self.uci_manager.set_core_notification_sender(core_notf_sender).await;
-                self.uci_manager.set_session_notification_sender(uci_session_notf_sender).await;
-                self.uci_manager.set_vendor_notification_sender(vendor_notf_sender).await;
-                self.uci_manager.open_hal().await?;
-
-                let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
-                self.core_notf_receiver = core_notf_receiver;
-                self.session_notf_receiver = session_notf_receiver;
-                self.vendor_notf_receiver = vendor_notf_receiver;
-                self.session_manager = Some(SessionManager::new(
-                    self.uci_manager.clone(),
-                    uci_session_notf_receiver,
-                    session_notf_sender,
-                ));
+                self.enable_service().await?;
                 Ok(Response::Null)
             }
             Command::Disable => {
-                if self.session_manager.is_none() {
-                    debug!("The service is already disabled, skip.");
-                    return Ok(Response::Null);
-                }
-
-                self.core_notf_receiver = mpsc::unbounded_channel().1;
-                self.session_notf_receiver = mpsc::unbounded_channel().1;
-                self.vendor_notf_receiver = mpsc::unbounded_channel().1;
-                self.session_manager = None;
-                self.uci_manager.close_hal().await?;
+                self.disable_service(false).await?;
                 Ok(Response::Null)
             }
             Command::InitSession { session_id, session_type, params } => {
@@ -337,7 +317,12 @@ impl<U: UciManager> UwbServiceActor<U> {
         debug!("Receive core notification: {:?}", notf);
         match notf {
             CoreNotification::DeviceStatus(state) => {
-                let _ = self.notf_sender.send(UwbNotification::UciDeviceStatus(state));
+                if state == DeviceState::DeviceStateError {
+                    warn!("Received DeviceStateError notification, reset the service");
+                    self.reset_service().await;
+                } else {
+                    let _ = self.notf_sender.send(UwbNotification::UciDeviceStatus(state));
+                }
             }
             CoreNotification::GenericError(_status) => {}
         }
@@ -365,6 +350,50 @@ impl<U: UciManager> UwbServiceActor<U> {
             oid: notf.oid,
             payload: notf.payload,
         });
+    }
+
+    async fn enable_service(&mut self) -> Result<()> {
+        if self.session_manager.is_some() {
+            debug!("The service is already enabled, skip.");
+            return Ok(());
+        }
+
+        let (core_notf_sender, core_notf_receiver) = mpsc::unbounded_channel();
+        let (uci_session_notf_sender, uci_session_notf_receiver) = mpsc::unbounded_channel();
+        let (vendor_notf_sender, vendor_notf_receiver) = mpsc::unbounded_channel();
+        self.uci_manager.set_core_notification_sender(core_notf_sender).await;
+        self.uci_manager.set_session_notification_sender(uci_session_notf_sender).await;
+        self.uci_manager.set_vendor_notification_sender(vendor_notf_sender).await;
+        self.uci_manager.open_hal().await?;
+
+        let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
+        self.core_notf_receiver = core_notf_receiver;
+        self.session_notf_receiver = session_notf_receiver;
+        self.vendor_notf_receiver = vendor_notf_receiver;
+        self.session_manager = Some(SessionManager::new(
+            self.uci_manager.clone(),
+            uci_session_notf_receiver,
+            session_notf_sender,
+        ));
+        Ok(())
+    }
+
+    async fn disable_service(&mut self, force: bool) -> Result<()> {
+        self.core_notf_receiver = mpsc::unbounded_channel().1;
+        self.session_notf_receiver = mpsc::unbounded_channel().1;
+        self.vendor_notf_receiver = mpsc::unbounded_channel().1;
+        self.session_manager = None;
+        self.uci_manager.close_hal(force).await?;
+        Ok(())
+    }
+
+    async fn reset_service(&mut self) {
+        let _ = self.disable_service(true).await;
+        let result = self.enable_service().await;
+        if result.is_err() {
+            error!("Failed to reset the service.");
+        }
+        let _ = self.notf_sender.send(UwbNotification::ServiceReset { success: result.is_ok() });
     }
 }
 
@@ -429,7 +458,7 @@ mod tests {
     async fn test_open_close_uci() {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
-        uci_manager.expect_close_hal(Ok(()));
+        uci_manager.expect_close_hal(false, Ok(()));
         let mut service = UwbService::new(mpsc::unbounded_channel().0, uci_manager);
 
         let result = service.enable().await;
@@ -658,5 +687,52 @@ mod tests {
         let expected_notf = UwbNotification::UciDeviceStatus(state);
         let notf = notf_receiver.recv().await.unwrap();
         assert_eq!(notf, expected_notf);
+    }
+
+    #[tokio::test]
+    async fn test_reset_service_after_timeout() {
+        let mut uci_manager = MockUciManager::new();
+        // The first open_hal() returns timeout.
+        uci_manager.expect_open_hal(vec![], Err(Error::Timeout));
+        // Then UwbService should close_hal() and open_hal() to reset the HAL.
+        uci_manager.expect_close_hal(true, Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(()));
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new(notf_sender, uci_manager.clone());
+
+        let result = service.enable().await;
+        assert_eq!(result, Err(Error::Timeout));
+
+        let expected_notf = UwbNotification::ServiceReset { success: true };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
+
+        assert!(uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_reset_service_when_error_state() {
+        let mut uci_manager = MockUciManager::new();
+        // The first open_hal() send DeviceStateError notification.
+        uci_manager.expect_open_hal(
+            vec![UciNotification::Core(CoreNotification::DeviceStatus(
+                DeviceState::DeviceStateError,
+            ))],
+            Ok(()),
+        );
+        // Then UwbService should close_hal() and open_hal() to reset the HAL.
+        uci_manager.expect_close_hal(true, Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(()));
+        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel();
+        let mut service = UwbService::new(notf_sender, uci_manager.clone());
+
+        let result = service.enable().await;
+        assert_eq!(result, Ok(()));
+
+        let expected_notf = UwbNotification::ServiceReset { success: true };
+        let notf = notf_receiver.recv().await.unwrap();
+        assert_eq!(notf, expected_notf);
+
+        assert!(uci_manager.wait_expected_calls_done().await);
     }
 }

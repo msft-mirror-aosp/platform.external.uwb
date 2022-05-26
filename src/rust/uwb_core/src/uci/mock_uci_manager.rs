@@ -66,8 +66,11 @@ impl MockUciManager {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
-    pub fn expect_close_hal(&mut self, out: Result<()>) {
-        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CloseHal { out });
+    pub fn expect_close_hal(&mut self, expected_force: bool, out: Result<()>) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::CloseHal { expected_force, out });
     }
 
     pub fn expect_device_reset(&mut self, expected_reset_config: ResetConfig, out: Result<()>) {
@@ -318,10 +321,10 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn close_hal(&mut self) -> Result<()> {
+    async fn close_hal(&mut self, force: bool) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::CloseHal { out }) => {
+            Some(ExpectedCall::CloseHal { expected_force, out }) if expected_force == force => {
                 self.expect_call_consumed.notify_one();
                 out
             }
@@ -695,6 +698,7 @@ enum ExpectedCall {
         out: Result<()>,
     },
     CloseHal {
+        expected_force: bool,
         out: Result<()>,
     },
     DeviceReset {

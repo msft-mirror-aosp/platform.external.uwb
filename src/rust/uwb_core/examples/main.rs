@@ -53,6 +53,9 @@ async fn main() {
     tokio::spawn(async move {
         while let Some(notf) = notf_receiver.recv().await {
             match notf {
+                UwbNotification::ServiceReset { success } => {
+                    debug!("UwbService is reset, success: {}", success);
+                }
                 UwbNotification::UciDeviceStatus(state) => {
                     debug!("UCI device status: {:?}", state);
                 }
