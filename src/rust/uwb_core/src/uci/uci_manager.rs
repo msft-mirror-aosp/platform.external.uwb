@@ -23,14 +23,14 @@ use uwb_uci_packets::{Packet, UciCommandPacket};
 use crate::uci::command::UciCommand;
 //use crate::uci::error::{Error, Result};
 use crate::error::{Error, Result};
-use crate::uci::message::UciMessage;
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
-use crate::uci::params::{
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
     RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
+use crate::uci::message::UciMessage;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
@@ -62,7 +62,7 @@ pub(crate) trait UciManager: 'static + Send + Clone {
     async fn open_hal(&mut self) -> Result<()>;
 
     // Close the UCI HAL.
-    async fn close_hal(&mut self) -> Result<()>;
+    async fn close_hal(&mut self, force: bool) -> Result<()>;
 
     // Send the standard UCI Commands.
     async fn device_reset(&mut self, reset_config: ResetConfig) -> Result<()>;
@@ -178,8 +178,8 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn close_hal(&mut self) -> Result<()> {
-        match self.send_cmd(UciManagerCmd::CloseHal).await {
+    async fn close_hal(&mut self, force: bool) -> Result<()> {
+        match self.send_cmd(UciManagerCmd::CloseHal { force }).await {
             Ok(UciResponse::CloseHal) => Ok(()),
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
@@ -544,18 +544,25 @@ impl<T: UciHal> UciManagerActor<T> {
                 }
             }
 
-            UciManagerCmd::CloseHal => {
-                if !self.is_hal_opened {
-                    warn!("The UCI HAL is already closed, skip.");
-                    let _ = result_sender.send(Err(Error::BadParameters));
-                    return;
-                }
-
-                let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
-                if result.is_ok() {
+            UciManagerCmd::CloseHal { force } => {
+                if force {
+                    debug!("Force closing the UCI HAL");
+                    let _ = self.hal.close().await;
                     self.on_hal_closed();
+                    let _ = result_sender.send(Ok(UciResponse::CloseHal));
+                } else {
+                    if !self.is_hal_opened {
+                        warn!("The UCI HAL is already closed, skip.");
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                        return;
+                    }
+
+                    let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
+                    if result.is_ok() {
+                        self.on_hal_closed();
+                    }
+                    let _ = result_sender.send(result);
                 }
-                let _ = result_sender.send(result);
             }
 
             UciManagerCmd::SendUciCommand { cmd } => {
@@ -693,7 +700,7 @@ enum UciManagerCmd {
     SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
     SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
     OpenHal,
-    CloseHal,
+    CloseHal { force: bool },
     SendUciCommand { cmd: UciCommand },
 }
 
@@ -704,11 +711,8 @@ mod tests {
     use bytes::Bytes;
     use num_traits::ToPrimitive;
 
+    use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::params::{
-        app_config_tlvs_eq, cap_tlv_eq, device_config_tlvs_eq, power_stats_eq, CapTlvType,
-        StatusCode,
-    };
     use crate::utils::init_test_logging;
 
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -758,7 +762,7 @@ mod tests {
         })
         .await;
 
-        let result = uci_manager.close_hal().await;
+        let result = uci_manager.close_hal(false).await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
@@ -782,7 +786,7 @@ mod tests {
         let mut hal = MockUciHal::new();
         let mut uci_manager = UciManagerImpl::new(hal.clone());
 
-        let result = uci_manager.close_hal().await;
+        let result = uci_manager.close_hal(false).await;
         assert!(matches!(result, Err(Error::BadParameters)));
         assert!(hal.wait_expected_calls_done().await);
     }
@@ -856,7 +860,7 @@ mod tests {
 
         let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
         let result = uci_manager.core_get_caps_info().await.unwrap();
-        assert!(cap_tlv_eq(&result[0], &tlv));
+        assert_eq!(result[0], tlv);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -911,7 +915,7 @@ mod tests {
         }];
         CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
         let result = uci_manager.core_get_config(vec![config_id]).await.unwrap();
-        assert!(device_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1023,7 +1027,7 @@ mod tests {
         let expected_result =
             vec![AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] }];
         let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
-        assert!(app_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1201,7 +1205,7 @@ mod tests {
             total_wake_count: 5,
         };
         let result = uci_manager.android_get_power_stats().await.unwrap();
-        assert!(power_stats_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 

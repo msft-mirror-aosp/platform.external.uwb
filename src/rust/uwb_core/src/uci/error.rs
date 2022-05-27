@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::error::{Error, Result};
-use crate::uci::params::StatusCode;
+use crate::params::uci_packets::StatusCode;
 
 pub(crate) fn status_code_to_result(status: StatusCode) -> Result<()> {
     match status {
