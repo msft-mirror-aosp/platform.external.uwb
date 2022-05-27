@@ -23,14 +23,14 @@ use uwb_uci_packets::{Packet, UciCommandPacket};
 use crate::uci::command::UciCommand;
 //use crate::uci::error::{Error, Result};
 use crate::error::{Error, Result};
-use crate::uci::message::UciMessage;
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
-use crate::uci::params::{
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
     RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
+use crate::uci::message::UciMessage;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
@@ -711,8 +711,8 @@ mod tests {
     use bytes::Bytes;
     use num_traits::ToPrimitive;
 
+    use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::params::{CapTlvType, StatusCode};
     use crate::utils::init_test_logging;
 
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(

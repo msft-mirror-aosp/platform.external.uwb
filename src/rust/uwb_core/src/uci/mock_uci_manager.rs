@@ -22,13 +22,13 @@ use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
 use crate::error::{Error, Result};
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
-use crate::uci::params::{
+use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::uci_manager::UciManager;
 
 #[derive(Clone)]

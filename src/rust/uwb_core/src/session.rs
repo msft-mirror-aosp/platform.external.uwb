@@ -19,5 +19,4 @@
 
 mod uwb_session;
 
-pub(crate) mod params;
 pub(crate) mod session_manager;

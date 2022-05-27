@@ -18,7 +18,7 @@ use log::error;
 use num_traits::ToPrimitive;
 
 use crate::error::{Error, Result};
-use crate::uci::params::{
+use crate::params::uci_packets::{
     ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
     RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
     StatusCode,
