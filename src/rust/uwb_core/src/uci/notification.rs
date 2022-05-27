@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::convert::{TryFrom, TryInto};
-use std::iter::zip;
 
 use log::error;
 use num_traits::ToPrimitive;
@@ -38,7 +37,7 @@ pub(crate) enum CoreNotification {
     GenericError(StatusCode),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SessionNotification {
     Status {
         session_id: SessionId,
@@ -52,53 +51,6 @@ pub(crate) enum SessionNotification {
     },
     RangeData(SessionRangeData),
 }
-impl PartialEq for SessionNotification {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                Self::Status {
-                    session_id: a_session_id,
-                    session_state: a_session_state,
-                    reason_code: a_reason_code,
-                },
-                Self::Status {
-                    session_id: b_session_id,
-                    session_state: b_session_state,
-                    reason_code: b_reason_code,
-                },
-            ) => {
-                a_session_id == b_session_id
-                    && a_session_state == b_session_state
-                    && a_reason_code == b_reason_code
-            }
-            (
-                Self::UpdateControllerMulticastList {
-                    session_id: a_session_id,
-                    remaining_multicast_list_size: a_remaining_multicast_list_size,
-                    status_list: a_status_list,
-                },
-                Self::UpdateControllerMulticastList {
-                    session_id: b_session_id,
-                    remaining_multicast_list_size: b_remaining_multicast_list_size,
-                    status_list: b_status_list,
-                },
-            ) => {
-                a_session_id == b_session_id
-                    && a_remaining_multicast_list_size == b_remaining_multicast_list_size
-                    && a_status_list.len() == b_status_list.len()
-                    && zip(a_status_list, b_status_list)
-                        .all(|(a_status, b_status)| controlee_status_eq(a_status, b_status))
-            }
-            (Self::RangeData(a_range_data), Self::RangeData(b_range_data)) => {
-                a_range_data == b_range_data
-            }
-            _ => false,
-        }
-    }
-}
-fn controlee_status_eq(a: &ControleeStatus, b: &ControleeStatus) -> bool {
-    a.mac_address == b.mac_address && a.subsession_id == b.subsession_id && a.status == b.status
-}
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionRangeData {
     pub sequence_number: u32,
@@ -108,66 +60,10 @@ pub struct SessionRangeData {
     pub ranging_measurements: RangingMeasurements,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RangingMeasurements {
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
-}
-
-impl PartialEq for RangingMeasurements {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Short(a_vec), Self::Short(b_vec)) => {
-                a_vec.len() == b_vec.len()
-                    && zip(a_vec, b_vec)
-                        .all(|(a, b)| short_address_two_way_ranging_measurement_eq(a, b))
-            }
-            (Self::Extended(a_vec), Self::Extended(b_vec)) => {
-                a_vec.len() == b_vec.len()
-                    && zip(a_vec, b_vec)
-                        .all(|(a, b)| extended_address_two_way_ranging_measurement_eq(a, b))
-            }
-            _ => false,
-        }
-    }
-}
-
-fn short_address_two_way_ranging_measurement_eq(
-    a: &ShortAddressTwoWayRangingMeasurement,
-    b: &ShortAddressTwoWayRangingMeasurement,
-) -> bool {
-    a.mac_address == b.mac_address
-        && a.status == b.status
-        && a.nlos == b.nlos
-        && a.distance == b.distance
-        && a.aoa_azimuth == b.aoa_azimuth
-        && a.aoa_azimuth_fom == b.aoa_azimuth_fom
-        && a.aoa_elevation == b.aoa_elevation
-        && a.aoa_elevation_fom == b.aoa_elevation_fom
-        && a.aoa_destination_azimuth == b.aoa_destination_azimuth
-        && a.aoa_destination_azimuth_fom == b.aoa_destination_azimuth_fom
-        && a.aoa_destination_elevation == b.aoa_destination_elevation
-        && a.aoa_destination_elevation_fom == b.aoa_destination_elevation_fom
-        && a.slot_index == b.slot_index
-}
-
-fn extended_address_two_way_ranging_measurement_eq(
-    a: &ExtendedAddressTwoWayRangingMeasurement,
-    b: &ExtendedAddressTwoWayRangingMeasurement,
-) -> bool {
-    a.mac_address == b.mac_address
-        && a.status == b.status
-        && a.nlos == b.nlos
-        && a.distance == b.distance
-        && a.aoa_azimuth == b.aoa_azimuth
-        && a.aoa_azimuth_fom == b.aoa_azimuth_fom
-        && a.aoa_elevation == b.aoa_elevation
-        && a.aoa_elevation_fom == b.aoa_elevation_fom
-        && a.aoa_destination_azimuth == b.aoa_destination_azimuth
-        && a.aoa_destination_azimuth_fom == b.aoa_destination_azimuth_fom
-        && a.aoa_destination_elevation == b.aoa_destination_elevation
-        && a.aoa_destination_elevation_fom == b.aoa_destination_elevation_fom
-        && a.slot_index == b.slot_index
 }
 
 impl UciNotification {
