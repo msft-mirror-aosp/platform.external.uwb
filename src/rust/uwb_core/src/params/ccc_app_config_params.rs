@@ -16,12 +16,12 @@ use std::collections::HashMap;
 
 use log::error;
 
-use crate::session::params::fira_app_config_params::{
+use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
+use crate::params::fira_app_config_params::{
     DeviceRole, DeviceType, KeyRotation, MultiNodeMode, RangeDataNtfConfig, StsConfig,
 };
-use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
-use crate::session::params::{AppConfigParams, AppConfigTlvMap};
-use crate::uci::params::{AppConfigTlvType, SessionState};
+use crate::params::uci_packets::{AppConfigTlvType, SessionState};
+use crate::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::utils::builder_field;
 
 const CHAP_IN_RSTU: u16 = 400; // 1 Chap = 400 RSTU.
@@ -121,6 +121,7 @@ pub struct CccAppConfigParamsBuilder {
     hopping_mode: Option<CccHoppingMode>,
 }
 
+#[allow(clippy::new_without_default)]
 impl CccAppConfigParamsBuilder {
     pub fn new() -> Self {
         Self {
