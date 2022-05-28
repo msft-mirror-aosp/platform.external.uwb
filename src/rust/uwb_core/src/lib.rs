@@ -21,5 +21,6 @@ pub(crate) mod session;
 pub(crate) mod utils;
 
 pub mod error;
+pub mod params;
 pub mod service;
 pub mod uci;

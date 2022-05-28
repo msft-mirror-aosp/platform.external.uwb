@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::session::params::ccc_app_config_params::MINIMUM_BLOCK_DURATION_MS;
-use crate::session::params::utils::{bytes_to_u32, bytes_to_u64, bytes_to_u8};
-use crate::session::params::AppConfigTlvMap;
-use crate::uci::params::AppConfigTlvType;
+use crate::params::app_config_params::AppConfigTlvMap;
+use crate::params::ccc_app_config_params::MINIMUM_BLOCK_DURATION_MS;
+use crate::params::uci_packets::AppConfigTlvType;
+use crate::params::utils::{bytes_to_u32, bytes_to_u64, bytes_to_u8};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CccStartedAppConfigParams {
@@ -45,7 +45,7 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
+    use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
 
     #[test]
     fn test_from_config_map() {

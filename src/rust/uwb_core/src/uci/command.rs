@@ -19,7 +19,7 @@ use log::error;
 use num_traits::FromPrimitive;
 
 use crate::error::{Error, Result};
-use crate::uci::params::{
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };

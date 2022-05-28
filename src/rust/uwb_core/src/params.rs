@@ -12,23 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This module provides the functionalities related to UWB Command Interface (UCI).
+pub(super) mod utils;
 
-mod command;
-mod message;
-mod response;
-mod timeout_uci_hal;
+pub mod app_config_params;
+pub mod ccc_app_config_params;
+pub mod ccc_started_app_config_params;
+pub mod fira_app_config_params;
+pub mod uci_packets;
 
-pub(crate) mod error;
-pub(crate) mod notification;
-pub(crate) mod uci_manager;
-
-pub mod uci_hal;
-
-#[cfg(test)]
-pub(crate) mod mock_uci_hal;
-#[cfg(test)]
-pub(crate) mod mock_uci_manager;
-
-// Re-export the public elements.
-pub use uci_hal::{RawUciMessage, UciHal};
+// Re-export params from all of the sub-modules.
+pub use app_config_params::*;
+pub use ccc_app_config_params::*;
+pub use ccc_started_app_config_params::*;
+pub use fira_app_config_params::*;
+pub use uci_packets::*;

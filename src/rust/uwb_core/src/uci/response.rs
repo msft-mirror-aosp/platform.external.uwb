@@ -18,11 +18,11 @@ use log::error;
 use num_traits::ToPrimitive;
 
 use crate::error::{Error, Result};
-use crate::uci::error::status_code_to_result;
-use crate::uci::params::{
+use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse, StatusCode,
 };
+use crate::uci::error::status_code_to_result;
 
 #[derive(Debug)]
 pub(super) enum UciResponse {

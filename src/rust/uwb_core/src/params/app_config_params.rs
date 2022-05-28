@@ -12,19 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod ccc_app_config_params;
-pub mod ccc_started_app_config_params;
-pub mod fira_app_config_params;
-pub(super) mod utils;
-
 use std::collections::HashMap;
 
-use crate::session::params::ccc_app_config_params::CccAppConfigParams;
-use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
-use crate::session::params::fira_app_config_params::FiraAppConfigParams;
-use crate::uci::params::{AppConfigTlv, AppConfigTlvType, SessionState, SessionType};
+use crate::params::ccc_app_config_params::CccAppConfigParams;
+use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+use crate::params::fira_app_config_params::FiraAppConfigParams;
+use crate::params::uci_packets::{AppConfigTlv, AppConfigTlvType, SessionState, SessionType};
 
-type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
+pub(super) type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
 
 /// The application configuration parameters of the UWB session. It is used to generate the
 /// parameters for the SESSION_SET_APP_CONFIG_CMD, or converted from the result of the
@@ -57,7 +52,7 @@ impl AppConfigParams {
         config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
     }
 
-    fn generate_config_map(&self) -> AppConfigTlvMap {
+    pub(super) fn generate_config_map(&self) -> AppConfigTlvMap {
         match self {
             Self::Fira(params) => params.generate_config_map(),
             Self::Ccc(params) => params.generate_config_map(),
@@ -65,7 +60,7 @@ impl AppConfigParams {
         }
     }
 
-    fn generate_updated_config_map(
+    pub(super) fn generate_updated_config_map(
         &self,
         prev_params: &Self,
         session_state: SessionState,

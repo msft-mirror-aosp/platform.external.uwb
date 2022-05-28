@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use crate::error::Result;
-use crate::uci::params::SessionId;
+use crate::params::uci_packets::SessionId;
 
 pub type RawUciMessage = Vec<u8>;
 

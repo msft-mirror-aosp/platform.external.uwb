@@ -18,12 +18,12 @@ use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{Error, Result};
-use crate::session::params::AppConfigParams;
-use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
-use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
-use crate::uci::params::{
+use crate::params::app_config_params::AppConfigParams;
+use crate::params::uci_packets::{
     Controlee, ReasonCode, SessionId, SessionState, SessionType, UpdateMulticastListAction,
 };
+use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
+use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
 
 const MAX_SESSION_COUNT: usize = 5;
@@ -362,13 +362,13 @@ enum SessionCommand {
 pub(crate) mod test_utils {
     use super::*;
 
-    use crate::session::params::ccc_app_config_params::*;
-    use crate::session::params::fira_app_config_params::*;
-    use crate::uci::mock_uci_manager::MockUciManager;
-    use crate::uci::notification::{RangingMeasurements, UciNotification};
-    use crate::uci::params::{
+    use crate::params::ccc_app_config_params::*;
+    use crate::params::fira_app_config_params::*;
+    use crate::params::uci_packets::{
         RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement, StatusCode,
     };
+    use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
 
     pub(crate) fn generate_params() -> AppConfigParams {
@@ -474,13 +474,13 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
-    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
-    use crate::uci::notification::UciNotification;
-    use crate::uci::params::{
+    use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+    use crate::params::uci_packets::{
         AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
         SetAppConfigResponse, StatusCode,
     };
+    use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
+    use crate::uci::notification::UciNotification;
 
     #[tokio::test]
     async fn test_init_deinit_session() {
