@@ -20,13 +20,14 @@ use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 
-use crate::session::error::{Error, Result};
-use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
-use crate::session::params::AppConfigParams;
-use crate::uci::params::{
+use crate::error::{Error, Result};
+use crate::params::app_config_params::AppConfigParams;
+use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+use crate::params::uci_packets::{
     Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
-    StatusCode, UpdateMulticastListAction,
+    UpdateMulticastListAction,
 };
+use crate::uci::error::status_code_to_result;
 use crate::uci::uci_manager::UciManager;
 
 const NOTIFICATION_TIMEOUT_MS: u64 = 1000;
@@ -172,10 +173,7 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn initialize(&mut self, params: AppConfigParams) -> Result<Response> {
         debug_assert!(*self.state_receiver.borrow() == SessionState::SessionStateDeinit);
 
-        if let Err(e) = self.uci_manager.session_init(self.session_id, self.session_type).await {
-            error!("Failed to initialize session: {:?}", e);
-            return Err(Error::Uci);
-        }
+        self.uci_manager.session_init(self.session_id, self.session_type).await?;
         self.wait_state(SessionState::SessionStateInit).await?;
 
         self.reconfigure(params).await?;
@@ -185,10 +183,7 @@ impl<T: UciManager> UwbSessionActor<T> {
     }
 
     async fn deinitialize(&mut self) -> Result<Response> {
-        if let Err(e) = self.uci_manager.session_deinit(self.session_id).await {
-            error!("Failed to deinit session: {:?}", e);
-            return Err(Error::Uci);
-        }
+        self.uci_manager.session_deinit(self.session_id).await?;
         Ok(Response::Null)
     }
 
@@ -197,13 +192,10 @@ impl<T: UciManager> UwbSessionActor<T> {
         match state {
             SessionState::SessionStateActive => {
                 warn!("Session {} is already running", self.session_id);
-                Err(Error::WrongState(state))
+                Err(Error::BadParameters)
             }
             SessionState::SessionStateIdle => {
-                if let Err(e) = self.uci_manager.range_start(self.session_id).await {
-                    error!("Failed to start ranging: {:?}", e);
-                    return Err(Error::Uci);
-                }
+                self.uci_manager.range_start(self.session_id).await?;
                 self.wait_state(SessionState::SessionStateActive).await?;
 
                 let params = if self.session_type != SessionType::Ccc {
@@ -217,19 +209,22 @@ impl<T: UciManager> UwbSessionActor<T> {
                         .await
                         .map_err(|e| {
                             error!("Failed to get CCC app config after start ranging: {:?}", e);
-                            Error::Uci
+                            e
                         })?;
                     let config_map =
                         HashMap::from_iter(tlvs.into_iter().map(|tlv| (tlv.cfg_id, tlv.v)));
-                    let params =
-                        CccStartedAppConfigParams::from_config_map(config_map).ok_or(Error::Uci)?;
+                    let params = CccStartedAppConfigParams::from_config_map(config_map)
+                        .ok_or_else(|| {
+                            error!("Failed to generate CccStartedAppConfigParams");
+                            Error::Unknown
+                        })?;
                     AppConfigParams::CccStarted(params)
                 };
                 Ok(Response::AppConfigParams(params))
             }
             _ => {
                 error!("Session {} cannot start running at {:?}", self.session_id, state);
-                Err(Error::WrongState(state))
+                Err(Error::BadParameters)
             }
         }
     }
@@ -242,17 +237,14 @@ impl<T: UciManager> UwbSessionActor<T> {
                 Ok(Response::Null)
             }
             SessionState::SessionStateActive => {
-                if let Err(e) = self.uci_manager.range_stop(self.session_id).await {
-                    error!("Failed to start ranging: {:?}", e);
-                    return Err(Error::Uci);
-                }
+                self.uci_manager.range_stop(self.session_id).await?;
                 self.wait_state(SessionState::SessionStateIdle).await?;
 
                 Ok(Response::Null)
             }
             _ => {
                 error!("Session {} cannot stop running at {:?}", self.session_id, state);
-                Err(Error::WrongState(state))
+                Err(Error::BadParameters)
             }
         }
     }
@@ -267,29 +259,22 @@ impl<T: UciManager> UwbSessionActor<T> {
                     tlvs
                 } else {
                     error!("Cannot update the app config at state {:?}: {:?}", state, params);
-                    return Err(Error::InvalidArguments);
+                    return Err(Error::BadParameters);
                 }
             }
             None => params.generate_tlvs(),
         };
 
-        match self.uci_manager.session_set_app_config(self.session_id, tlvs).await {
-            Ok(result) => {
-                for config_status in result.config_status.iter() {
-                    warn!(
-                        "AppConfig {:?} is not applied: {:?}",
-                        config_status.cfg_id, config_status.status
-                    );
-                }
-                if result.status != StatusCode::UciStatusOk {
-                    error!("Failed to set app_config. StatusCode: {:?}", result.status);
-                    return Err(Error::Uci);
-                }
-            }
-            Err(e) => {
-                error!("Failed to set app_config: {:?}", e);
-                return Err(Error::Uci);
-            }
+        let result = self.uci_manager.session_set_app_config(self.session_id, tlvs).await?;
+        for config_status in result.config_status.iter() {
+            warn!(
+                "AppConfig {:?} is not applied: {:?}",
+                config_status.cfg_id, config_status.status
+            );
+        }
+        if let Err(e) = status_code_to_result(result.status) {
+            error!("Failed to set app_config. StatusCode: {:?}", result.status);
+            return Err(e);
         }
 
         self.params = Some(params);
@@ -304,22 +289,18 @@ impl<T: UciManager> UwbSessionActor<T> {
     ) -> Result<Response> {
         if self.session_type == SessionType::Ccc {
             error!("Cannot update multicast list for CCC session");
-            return Err(Error::InvalidArguments);
+            return Err(Error::BadParameters);
         }
 
         let state = *self.state_receiver.borrow();
         if !matches!(state, SessionState::SessionStateIdle | SessionState::SessionStateActive) {
             error!("Cannot update multicast list at state {:?}", state);
-            return Err(Error::WrongState(state));
+            return Err(Error::BadParameters);
         }
 
         self.uci_manager
             .session_update_controller_multicast_list(self.session_id, action, controlees)
-            .await
-            .map_err(|e| {
-                error!("Failed to update multicast list: {:?}", e);
-                Error::Uci
-            })?;
+            .await?;
 
         // Wait for the notification of the update status.
         let results = timeout(Duration::from_millis(NOTIFICATION_TIMEOUT_MS), notf_receiver)
@@ -330,7 +311,7 @@ impl<T: UciManager> UwbSessionActor<T> {
             })?
             .map_err(|_| {
                 error!("oneshot sender is dropped.");
-                Error::TokioFailure
+                Error::Unknown
             })?;
 
         // Check the update status for adding new controlees.
@@ -338,7 +319,7 @@ impl<T: UciManager> UwbSessionActor<T> {
             for result in results.iter() {
                 if result.status != MulticastUpdateStatusCode::StatusOkMulticastListUpdate {
                     error!("Failed to update multicast list: {:?}", result);
-                    return Err(Error::Uci);
+                    return Err(Error::Unknown);
                 }
             }
         }
@@ -356,7 +337,7 @@ impl<T: UciManager> UwbSessionActor<T> {
             })?
             .map_err(|_| {
                 debug!("UwbSession is about to drop.");
-                Error::TokioFailure
+                Error::Unknown
             })?;
 
         // Check if the latest session status is expected or not.
@@ -366,7 +347,7 @@ impl<T: UciManager> UwbSessionActor<T> {
                 "Transit to wrong Session state {:?}. The expected state is {:?}",
                 state, expected_state
             );
-            return Err(Error::WrongState(state));
+            return Err(Error::BadParameters);
         }
 
         Ok(())
