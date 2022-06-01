@@ -21,13 +21,13 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 
 use crate::error::{Error, Result};
-use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
-use crate::session::params::AppConfigParams;
-use crate::uci::error::status_code_to_result;
-use crate::uci::params::{
+use crate::params::app_config_params::AppConfigParams;
+use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+use crate::params::uci_packets::{
     Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
     UpdateMulticastListAction,
 };
+use crate::uci::error::status_code_to_result;
 use crate::uci::uci_manager::UciManager;
 
 const NOTIFICATION_TIMEOUT_MS: u64 = 1000;
