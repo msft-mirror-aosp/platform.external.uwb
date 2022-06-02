@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This module provides UwbService and its related components.
+//! This module defines the UwbService and its related components.
 
 use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
@@ -32,15 +32,37 @@ use crate::uci::uci_manager::UciManager;
 #[derive(Debug, PartialEq)]
 pub enum UwbNotification {
     /// Notify the UWB service has been reset due to internal error. All the sessions are closed.
-    ServiceReset { success: bool },
+    ServiceReset {
+        /// Indicate the reset is successful or not.
+        success: bool,
+    },
     /// Notify the status of the UCI device.
     UciDeviceStatus(DeviceState),
-    /// Notify the session with the id |session_id| is de-initialized.
-    SessionState { session_id: SessionId, session_state: SessionState, reason_code: ReasonCode },
+    /// Notify the state of the session with the id |session_id| is changed.
+    SessionState {
+        /// The identifier of the session.
+        session_id: SessionId,
+        /// The current state of the session.
+        session_state: SessionState,
+        /// The reason of the state change.
+        reason_code: ReasonCode,
+    },
     /// Notify the ranging data of the session with the id |session_id| is received.
-    RangeData { session_id: SessionId, range_data: SessionRangeData },
+    RangeData {
+        /// The identifier of the ranging session.
+        session_id: SessionId,
+        /// The received range data.
+        range_data: SessionRangeData,
+    },
     /// Notify the vendor notification is received.
-    VendorNotification { gid: u32, oid: u32, payload: Vec<u8> },
+    VendorNotification {
+        /// The group id of the message.
+        gid: u32,
+        /// The opcode of the message.
+        oid: u32,
+        /// The payload of the message.
+        payload: Vec<u8>,
+    },
 }
 
 /// The entry class (a.k.a top shim) of the core library. The class accepts requests from the
