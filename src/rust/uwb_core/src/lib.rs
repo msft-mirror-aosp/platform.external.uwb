@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO(akahuang): remove it after adding documentation for all public elements.
-#![allow(missing_docs)]
-
 //! The library provides the core logic of Ultra-wide band (UWB) technology.
 
 pub(crate) mod session;
