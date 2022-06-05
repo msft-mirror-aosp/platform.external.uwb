@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This module provides the types of the parameters or returned data of the public interfaces.
+
 pub(super) mod utils;
 
 pub mod app_config_params;
