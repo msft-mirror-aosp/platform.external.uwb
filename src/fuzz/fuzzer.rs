@@ -4,18 +4,20 @@
 use android_hardware_uwb::aidl::android::hardware::uwb::{
     UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
+use android_hardware_uwb::binder::{DeathRecipient, Strong};
 use libfuzzer_sys::{arbitrary::Arbitrary, fuzz_target};
 use log::{error, info};
 use num_traits::cast::FromPrimitive;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::runtime::Builder;
+use tokio::sync::{mpsc, Mutex};
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, AndroidGetPowerStatsRspBuilder,
     AndroidSetCountryCodeCmdBuilder, AndroidSetCountryCodeRspBuilder, ControleeStatus,
     DeviceResetRspBuilder, DeviceState, DeviceStatusNtfBuilder,
     ExtendedAddressTwoWayRangingMeasurement, ExtendedMacTwoWayRangeDataNtfBuilder,
     GenericErrorBuilder, GetCapsInfoCmdBuilder, GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoRspBuilder, MulticastUpdateStatusCode, PowerStats, RangeStartCmdBuilder,
+    GetDeviceInfoRspBuilder, MulticastUpdateStatusCode, Packet, PowerStats, RangeStartCmdBuilder,
     RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder, ReasonCode,
     SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
     SessionGetAppConfigRspBuilder, SessionGetCountCmdBuilder, SessionGetCountRspBuilder,
@@ -24,9 +26,9 @@ use uwb_uci_packets::{
     SessionType, SessionUpdateControllerMulticastListNtfBuilder,
     SessionUpdateControllerMulticastListRspBuilder, ShortAddressTwoWayRangingMeasurement,
     ShortMacTwoWayRangeDataNtfBuilder, StatusCode, UciCommandPacket, UciPacketChild,
-    UciPacketPacket, UciVendor_9_ResponseBuilder,
+    UciPacketHalPacket, UciPacketPacket, UciVendor_9_ResponseBuilder,
 };
-use uwb_uci_rust::adaptation::mock_adaptation::MockUwbAdaptation;
+use uwb_uci_rust::adaptation::{mock_hal::MockHal, UwbAdaptationImpl};
 use uwb_uci_rust::error::UwbErr;
 use uwb_uci_rust::event_manager::mock_event_manager::MockEventManager;
 use uwb_uci_rust::uci::{
@@ -164,18 +166,18 @@ enum Command {
     UciNtf(UciNotification),
 }
 
-fn create_dispatcher_with_mock_adaptation(
+async fn create_dispatcher_with_mock_adaptation(
     msgs: Vec<Command>,
 ) -> Result<(DispatcherImpl, mpsc::UnboundedSender<HalCallback>), UwbErr> {
     let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
-    let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender.clone()));
+    let mut mock_hal = MockHal::new(Some(rsp_sender.clone()));
     let mut mock_event_manager = MockEventManager::new();
     for msg in &msgs {
         match msg {
             Command::JNICmd(cmd) => match cmd {
                 JNICommand::Enable => {
-                    mock_adaptation.expect_hal_open(Ok(()));
-                    mock_adaptation.expect_core_initialization(Ok(()));
+                    mock_hal.expect_open(Ok(()));
+                    mock_hal.expect_core_init(Ok(()));
                 }
                 JNICommand::Disable(_graceful) => {
                     break;
@@ -184,18 +186,26 @@ fn create_dispatcher_with_mock_adaptation(
                     let (cmd, rsp) = match generate_fake_cmd_rsp(cmd) {
                         Ok((command, response)) => (command, response),
                         Err(e) => {
-                            mock_adaptation.clear_expected_calls();
+                            mock_hal.clear_expected_calls();
                             mock_event_manager.clear_expected_calls();
                             return Err(e);
                         }
                     };
-                    mock_adaptation.expect_send_uci_message(cmd, Some(rsp), None, Ok(()))
+                    let cmd_packet: UciPacketPacket = cmd.clone().into();
+                    let mut cmd_frag_packets: Vec<UciPacketHalPacket> = cmd_packet.into();
+                    let cmd_frag_data = cmd_frag_packets.pop().unwrap().to_vec();
+                    let cmd_frag_data_len = cmd_frag_data.len();
+                    mock_hal.expect_send_uci_message(
+                        cmd_frag_data,
+                        Some(rsp),
+                        Ok(cmd_frag_data_len.try_into().unwrap()),
+                    )
                 }
             },
             Command::UciNtf(ntf) => match ntf {
                 UciNotification::GenericError { status } => {
                     if StatusCode::from_u8(*status).is_none() {
-                        mock_adaptation.clear_expected_calls();
+                        mock_hal.clear_expected_calls();
                         mock_event_manager.clear_expected_calls();
                         return Err(UwbErr::InvalidArgs);
                     }
@@ -203,7 +213,7 @@ fn create_dispatcher_with_mock_adaptation(
                 }
                 UciNotification::DeviceStatusNtf { device_state } => {
                     if DeviceState::from_u8(*device_state).is_none() {
-                        mock_adaptation.clear_expected_calls();
+                        mock_hal.clear_expected_calls();
                         mock_event_manager.clear_expected_calls();
                         return Err(UwbErr::InvalidArgs);
                     }
@@ -218,7 +228,7 @@ fn create_dispatcher_with_mock_adaptation(
                         || ReasonCode::from_u8(*reason_code).is_none()
                         || *session_state == 0
                     {
-                        mock_adaptation.clear_expected_calls();
+                        mock_hal.clear_expected_calls();
                         mock_event_manager.clear_expected_calls();
                         return Err(UwbErr::InvalidArgs);
                     }
@@ -233,7 +243,7 @@ fn create_dispatcher_with_mock_adaptation(
                 } => {
                     for measurement in two_way_ranging_measurements.iter() {
                         if StatusCode::from_u8(measurement.status).is_none() {
-                            mock_adaptation.clear_expected_calls();
+                            mock_hal.clear_expected_calls();
                             mock_event_manager.clear_expected_calls();
                             return Err(UwbErr::InvalidArgs);
                         }
@@ -249,7 +259,7 @@ fn create_dispatcher_with_mock_adaptation(
                 } => {
                     for measurement in two_way_ranging_measurements.iter() {
                         if StatusCode::from_u8(measurement.status).is_none() {
-                            mock_adaptation.clear_expected_calls();
+                            mock_hal.clear_expected_calls();
                             mock_event_manager.clear_expected_calls();
                             return Err(UwbErr::InvalidArgs);
                         }
@@ -263,7 +273,7 @@ fn create_dispatcher_with_mock_adaptation(
                 } => {
                     for status in controlee_status.iter() {
                         if MulticastUpdateStatusCode::from_u8(status.status).is_none() {
-                            mock_adaptation.clear_expected_calls();
+                            mock_hal.clear_expected_calls();
                             mock_event_manager.clear_expected_calls();
                             return Err(UwbErr::InvalidArgs);
                         }
@@ -276,11 +286,19 @@ fn create_dispatcher_with_mock_adaptation(
             },
         }
     }
-    mock_adaptation.expect_hal_close(Ok(()));
+    mock_hal.expect_close(Ok(()));
+    let mut adaptation = Arc::new(
+        UwbAdaptationImpl::new_with_args(
+            rsp_sender.clone(),
+            Strong::new(Box::new(mock_hal)),
+            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+        )
+        .await?,
+    );
     Ok((
         DispatcherImpl::new_for_testing(
             mock_event_manager,
-            mock_adaptation as SyncUwbAdaptation,
+            adaptation as SyncUwbAdaptation,
             rsp_receiver,
         )?,
         rsp_sender,
@@ -445,8 +463,9 @@ fn generate_fake_cmd_rsp(
 }
 
 fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
+    let rt = Builder::new_current_thread().enable_all().build()?;
     let (mut mock_dispatcher, mut rsp_sender) =
-        create_dispatcher_with_mock_adaptation(msgs.clone())?;
+        rt.block_on(create_dispatcher_with_mock_adaptation(msgs.clone()))?;
     for msg in msgs {
         match msg {
             Command::JNICmd(cmd) => match cmd {
