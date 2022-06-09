@@ -139,6 +139,8 @@ enum AppConfigTlvType : 8 {
     RANGING_TIME_STRUCT = 0x1A,
     SLOTS_PER_RR = 0x1B,
     TX_ADAPTIVE_PAYLOAD_POWER = 0x1C,
+    // TODO: Ensure this value is correct in the final 2.0 specification.
+    RNG_DATA_NTF_AOA_BOUND = 0x1D,
     RESPONDER_SLOT_INDEX = 0x1E,
     PRF_MODE = 0x1F,
     SCHEDULED_MODE = 0x22,
