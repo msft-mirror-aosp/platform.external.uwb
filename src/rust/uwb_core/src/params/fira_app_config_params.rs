@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This module defines the UCI application config parameters for the FiRa ranging session.
+
 use std::collections::{HashMap, HashSet};
 
 use log::warn;
 
-use crate::session::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
-use crate::session::params::{AppConfigParams, AppConfigTlvMap};
-use crate::uci::params::{AppConfigTlvType, SessionState};
+use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
+use crate::params::uci_packets::{AppConfigTlvType, SessionState, SubSessionId};
+use crate::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::utils::builder_field;
 
 // The default value of each parameters.
@@ -113,7 +115,7 @@ pub struct FiraAppConfigParams {
     block_stride_length: u8,
     result_report_config: ResultReportConfig,
     in_band_termination_attempt_count: u8,
-    sub_session_id: u32,
+    sub_session_id: SubSessionId,
     bprf_phr_data_rate: BprfPhrDataRate,
     max_number_of_measurements: u16,
     sts_length: StsLength,
@@ -268,6 +270,7 @@ impl FiraAppConfigParams {
                 != DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS
     }
 
+    /// Determine if the |config_map| is updatable in the state |session_state|.
     pub fn is_config_updatable(config_map: &AppConfigTlvMap, session_state: SessionState) -> bool {
         match session_state {
             SessionState::SessionStateActive => {
@@ -285,6 +288,7 @@ impl FiraAppConfigParams {
         }
     }
 
+    /// Generate the AppConfigTlv HashMap from the FiraAppConfigParams instance.
     pub fn generate_config_map(&self) -> AppConfigTlvMap {
         debug_assert!(self.is_valid().is_some());
 
@@ -368,6 +372,7 @@ impl FiraAppConfigParams {
     }
 }
 
+/// The builder pattern for the FiraAppConfigParams.
 pub struct FiraAppConfigParamsBuilder {
     device_type: Option<DeviceType>,
     ranging_round_usage: RangingRoundUsage,
@@ -418,6 +423,8 @@ pub struct FiraAppConfigParamsBuilder {
     number_of_aoa_elevation_measurements: u8,
 }
 
+#[allow(clippy::new_without_default)]
+#[allow(missing_docs)]
 impl FiraAppConfigParamsBuilder {
     /// Fill the default value of each field if exists, otherwise put None.
     pub fn new() -> Self {
@@ -632,38 +639,56 @@ impl FiraAppConfigParamsBuilder {
     builder_field!(number_of_aoa_elevation_measurements, u8);
 }
 
+/// The device type.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceType {
+    /// Controlee
     Controlee = 0,
+    /// Controller
     Controller = 1,
 }
 
+/// The mode of ranging round usage.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangingRoundUsage {
+    /// SS-TWR with Deferred Mode
     SsTwr = 1,
+    /// DS-TWR with Deferred Mode (default)
     DsTwr = 2,
+    /// SS-TWR with Non-deferred Mode
     SsTwrNon = 3,
+    /// DS-TWR with Non-deferred Mode
     DsTwrNon = 4,
 }
 
+/// This parameter indicates how the system shall generate the STS.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StsConfig {
+    /// Static STS (default)
     Static = 0,
+    /// Dynamic STS
     Dynamic = 1,
+    /// Dynamic STS for Responder specific Sub-session Key
     DynamicForControleeIndividualKey = 2,
 }
 
+/// The mode of multi node.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MultiNodeMode {
+    /// Single device to Single device (Unicast)
     Unicast = 0,
+    /// One to Many
     OneToMany = 1,
+    /// Many to Many
     ManyToMany = 2,
 }
 
+/// The UWB channel number. (default = 9)
+#[allow(missing_docs)]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UwbChannel {
@@ -677,9 +702,12 @@ pub enum UwbChannel {
     Channel14 = 14,
 }
 
+/// The UWB address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UwbAddress {
+    /// The short MAC address (2 bytes)
     Short([u8; 2]),
+    /// The extended MAC address (8 bytes)
     Extended([u8; 8]),
 }
 
@@ -696,17 +724,42 @@ fn addresses_to_bytes(addresses: Vec<UwbAddress>) -> Vec<u8> {
     addresses.into_iter().flat_map(Into::<Vec<u8>>::into).collect()
 }
 
+/// CRC type in MAC footer.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacFcsType {
+    /// CRC 16 (default)
     Crc16 = 0,
+    /// CRC 32
     Crc32 = 1,
 }
 
+/// This parameter is used to tell the UWBS which messages will be included in a Ranging Round.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangingRoundControl {
+    /// Ranging Result Report Message (RRRM)
+    ///
+    /// If set to true (default), a Controller shall schedule an RRRM in the Ranging Device
+    /// Management List (RDML).
+    /// If set to false, a Controller shall not schedule an RRRM in the RDML.
+    /// This field shall be ignored by a Controlee; Controlees shall follow the message sequence
+    /// provided in the RDML.
     pub ranging_result_report_message: bool,
+    /// Control Message (CM)
+    ///
+    /// If set to true (default), a Controller shall send a separate CM and a Controlee shall expect
+    /// a separate CM.
+    /// If set to false, a Controller shall not send a separate CM and a Controlee shall not expect
+    /// a separate CM.
     pub control_message: bool,
+    /// Measurement Report Message (MRM)
+    ///
+    /// If set to false (default), the controller shall schedule the MRM to be sent from the
+    /// initiator to the Responder(s) in the RDML.
+    /// If set to true, the controller shall schedule the MRM to be sent from the responder(s) to
+    /// the initiator in the RDML.
+    /// This field shall be ignored by a controlee. The controlees shall follow the message sequence
+    /// provided in the RDML
     pub measurement_report_message: bool,
 }
 
@@ -730,110 +783,172 @@ impl RangingRoundControl {
     }
 }
 
+/// This parameter is used to configure AOA results in the range data notification.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AoaResultRequest {
+    /// Disable AOA
     NoAoaReport = 0,
+    /// Enable AOA (default)
     ReqAoaResults = 1,
+    /// Enable only AOA Azimuth
     ReqAoaResultsAzimuthOnly = 2,
+    /// Enable only AOA Elevation
     ReqAoaResultsElevationOnly = 3,
+    /// Enable AOA interleaved
     ReqAoaResultsInterleaved = 0xF0,
 }
 
+/// This config is used to enable/disable the range data notification.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeDataNtfConfig {
+    /// Disable range data notification
     Disable = 0,
+    /// Enable range data notification (default)
     Enable = 1,
+    /// Enable range data notification while in proximity range
     EnableProximity = 2,
 }
 
+/// The device role.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceRole {
+    /// Responder of the session
     Responder = 0,
+    /// Initiator of the session
     Initiator = 1,
 }
 
+/// Rframe config.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RframeConfig {
+    /// SP0
     SP0 = 0,
+    /// SP1
     SP1 = 1,
+    /// SP3 (default)
     SP3 = 3,
 }
 
+/// This value configures the data rate.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PsduDataRate {
+    /// 6.81 Mbps (default)
     Rate6m81 = 0,
+    /// 7.80 Mbps
     Rate7m80 = 1,
+    /// 27.2 Mbps
     Rate27m2 = 2,
+    /// 31.2 Mbps
     Rate31m2 = 3,
+    /// 850Kbps
+    Rate850k = 4,
 }
 
+/// Preamble duration is same as Preamble Symbol Repetitions (PSR).
+///
+/// Two configurations are possible. BPRF uses only 64 symbols. HPRF can use both.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreambleDuration {
+    /// 32 symbols
     T32Symbols = 0,
+    /// 64 symbols (default)
     T64Symbols = 1,
 }
 
+/// The type of ranging time scheduling.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangingTimeStruct {
+    /// Interval Based Scheduling
     IntervalBasedScheduling = 0,
+    /// Block Based Scheduling (default)
     BlockBasedScheduling = 1,
 }
 
+/// This configuration is used to enable/disable adaptive payload power for TX.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TxAdaptivePayloadPower {
+    /// Disable (default)
     Disable = 0,
+    /// Enable
     Enable = 1,
 }
 
+/// This parameter is used to configure the mean PRF.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrfMode {
+    /// 62.4 MHz PRF. BPRF mode (default)
     Bprf = 0,
+    /// 124.8 MHz PRF. HPRF mode
     HprfWith124_8MHz = 1,
+    /// 249.6 MHz PRF. HPRF mode with data rate 27.2 and 31.2 Mbps
     HprfWith249_6MHz = 2,
 }
 
+/// This parameter is used to set the Multinode Ranging Type.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduledMode {
+    /// Time scheduled ranging (default)
     TimeScheduledRanging = 1,
 }
 
+/// This configuration is used to enable/disable the key rotation feature during Dynamic STS
+/// ranging.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyRotation {
+    /// Disable (default)
     Disable = 0,
+    /// Enable
     Enable = 1,
 }
 
+/// MAC Addressing mode to be used in UWBS.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacAddressMode {
+    /// MAC address is 2 bytes and 2 bytes to be used in MAC header (default)
     MacAddress2Bytes = 0,
+    /// MAC address is 8 bytes and 2 bytes to be used in MAC header
     MacAddress8Bytes2BytesHeader = 1,
+    /// MAC address is 8 bytes and 8 bytes to be used in MAC header
     MacAddress8Bytes = 2,
 }
 
+/// This parameter is used to enable/disable the hopping.
+///
+/// Note: This config is applicable only for controller and ignored in case of controlee.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoppingMode {
+    /// Hopping Diable (default)
     Disable = 0,
+    /// FiRa Hopping Enable
     FiraHoppingEnable = 1,
 }
 
+/// This config is used to enable/disable the result reports to be included in the RRRM.
+///
+/// The ToF Report, AoA Azimuth Report and AoA Elevation Report parameters from the FiRa UWB MAC are
+/// negotiated OOB.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResultReportConfig {
+    /// TOF report (false: Disable, true: Enable)
     pub tof: bool,
+    /// AOA azimuth report (false: Disable, true: Enable)
     pub aoa_azimuth: bool,
+    /// AOA elevation report (false: Disable, true: Enable)
     pub aoa_elevation: bool,
+    /// AOA FOM report (false: Disable, true: Enable)
     pub aoa_fom: bool,
 }
 
@@ -862,18 +977,25 @@ impl ResultReportConfig {
     }
 }
 
+/// The data rate for BPRF mode.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BprfPhrDataRate {
+    /// 850 kbps (default)
     Rate850k = 0,
+    /// 6.81 Mbps
     Rate6m81 = 1,
 }
 
+/// The number of symbols in an STS segment.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StsLength {
+    /// 32 symbols
     Length32 = 0,
+    /// 64 symbols (default)
     Length64 = 1,
+    /// 128 symbols
     Length128 = 2,
 }
 
