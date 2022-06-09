@@ -159,6 +159,8 @@ enum AppConfigTlvType : 8 {
     BPRF_PHR_DATA_RATE = 0x31,
     MAX_NUMBER_OF_MEASUREMENTS = 0x32,
     STS_LENGTH = 0x35,
+    SESSION_KEY = 0x36,
+    SUBSESSION_KEY = 0x37,
 
     // CCC specific
     CCC_HOP_MODE_KEY = 0xA0,
@@ -492,7 +494,7 @@ packet SessionInitCmd : SessionCommand (opcode = 0x0) { //SESSION_INIT
 }
 
 test SessionInitCmd {
-    "\x22\x00\x00\x05\x00\x00\x00\x01\x02\x03\x04\x01",
+    "\x21\x00\x00\x05\x00\x00\x00\x01\x02\x03\x04\x01",
 }
 
 packet SessionInitRsp : SessionResponse (opcode = 0x0) { //SESSION_INIT

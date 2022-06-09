@@ -183,6 +183,7 @@ rust_defaults {
         "libasync_trait",
     ],
     min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_library {
@@ -197,6 +198,28 @@ rust_test {
     rustlibs: [
         "libenv_logger",
     ],
+    test_suites: [
+      "general-tests",
+    ],
+}
+
+rust_binary {
+    name: "uwb_core_examples",
+    srcs: ["rust/uwb_core/examples/main.rs"],
+    rustlibs: [
+        "libenv_logger",
+        "liblog_rust",
+        "libtokio",
+        "libuwb_core",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+
+    lints: "android",
+    clippy_lints: "android",
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_fuzz {
@@ -205,6 +228,7 @@ rust_fuzz {
         "fuzz/fuzzer.rs",
     ],
     rustlibs: [
+        "android.hardware.uwb-V1-rust",
         "libarbitrary",
         "liblog_rust",
         "libnum_traits",
@@ -219,5 +243,48 @@ rust_fuzz {
         componentid: 1042770,
         fuzz_on_haiku_device: true,
         fuzz_on_haiku_host: true,
+    },
+}
+
+// Generate the artifacts zip for uwb_core library and its dependencies.
+genrule {
+    name: "uwb_core_artifacts",
+    tools: [
+        "bluetooth_packetgen",
+        "soong_zip",
+    ],
+    cmd:
+        // Create a artifacts directory and copy the source code into it.
+        "mkdir $(genDir)/artifacts;" +
+        "cp -r external/uwb/src/rust/uwb_core " +
+        "      external/uwb/src/rust/uwb_uci_packets " +
+        "      external/uwb/src/rust/Cargo.toml " +
+        "      $(genDir)/artifacts;" +
+
+        // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
+        "$(location bluetooth_packetgen) --rust " +
+        "      --include=external/uwb/src/rust" +
+        "      --out=$(genDir)/artifacts " +
+        "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl;" +
+
+        // Pack the artifacts directory and clean up the directory.
+        "$(location soong_zip) -o $(out) " +
+        "                      -C $(genDir)/artifacts " +
+        "                      -D $(genDir)/artifacts;" +
+        "rm -rf $(genDir)/artifacts",
+    out: [
+        "uwb_core_artifacts.zip",
+    ],
+}
+
+// Verify if the uwb_core library can be built via cargo system.
+sh_test_host {
+    name: "libuwb_core_cargo_test",
+    src: "tests/libuwb_core_cargo_test.sh",
+    test_config: "tests/libuwb_core_cargo_test.xml",
+    test_suites: ["general-tests"],
+    data: [":uwb_core_artifacts"],
+    test_options: {
+        unit_test: false,
     },
 }
