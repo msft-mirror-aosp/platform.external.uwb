@@ -17,7 +17,8 @@ use android_hardware_uwb::binder::{
 use async_trait::async_trait;
 use binder::IBinder;
 use binder_tokio::{Tokio, TokioRuntime};
-use log::{error, warn};
+use log::error;
+#[cfg(target_os = "android")]
 use rustutils::system_properties;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -112,18 +113,15 @@ pub struct UwbAdaptationImpl {
 }
 
 impl UwbAdaptationImpl {
-    async fn new_with_args(
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-        hal: Strong<dyn IUwbChipAsync<Tokio>>,
-        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
-    ) -> Result<Self> {
-        let mode = match system_properties::read("persist.uwb.uci_logger_mode") {
+    #[cfg(target_os = "android")]
+    fn get_uci_log_mode() -> UciLogMode {
+        match system_properties::read("persist.uwb.uci_logger_mode") {
             Ok(Some(logger_mode)) => match logger_mode.as_str() {
                 "disabled" => UciLogMode::Disabled,
                 "filtered" => UciLogMode::Filtered,
                 "enabled" => UciLogMode::Enabled,
                 str => {
-                    warn!("Logger mode not recognized! Value: {:?}", str);
+                    error!("Logger mode not recognized! Value: {:?}", str);
                     UCI_LOG_DEFAULT
                 }
             },
@@ -132,9 +130,25 @@ impl UwbAdaptationImpl {
                 error!("Failed to get uci_logger_mode {:?}", e);
                 UCI_LOG_DEFAULT
             }
-        };
-        let logger =
-            UciLoggerImpl::new(mode, Arc::new(Mutex::new(RealFileFactory::default()))).await;
+        }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn get_uci_log_mode() -> UciLogMode {
+        // system_properties is not supported on host builds.
+        UCI_LOG_DEFAULT
+    }
+
+    pub async fn new_with_args(
+        rsp_sender: mpsc::UnboundedSender<HalCallback>,
+        hal: Strong<dyn IUwbChipAsync<Tokio>>,
+        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
+    ) -> Result<Self> {
+        let logger = UciLoggerImpl::new(
+            UwbAdaptationImpl::get_uci_log_mode(),
+            Arc::new(Mutex::new(RealFileFactory::default())),
+        )
+        .await;
         Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger), hal_death_recipient })
     }
 
@@ -198,8 +212,8 @@ impl UwbAdaptation for UwbAdaptationImpl {
 
 #[cfg(any(test, fuzzing))]
 pub mod mock_adaptation;
-#[cfg(test)]
-mod mock_hal;
+#[cfg(any(test, fuzzing))]
+pub mod mock_hal;
 
 #[cfg(test)]
 pub mod tests {
@@ -662,7 +676,7 @@ pub mod tests {
                 .with_min_level(log::Level::Debug),
         );
         let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
-        let mock_hal = MockHal::new();
+        let mock_hal = MockHal::new(None);
         config_fn(&mock_hal);
 
         UwbAdaptationImpl::new_with_args(
@@ -681,8 +695,11 @@ pub mod tests {
             let mut cmd_frag_packets: Vec<UciPacketHalPacket> = cmd_packet.into();
             let cmd_frag_data = cmd_frag_packets.pop().unwrap().to_vec();
             let cmd_frag_data_len = cmd_frag_data.len();
-            mock_hal
-                .expect_send_uci_message(cmd_frag_data, Ok(cmd_frag_data_len.try_into().unwrap()));
+            mock_hal.expect_send_uci_message(
+                cmd_frag_data,
+                None,
+                Ok(cmd_frag_data_len.try_into().unwrap()),
+            );
         })
         .await
         .unwrap();
@@ -692,7 +709,7 @@ pub mod tests {
     #[tokio::test]
     async fn test_send_uci_message_fragmented_packet() {
         let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
-        let mock_hal = MockHal::new();
+        let mock_hal = MockHal::new(None);
 
         let cmd_payload: [u8; 400] = [
             0x81, 0x93, 0xf8, 0x56, 0x53, 0x74, 0x5d, 0xcf, 0x45, 0xfa, 0x34, 0xbd, 0xf1, 0x56,
@@ -772,10 +789,12 @@ pub mod tests {
 
         mock_hal.expect_send_uci_message(
             cmd_frag_data_1.to_vec(),
+            None,
             Ok(cmd_frag_data_len_1.try_into().unwrap()),
         );
         mock_hal.expect_send_uci_message(
             cmd_frag_data_2.to_vec(),
+            None,
             Ok(cmd_frag_data_len_2.try_into().unwrap()),
         );
         let adaptation_impl = UwbAdaptationImpl::new_with_args(
