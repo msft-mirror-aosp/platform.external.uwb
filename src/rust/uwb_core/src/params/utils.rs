@@ -28,6 +28,7 @@ pub fn u32_to_bytes(value: u32) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
 
+#[allow(dead_code)]
 pub fn u64_to_bytes(value: u64) -> Vec<u8> {
     value.to_le_bytes().to_vec()
 }
@@ -36,6 +37,7 @@ pub fn bytes_to_u8(value: Vec<u8>) -> Option<u8> {
     Some(u8::from_le_bytes(value.try_into().ok()?))
 }
 
+#[allow(dead_code)]
 pub fn bytes_to_u16(value: Vec<u8>) -> Option<u16> {
     Some(u16::from_le_bytes(value.try_into().ok()?))
 }
