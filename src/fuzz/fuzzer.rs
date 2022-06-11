@@ -470,13 +470,17 @@ fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
         match msg {
             Command::JNICmd(cmd) => match cmd {
                 JNICommand::Enable => {
-                    mock_dispatcher.send_jni_command(JNICommand::Enable)?;
+                    mock_dispatcher
+                        .send_jni_command(JNICommand::Enable)
+                        .expect(format!("Failed to send {:?}", cmd).as_str());
                 }
                 JNICommand::Disable(_graceful) => {
                     break;
                 }
                 _ => {
-                    mock_dispatcher.block_on_jni_command(cmd)?;
+                    mock_dispatcher
+                        .block_on_jni_command(cmd.clone())
+                        .expect(format!("Failed to send {:?}", cmd).as_str());
                 }
             },
             Command::UciNtf(ntf) => {
@@ -576,12 +580,14 @@ fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
                     }
                 };
                 rsp_sender
-                    .send(HalCallback::UciNtf(evt))
-                    .unwrap_or_else(|e| error!("Error sending uci notification: {:?}", e));
+                    .send(HalCallback::UciNtf(evt.clone()))
+                    .expect(format!("Error sending uci notification: {:?}", evt).as_str());
             }
         }
     }
-    mock_dispatcher.send_jni_command(JNICommand::Disable(true))?;
+    mock_dispatcher
+        .send_jni_command(JNICommand::Disable(true))
+        .expect("Failed to send JNICommand::Disable cmd.");
     mock_dispatcher.wait_for_exit()?;
     Ok(())
 }
