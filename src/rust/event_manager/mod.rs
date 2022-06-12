@@ -687,7 +687,7 @@ impl EventManagerImpl {
         env.call_method(
             self.obj.as_obj(),
             "onVendorUciNotificationReceived",
-            "(IIB])V",
+            "(II[B)V",
             &[
                 JValue::Int(gid),
                 JValue::Int(oid),
