@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs)]
+
 use crate::params::app_config_params::AppConfigTlvMap;
 use crate::params::ccc_app_config_params::MINIMUM_BLOCK_DURATION_MS;
 use crate::params::uci_packets::AppConfigTlvType;
