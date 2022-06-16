@@ -159,6 +159,8 @@ enum AppConfigTlvType : 8 {
     BPRF_PHR_DATA_RATE = 0x31,
     MAX_NUMBER_OF_MEASUREMENTS = 0x32,
     STS_LENGTH = 0x35,
+    SESSION_KEY = 0x36,
+    SUBSESSION_KEY = 0x37,
 
     // CCC specific
     CCC_HOP_MODE_KEY = 0xA0,
