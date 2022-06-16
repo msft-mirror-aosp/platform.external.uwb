@@ -20,8 +20,8 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
-use crate::uci::error::{Error, Result};
-use crate::uci::params::SessionId;
+use crate::error::{Error, Result};
+use crate::params::uci_packets::SessionId;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
 
 /// The mock implementation of UciHal.
