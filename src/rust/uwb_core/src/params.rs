@@ -12,16 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Provide the error and result type for the UwbService.
+//! This module provides the types of the parameters or returned data of the public interfaces.
 
-/// The error code for service module.
-#[derive(Debug)]
-pub enum Error {
-    /// Failed to transmit the message via tokio's channel.
-    TokioFailure,
-    /// Error occurs at the UCI stack.
-    UciError,
-}
+pub(super) mod utils;
 
-/// The result type returned by UwbService.
-pub type Result<T> = std::result::Result<T, Error>;
+pub mod app_config_params;
+pub mod ccc_app_config_params;
+pub mod ccc_started_app_config_params;
+pub mod fira_app_config_params;
+pub mod uci_packets;
+
+// Re-export params from all of the sub-modules.
+pub use app_config_params::*;
+pub use ccc_app_config_params::*;
+pub use ccc_started_app_config_params::*;
+pub use fira_app_config_params::*;
+pub use uci_packets::*;
