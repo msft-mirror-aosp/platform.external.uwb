@@ -1,6 +1,10 @@
 {
   "presubmit": [
     {
+      "name": "libuwb_core_cargo_test",
+      "host": true
+    },
+    {
       "name": "libuwb_uci_rust_tests"
     },
     {
