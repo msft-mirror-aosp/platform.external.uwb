@@ -20,6 +20,7 @@ use crate::uci::uci_logger::UciLogger;
 use crate::uci::UwbErr;
 use async_trait::async_trait;
 use std::path::Path;
+use std::time::Duration;
 use uwb_uci_packets::{UciCommandPacket, UciNotificationPacket, UciResponsePacket};
 
 #[cfg(test)]
@@ -61,4 +62,15 @@ pub async fn remove_file(_path: impl AsRef<Path>) -> Result<(), UwbErr> {
 #[cfg(test)]
 pub async fn rename(_from: impl AsRef<Path>, _to: impl AsRef<Path>) -> Result<(), UwbErr> {
     Ok(())
+}
+
+#[cfg(test)]
+pub struct Instant {}
+impl Instant {
+    pub fn now() -> Instant {
+        Instant {}
+    }
+    pub fn elapsed(&self) -> Duration {
+        Duration::from_micros(0)
+    }
 }
