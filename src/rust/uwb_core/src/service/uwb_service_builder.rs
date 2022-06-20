@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This module defines the UwbServiceBuilder, the builder of the UwbService.
+
 use tokio::sync::mpsc;
 
 use crate::service::uwb_service::{UwbNotification, UwbService};
@@ -27,20 +29,24 @@ pub struct UwbServiceBuilder<U: UciHal> {
 
 #[allow(clippy::new_without_default)]
 impl<U: UciHal> UwbServiceBuilder<U> {
+    /// Create a new builder.
     pub fn new() -> Self {
         Self { notf_sender: mpsc::unbounded_channel().0, uci_hal: None }
     }
 
+    /// Set the notf_sender field.
     pub fn notf_sender(mut self, notf_sender: mpsc::UnboundedSender<UwbNotification>) -> Self {
         self.notf_sender = notf_sender;
         self
     }
 
+    /// Set the uci_hal field.
     pub fn uci_hal(mut self, uci_hal: U) -> Self {
         self.uci_hal = Some(uci_hal);
         self
     }
 
+    /// Build the UwbService.
     pub fn build(self) -> Option<UwbService> {
         let uci_manager = UciManagerImpl::new(self.uci_hal?);
         Some(UwbService::new(self.notf_sender, uci_manager))
