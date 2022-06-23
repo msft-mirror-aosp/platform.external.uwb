@@ -692,7 +692,8 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 96,
+    rssi: 8,
+    _reserved_: 88,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -709,7 +710,8 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 48,
+    rssi: 8,
+    _reserved_: 40,
 }
 
 enum RangingMeasurementType : 8 {

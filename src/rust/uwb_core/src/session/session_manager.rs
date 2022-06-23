@@ -424,6 +424,7 @@ pub(crate) mod test_utils {
                     aoa_destination_elevation: 11,
                     aoa_destination_elevation_fom: 12,
                     slot_index: 0,
+                    rssi: u8::MAX,
                 },
             ]),
         }
