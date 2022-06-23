@@ -157,10 +157,9 @@ impl UciHal for UciHalAndroid {
 
         // Get hal service.
         let service_name = "android.hardware.uwb.IUwb/default";
-        let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
-            binder_tokio::get_interface(service_name)
-                .await
-                .map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::wait_for_interface(service_name)
+            .await
+            .map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let chip_names = i_uwb.getChips().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let i_uwb_chip = i_uwb
             .getChip(&chip_names[0])
