@@ -24,7 +24,17 @@ rust_defaults {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
-	"libbinder_tokio_rs",
+        "libbinder_tokio_rs",
+    ],
+    target: {
+        android: {
+            rustlibs: [
+                "librustutils",
+            ],
+        },
+    },
+    rlibs: [
+        "libarbitrary",
     ],
     proc_macros: [
         "libasync_trait",
@@ -33,6 +43,7 @@ rust_defaults {
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
+    host_supported: true,
 }
 
 rust_library {
@@ -43,11 +54,29 @@ rust_library {
 rust_test {
     name: "libuwb_uci_rust_tests",
     defaults: ["libuwb_uci_defaults"],
-    test_suites: [
-        "general-tests",
-        "mts-uwb"
-    ],
-    test_config_template: "uwb_rust_test_config_template.xml",
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+            data_libs: [
+                "libandroid_runtime_lazy",
+                "libbase",
+                "libbinder",
+                "libbinder_ndk",
+                "libcutils",
+                "liblog",
+                "libutils",
+            ],
+        },
+    },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
     // build targets with secondary architectures, as the MTS test suite packaging logic flattens
     // all test artifacts into a single `testcases` directory.
@@ -63,54 +92,64 @@ rust_test {
     auto_gen_config: true,
 }
 
-rust_test {
-    name: "libuwb_uci_packet_tests",
+rust_defaults {
+    name: "libuwb_uci_packet_defaults",
     srcs: [
+        "rust/uwb_uci_packets/src/lib.rs",
         ":UwbGeneratedPackets_rust",
     ],
-    test_suites: [
-        "general-tests",
-        "mts-uwb"
-    ],
-    test_config_template: "uwb_rust_test_config_template.xml",
-    // Support multilib variants (using different suffix per sub-architecture), which is needed on
-    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
-    // all test artifacts into a single `testcases` directory.
-    compile_multilib: "both",
-    multilib: {
-        lib32: {
-            suffix: "32",
-        },
-        lib64: {
-            suffix: "",
-        },
-    },
-    auto_gen_config: true,
     proc_macros: ["libnum_derive"],
     rustlibs:[
-        "android.hardware.uwb-V1-rust",
         "libbytes",
         "liblog_rust",
         "libnum_traits",
         "libthiserror",
-        "libuwb_uci_rust",
     ],
+    host_supported: true,
+}
+
+rust_test {
+    name: "libuwb_uci_packet_tests",
+    defaults: ["libuwb_uci_packet_defaults"],
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+        },
+    },
+    // Support multilib variants (using different suffix per sub-architecture), which is needed on
+    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
+    // all test artifacts into a single `testcases` directory.
+    compile_multilib: "both",
+    multilib: {
+        lib32: {
+            suffix: "32",
+        },
+        lib64: {
+            suffix: "",
+        },
+    },
+    auto_gen_config: true,
 }
 
 rust_library {
     name: "libuwb_uci_packets",
+    defaults: ["libuwb_uci_packet_defaults"],
     crate_name: "uwb_uci_packets",
-    srcs: [":UwbGeneratedPackets_rust"],
-    proc_macros: ["libnum_derive"],
-    rustlibs: [
-        "libbytes",
-        "libnum_traits",
-        "libthiserror",
-    ],
     apex_available: [
+        "//apex_available:platform",
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
+    vendor_available: true,
 }
 
 genrule {
@@ -120,9 +159,171 @@ genrule {
     ],
     cmd: "$(location bluetooth_packetgen) --include=external/uwb/src --out=$(genDir) $(in) --rust",
     srcs: [
-        "rust/uci_packets.pdl",
+        "rust/uwb_uci_packets/uci_packets.pdl",
     ],
     out: [
-        "rust/uci_packets.rs",
+        "rust/uwb_uci_packets/uci_packets.rs",
     ],
+}
+
+rust_defaults {
+    name: "libuwb_core_defaults",
+    srcs: ["rust/uwb_core/src/lib.rs"],
+    lints: "android",
+    clippy_lints: "android",
+    rustlibs: [
+        "libbytes",
+        "libnum_traits",
+        "liblog_rust",
+        "libthiserror",
+        "libtokio",
+        "libuwb_uci_packets",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
+}
+
+rust_library {
+    name: "libuwb_core",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
+}
+
+rust_test {
+    name: "libuwb_core_tests",
+    defaults: ["libuwb_core_defaults"],
+    rustlibs: [
+        "libenv_logger",
+    ],
+    test_suites: [
+      "general-tests",
+    ],
+}
+
+rust_binary {
+    name: "uwb_core_examples",
+    srcs: ["rust/uwb_core/examples/main.rs"],
+    rustlibs: [
+        "libenv_logger",
+        "liblog_rust",
+        "libtokio",
+        "libuwb_core",
+    ],
+    proc_macros: [
+        "libasync_trait",
+    ],
+
+    lints: "android",
+    clippy_lints: "android",
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
+}
+
+rust_fuzz {
+    name: "uwb_uci_rust_fuzzer",
+    srcs: [
+        "fuzz/fuzzer.rs",
+    ],
+    rustlibs: [
+        "android.hardware.uwb-V1-rust",
+        "libarbitrary",
+        "liblog_rust",
+        "libnum_traits",
+        "libtokio",
+        "libuwb_uci_packets",
+        "libuwb_uci_rust",
+    ],
+    fuzz_config: {
+        cc: [
+            "android-uwb-team@google.com",
+        ],
+        componentid: 1042770,
+        fuzz_on_haiku_device: true,
+        fuzz_on_haiku_host: true,
+    },
+}
+
+rust_library {
+    name: "libuci_hal_android",
+    crate_name: "uci_hal_android",
+    lints: "android",
+    clippy_lints: "android",
+    rustlibs: [
+        "android.hardware.uwb-V1-rust",
+        "libanyhow",
+        "libbinder_ndk_sys",
+        "libbinder_rs",
+        "libbinder_tokio_rs",
+        "libbytes",
+        "libjni",
+        "liblog_rust",
+        "libthiserror",
+        "libtokio",
+        "libuwb_core",
+        "libuwb_uci_packets",
+    ],
+    target: {
+        android: {
+            rustlibs: [
+                "librustutils",
+            ],
+        },
+    },
+    proc_macros: [
+        "libasync_trait",
+    ],
+    apex_available: [
+        "com.android.ucihal",
+    ],
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
+    srcs: [
+        "rust/uci_hal_android/lib.rs",
+    ],
+}
+
+// Generate the artifacts zip for uwb_core library and its dependencies.
+genrule {
+    name: "uwb_core_artifacts",
+    tools: [
+        "bluetooth_packetgen",
+        "soong_zip",
+    ],
+    cmd:
+        // Create a artifacts directory and copy the source code into it.
+        "mkdir $(genDir)/artifacts;" +
+        "cp -r external/uwb/src/rust/uwb_core " +
+        "      external/uwb/src/rust/uwb_uci_packets " +
+        "      external/uwb/src/rust/Cargo.toml " +
+        "      $(genDir)/artifacts;" +
+
+        // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
+        "$(location bluetooth_packetgen) --rust " +
+        "      --include=external/uwb/src/rust" +
+        "      --out=$(genDir)/artifacts " +
+        "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl;" +
+
+        // Pack the artifacts directory and clean up the directory.
+        "$(location soong_zip) -o $(out) " +
+        "                      -C $(genDir)/artifacts " +
+        "                      -D $(genDir)/artifacts;" +
+        "rm -rf $(genDir)/artifacts",
+    out: [
+        "uwb_core_artifacts.zip",
+    ],
+}
+
+// Verify if the uwb_core library can be built via cargo system.
+sh_test_host {
+    name: "libuwb_core_cargo_test",
+    src: "tests/libuwb_core_cargo_test.sh",
+    test_config: "tests/libuwb_core_cargo_test.xml",
+    test_suites: ["general-tests"],
+    data: [":uwb_core_artifacts"],
+    test_options: {
+        unit_test: false,
+    },
 }
