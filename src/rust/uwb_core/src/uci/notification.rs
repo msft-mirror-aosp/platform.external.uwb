@@ -284,6 +284,7 @@ mod tests {
                 aoa_destination_elevation: 11,
                 aoa_destination_elevation_fom: 12,
                 slot_index: 0,
+                rssi: u8::MAX,
             }]);
         let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
         assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
@@ -342,6 +343,7 @@ mod tests {
             aoa_destination_elevation: 11,
             aoa_destination_elevation_fom: 12,
             slot_index: 0,
+            rssi: u8::MAX,
         };
         let extended_two_way_range_data_ntf =
             uwb_uci_packets::ExtendedMacTwoWayRangeDataNtfBuilder {
@@ -386,6 +388,7 @@ mod tests {
             aoa_destination_elevation: 11,
             aoa_destination_elevation_fom: 12,
             slot_index: 0,
+            rssi: u8::MAX,
         };
         let short_two_way_range_data_ntf = uwb_uci_packets::ShortMacTwoWayRangeDataNtfBuilder {
             sequence_number: 0x10,
