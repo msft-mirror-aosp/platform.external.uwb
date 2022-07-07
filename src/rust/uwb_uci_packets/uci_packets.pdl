@@ -196,6 +196,8 @@ enum CapTlvType : 8 {
     SUPPORTED_AOA = 0x10,
     SUPPORTED_EXTENDED_MAC_ADDRESS = 0x11,
     SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
+    SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
+    SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
 
     // CCC specific
     CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
@@ -692,7 +694,8 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 96,
+    rssi: 8,
+    _reserved_: 88,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -709,7 +712,8 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 48,
+    rssi: 8,
+    _reserved_: 40,
 }
 
 enum RangingMeasurementType : 8 {
