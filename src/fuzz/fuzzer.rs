@@ -84,6 +84,7 @@ struct ShortAddressMeasurement {
     aoa_destination_elevation: u16,
     aoa_destination_elevation_fom: u8,
     slot_index: u8,
+    rssi: u8,
 }
 
 impl ShortAddressMeasurement {
@@ -102,6 +103,7 @@ impl ShortAddressMeasurement {
             aoa_destination_elevation: self.aoa_destination_elevation,
             aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
             slot_index: self.slot_index,
+            rssi: self.rssi,
         })
     }
 }
@@ -121,6 +123,7 @@ struct ExtendedAddressMeasurement {
     aoa_destination_elevation: u16,
     aoa_destination_elevation_fom: u8,
     slot_index: u8,
+    rssi: u8,
 }
 
 impl ExtendedAddressMeasurement {
@@ -139,6 +142,7 @@ impl ExtendedAddressMeasurement {
             aoa_destination_elevation: self.aoa_destination_elevation,
             aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
             slot_index: self.slot_index,
+            rssi: self.rssi,
         })
     }
 }
