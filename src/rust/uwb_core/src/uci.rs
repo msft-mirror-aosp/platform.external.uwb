@@ -31,4 +31,5 @@ pub(crate) mod mock_uci_hal;
 pub(crate) mod mock_uci_manager;
 
 // Re-export the public elements.
+pub use notification::{RangingMeasurements, SessionRangeData};
 pub use uci_hal::{RawUciMessage, UciHal};
