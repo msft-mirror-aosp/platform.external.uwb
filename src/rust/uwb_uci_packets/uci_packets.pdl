@@ -132,6 +132,7 @@ enum AppConfigTlvType : 8 {
     RNG_DATA_NTF_PROXIMITY_FAR = 0x10,
     DEVICE_ROLE = 0x11,
     RFRAME_CONFIG = 0x12,
+    RSSI_REPORTING = 0x13,
     PREAMBLE_CODE_INDEX = 0x14,
     SFD_ID = 0x15,
     PSDU_DATA_RATE = 0x16,
@@ -139,6 +140,8 @@ enum AppConfigTlvType : 8 {
     RANGING_TIME_STRUCT = 0x1A,
     SLOTS_PER_RR = 0x1B,
     TX_ADAPTIVE_PAYLOAD_POWER = 0x1C,
+    // TODO: Ensure this value is correct in the final 2.0 specification.
+    RNG_DATA_NTF_AOA_BOUND = 0x1D,
     RESPONDER_SLOT_INDEX = 0x1E,
     PRF_MODE = 0x1F,
     SCHEDULED_MODE = 0x22,
@@ -196,6 +199,8 @@ enum CapTlvType : 8 {
     SUPPORTED_AOA = 0x10,
     SUPPORTED_EXTENDED_MAC_ADDRESS = 0x11,
     SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
+    SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
+    SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
 
     // CCC specific
     CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
@@ -692,7 +697,8 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 96,
+    rssi: 8,
+    _reserved_: 88,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -709,7 +715,8 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 48,
+    rssi: 8,
+    _reserved_: 40,
 }
 
 enum RangingMeasurementType : 8 {
