@@ -86,8 +86,12 @@ impl IUwbClientCallbackAsyncServer for UwbClientCallback {
 
 async fn get_hal_service() -> Result<Strong<dyn IUwbChipAsync<Tokio>>> {
     let service_name: &str = "android.hardware.uwb.IUwb/default";
-    let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::get_interface(service_name).await?;
+    let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
+        binder_tokio::wait_for_interface(service_name).await?;
     let chip_names = i_uwb.getChips().await?;
+    if chip_names.is_empty() {
+        return Err(UwbErr::UwbStatus(UwbStatus::FAILED));
+    }
     let i_uwb_chip = i_uwb.getChip(&chip_names[0]).await?.into_async();
     Ok(i_uwb_chip)
 }
