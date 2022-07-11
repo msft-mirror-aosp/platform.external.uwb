@@ -320,14 +320,15 @@ impl<T: EventManager> Driver<T> {
                 self.adaptation.core_initialization().await?;
                 self.set_state(UwbState::W4HalOpen);
             }
-            JNICommand::Disable(_graceful) => {
-                self.adaptation.hal_close().await?;
-                self.set_state(UwbState::W4HalClose);
-            }
-            _ => {
-                error!("Unexpected non blocking cmd received {:?}", cmd);
-                return Ok(());
-            }
+            JNICommand::Disable(_graceful) => match self.adaptation.hal_close().await {
+                Ok(()) => self.set_state(UwbState::W4HalClose),
+                Err(e) => {
+                    error!("Recevied HAL close failure: {:?}", e);
+                    self.set_state(UwbState::None);
+                    return Err(UwbErr::Exit);
+                }
+            },
+            _ => error!("Unexpected non blocking cmd received {:?}", cmd),
         }
         Ok(())
     }
