@@ -481,6 +481,7 @@ mod tests {
         SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
+    use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
     use crate::uci::notification::UciNotification;
 
     #[tokio::test]
@@ -886,6 +887,103 @@ mod tests {
 
         let session_notf = session_notf_receiver.recv().await.unwrap();
         assert_eq!(session_notf, SessionNotification::RangeData { session_id, range_data });
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_reconfigure_app_config() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+
+        let initial_params = generate_params();
+        let initial_tlvs = initial_params.generate_tlvs();
+
+        let non_default_key_rotation_val = KeyRotation::Enable;
+        let idle_params = FiraAppConfigParamsBuilder::from_params(&initial_params)
+            .unwrap()
+            .key_rotation(non_default_key_rotation_val)
+            .build()
+            .unwrap();
+        let idle_tlvs = idle_params
+            .generate_updated_tlvs(&initial_params, SessionState::SessionStateIdle)
+            .unwrap();
+
+        let non_default_block_stride_val = 2u8;
+        let active_params = FiraAppConfigParamsBuilder::from_params(&idle_params)
+            .unwrap()
+            .block_stride_length(non_default_block_stride_val)
+            .build()
+            .unwrap();
+        let active_tlvs = active_params
+            .generate_updated_tlvs(&idle_params, SessionState::SessionStateIdle)
+            .unwrap();
+
+        let (mut session_manager, mut mock_uci_manager, _) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(
+                    session_id,
+                    session_type,
+                    vec![session_status_notf(session_id, SessionState::SessionStateInit)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    initial_tlvs,
+                    vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    idle_tlvs,
+                    vec![],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_range_start(
+                    session_id,
+                    vec![session_status_notf(session_id, SessionState::SessionStateActive)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    active_tlvs,
+                    vec![],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+            })
+            .await;
+
+        // Reconfiguring without first initing a session should fail.
+        let result = session_manager.reconfigure(session_id, initial_params.clone()).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        let result =
+            session_manager.init_session(session_id, session_type, initial_params.clone()).await;
+        assert_eq!(result, Ok(()));
+
+        // Reconfiguring any parameters during idle state should succeed.
+        let result = session_manager.reconfigure(session_id, idle_params.clone()).await;
+        assert_eq!(result, Ok(()));
+
+        let result = session_manager.start_ranging(session_id).await;
+        assert_eq!(result, Ok(idle_params));
+
+        // Reconfiguring most parameters during active state should fail.
+        let result = session_manager.reconfigure(session_id, initial_params).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        // Only some parameters are allowed to be reconfigured during active state.
+        let result = session_manager.reconfigure(session_id, active_params).await;
+        assert_eq!(result, Ok(()));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
