@@ -17,6 +17,9 @@
 pub mod uwb_service;
 pub mod uwb_service_builder;
 
+#[cfg(test)]
+mod mock_uwb_service_callback;
+
 // Re-export the public elements.
-pub use uwb_service::{UwbNotification, UwbService};
+pub use uwb_service::{UwbService, UwbServiceCallback};
 pub use uwb_service_builder::UwbServiceBuilder;
