@@ -14,9 +14,9 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use uwb_uci_packets::Packet;
+use log::error;
 
-use crate::uci::error::Error;
+use crate::error::Error;
 use crate::uci::notification::UciNotification;
 use crate::uci::response::UciResponse;
 
@@ -36,7 +36,10 @@ impl TryFrom<uwb_uci_packets::UciPacketPacket> for UciMessage {
             uwb_uci_packets::UciPacketChild::UciNotification(evt) => {
                 Ok(UciMessage::Notification(evt.try_into()?))
             }
-            _ => Err(Error::Specialize(packet.to_vec())),
+            _ => {
+                error!("Unknown packet for converting to UciMessage: {:?}", packet);
+                Err(Error::Unknown)
+            }
         }
     }
 }
