@@ -219,7 +219,7 @@ impl UciManagerSync {
     }
 
     /// Send UCI command for getting count of sessions.
-    pub fn session_get_count(&mut self) -> Result<usize> {
+    pub fn session_get_count(&mut self) -> Result<u8> {
         self.runtime.block_on(self.uci_manager_impl.session_get_count())
     }
 
