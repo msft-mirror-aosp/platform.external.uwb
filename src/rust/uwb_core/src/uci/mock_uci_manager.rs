@@ -166,7 +166,7 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_get_count(&mut self, out: Result<usize>) {
+    pub fn expect_session_get_count(&mut self, out: Result<u8>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionGetCount { out });
     }
 
@@ -516,7 +516,7 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn session_get_count(&mut self) -> Result<usize> {
+    async fn session_get_count(&mut self) -> Result<u8> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::SessionGetCount { out }) => {
@@ -742,7 +742,7 @@ enum ExpectedCall {
         out: Result<Vec<AppConfigTlv>>,
     },
     SessionGetCount {
-        out: Result<usize>,
+        out: Result<u8>,
     },
     SessionGetState {
         expected_session_id: SessionId,
