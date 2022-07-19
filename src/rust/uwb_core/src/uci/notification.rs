@@ -24,31 +24,48 @@ use crate::params::uci_packets::{
     StatusCode,
 };
 
+/// enum of all UCI notifications with structured fields.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UciNotification {
+    /// CoreNotificationPacket equivalent.
     Core(CoreNotification),
+    /// SessionNotificationPacket equivalent.
     Session(SessionNotification),
+    /// UciVendor_X_Notification equivalent.
     Vendor(RawVendorMessage),
 }
 
+/// UCI CoreNotification.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoreNotification {
+    /// DeviceStatusNtf equivalent.
     DeviceStatus(DeviceState),
+    /// GenericErrorPacket equivalent.
     GenericError(StatusCode),
 }
 
+/// UCI SessionNotification.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionNotification {
+    /// SessionStatusNtf equivalent.
     Status {
+        /// SessionId : u32
         session_id: SessionId,
+        /// uwb_uci_packets::SessionState.
         session_state: SessionState,
+        /// uwb_uci_packets::Reasoncode.
         reason_code: ReasonCode,
     },
+    /// SessionUpdateControllerMulticastListNtf equivalent.
     UpdateControllerMulticastList {
+        /// SessionId : u32
         session_id: SessionId,
+        /// count of controlees: u8
         remaining_multicast_list_size: usize,
+        /// list of controlees.
         status_list: Vec<ControleeStatus>,
     },
+    /// (Short/Extended)Mac()RangeDataNtf equivalent
     RangeData(SessionRangeData),
 }
 
@@ -82,7 +99,7 @@ pub enum RangingMeasurements {
 }
 
 impl UciNotification {
-    pub fn need_retry(&self) -> bool {
+    pub(crate) fn need_retry(&self) -> bool {
         matches!(
             self,
             Self::Core(CoreNotification::GenericError(StatusCode::UciStatusCommandRetry))
