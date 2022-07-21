@@ -92,7 +92,7 @@ pub(crate) trait UciManager: 'static + Send + Clone {
         session_id: SessionId,
         config_ids: Vec<AppConfigTlvType>,
     ) -> Result<Vec<AppConfigTlv>>;
-    async fn session_get_count(&mut self) -> Result<usize>;
+    async fn session_get_count(&mut self) -> Result<u8>;
     async fn session_get_state(&mut self, session_id: SessionId) -> Result<SessionState>;
     async fn session_update_controller_multicast_list(
         &mut self,
@@ -285,7 +285,7 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn session_get_count(&mut self) -> Result<usize> {
+    async fn session_get_count(&mut self) -> Result<u8> {
         let cmd = UciCommand::SessionGetCount;
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionGetCount(resp)) => resp,
