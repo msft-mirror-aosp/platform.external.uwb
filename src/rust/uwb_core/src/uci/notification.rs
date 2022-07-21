@@ -25,20 +25,20 @@ use crate::params::uci_packets::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum UciNotification {
+pub enum UciNotification {
     Core(CoreNotification),
     Session(SessionNotification),
     Vendor(RawVendorMessage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum CoreNotification {
+pub enum CoreNotification {
     DeviceStatus(DeviceState),
     GenericError(StatusCode),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum SessionNotification {
+pub enum SessionNotification {
     Status {
         session_id: SessionId,
         session_state: SessionState,
