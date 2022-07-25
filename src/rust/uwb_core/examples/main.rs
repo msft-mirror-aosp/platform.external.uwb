@@ -74,7 +74,7 @@ impl UwbServiceCallback for UwbServiceCallbackImpl {
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
 
     // Initialize the UWB service.
     let mut service = UwbServiceBuilder::new()
