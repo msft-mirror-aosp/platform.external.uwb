@@ -57,6 +57,7 @@ enum AppDataOpCode : 6 {
 enum AndroidOpCode : 6 {
     ANDROID_GET_POWER_STATS = 0x0,
     ANDROID_SET_COUNTRY_CODE = 0x1,
+    ANDROID_FIRA_RANGE_DIAGNOSTICS = 0x2,
 }
 
 enum StatusCode : 8 {
@@ -132,6 +133,7 @@ enum AppConfigTlvType : 8 {
     RNG_DATA_NTF_PROXIMITY_FAR = 0x10,
     DEVICE_ROLE = 0x11,
     RFRAME_CONFIG = 0x12,
+    RSSI_REPORTING = 0x13,
     PREAMBLE_CODE_INDEX = 0x14,
     SFD_ID = 0x15,
     PSDU_DATA_RATE = 0x16,
@@ -139,6 +141,8 @@ enum AppConfigTlvType : 8 {
     RANGING_TIME_STRUCT = 0x1A,
     SLOTS_PER_RR = 0x1B,
     TX_ADAPTIVE_PAYLOAD_POWER = 0x1C,
+    // TODO: Ensure this value is correct in the final 2.0 specification.
+    RNG_DATA_NTF_AOA_BOUND = 0x1D,
     RESPONDER_SLOT_INDEX = 0x1E,
     PRF_MODE = 0x1F,
     SCHEDULED_MODE = 0x22,
@@ -174,6 +178,15 @@ enum AppConfigTlvType : 8 {
     NB_OF_RANGE_MEASUREMENTS = 0xE3,
     NB_OF_AZIMUTH_MEASUREMENTS = 0xE4,
     NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
+
+    ENABLE_DIAGNOSTICS = 0xE8,
+    DIAGRAMS_FRAME_REPORTS_FIELDS = 0xE9,
+}
+
+enum FrameReportTlvType : 8 {
+    RSSI = 0x0,
+    AOA = 0x1,
+    CIR = 0x2,
 }
 
 enum CapTlvType : 8 {
@@ -196,6 +209,10 @@ enum CapTlvType : 8 {
     SUPPORTED_AOA = 0x10,
     SUPPORTED_EXTENDED_MAC_ADDRESS = 0x11,
     SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
+    SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
+    SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
+    SUPPORTED_RSSI_REPORTING = 0xE6,
+    SUPPORTED_DIAGNOSTICS = 0xE7,
 
     // CCC specific
     CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
@@ -692,7 +709,8 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 96,
+    rssi: 8,
+    _reserved_: 88,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -709,7 +727,8 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     aoa_destination_elevation: 16,
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
-    _reserved_: 48,
+    rssi: 8,
+    _reserved_: 40,
 }
 
 enum RangingMeasurementType : 8 {
@@ -818,6 +837,52 @@ packet AndroidSetCountryCodeRsp : AndroidResponse (opcode = 0x1) { //ANDROID_SET
 
 test AndroidSetCountryCodeRsp {
     "\x4c\x01\x00\x01\x00\x00\x00\x00",
+}
+
+struct FrameReportTlv {
+    t: FrameReportTlvType,
+    length: 8,
+    v: 8[],
+}
+
+packet AoaMeasurement {
+    tdoa: 16,
+    pdoa: 16,
+    aoa: 16,
+    fom: 8,
+    t: 8,
+}
+
+packet Cir {
+    first_path_index : 16,
+    first_path_snr: 16,
+    first_path_ns: 16,
+    peak_path_index: 16,
+    peak_path_snr: 16,
+    peak_path_ns: 16,
+    first_path_sample_offset: 8,
+    sample_size: 8,
+    samples_number: 8,
+    sample_window: 8[],
+}
+
+struct FrameReport {
+    uwb_msg_id: 8,
+    action: 8,
+    antenna_set: 8,
+    _count_(frame_report_tlvs): 8,
+    frame_report_tlvs: FrameReportTlv[],
+}
+
+packet AndroidFiraRangeDiagnosticsNtf : AndroidNotification (opcode = 0x2) { //QORVO_FIRA_RANGE_DIAGNOSTICS
+    session_id: 32,
+    sequence_number: 32,
+    _count_(frame_reports): 8,
+    frame_reports: FrameReport[],
+}
+
+test AndroidFiraRangeDiagnosticsNtf {
+    "\x6c\x02\x00\x10\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x01\x00\x01\x00",
 }
 
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {
