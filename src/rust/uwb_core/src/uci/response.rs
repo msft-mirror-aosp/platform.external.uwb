@@ -38,7 +38,7 @@ pub(super) enum UciResponse {
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
-    SessionGetCount(Result<usize>),
+    SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
     RangeStart(Result<()>),
@@ -156,7 +156,7 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
             SessionResponseChild::SessionGetCountRsp(evt) => Ok(UciResponse::SessionGetCount(
-                status_code_to_result(evt.get_status()).map(|_| evt.get_session_count() as usize),
+                status_code_to_result(evt.get_status()).map(|_| evt.get_session_count()),
             )),
             SessionResponseChild::SessionGetStateRsp(evt) => Ok(UciResponse::SessionGetState(
                 status_code_to_result(evt.get_status()).map(|_| evt.get_session_state()),
