@@ -60,13 +60,13 @@ enum ExpectedCall {
 
 #[cfg(any(test, fuzzing))]
 pub struct MockUwbAdaptation {
-    rsp_sender: mpsc::UnboundedSender<HalCallback>,
+    rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
     expected_calls: StdMutex<VecDeque<ExpectedCall>>,
 }
 
 #[cfg(any(test, fuzzing))]
 impl MockUwbAdaptation {
-    pub fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Self {
+    pub fn new(rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>) -> Self {
         Self { rsp_sender, expected_calls: StdMutex::new(VecDeque::new()) }
     }
 
@@ -111,15 +111,17 @@ impl MockUwbAdaptation {
     }
 
     async fn send_hal_event(&self, event: UwbEvent, event_status: UwbStatus) {
-        self.rsp_sender.send(HalCallback::Event { event, event_status }).unwrap();
+        self.rsp_sender
+            .send((HalCallback::Event { event, event_status }, String::from("default")))
+            .unwrap();
     }
 
     async fn send_uci_response(&self, rsp: uci_hrcv::UciResponse) {
-        self.rsp_sender.send(HalCallback::UciRsp(rsp)).unwrap();
+        self.rsp_sender.send((HalCallback::UciRsp(rsp), String::from("default"))).unwrap();
     }
 
     async fn send_uci_notification(&self, ntf: uci_hrcv::UciNotification) {
-        self.rsp_sender.send(HalCallback::UciNtf(ntf)).unwrap();
+        self.rsp_sender.send((HalCallback::UciNtf(ntf), String::from("default"))).unwrap();
     }
 }
 
@@ -149,7 +151,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         warn!("unpected finalize() called");
     }
 
-    async fn hal_open(&self) -> Result<()> {
+    async fn hal_open(&self, _chip_id: &str) -> Result<()> {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -175,7 +177,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         }
     }
 
-    async fn hal_close(&self) -> Result<()> {
+    async fn hal_close(&self, _chip_id: &str) -> Result<()> {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -201,7 +203,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         }
     }
 
-    async fn core_initialization(&self) -> Result<()> {
+    async fn core_initialization(&self, _chip_id: &str) -> Result<()> {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -227,7 +229,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         }
     }
 
-    async fn session_initialization(&self, session_id: i32) -> Result<()> {
+    async fn session_initialization(&self, session_id: i32, _chip_id: &str) -> Result<()> {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -253,7 +255,7 @@ impl UwbAdaptation for MockUwbAdaptation {
         }
     }
 
-    async fn send_uci_message(&self, cmd: UciCommandPacket) -> Result<()> {
+    async fn send_uci_message(&self, cmd: UciCommandPacket, _chip_id: &str) -> Result<()> {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
