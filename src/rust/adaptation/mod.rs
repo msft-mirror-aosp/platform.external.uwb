@@ -91,7 +91,7 @@ impl IUwbClientCallbackAsyncServer for UwbClientCallback {
 }
 
 async fn get_hal_service(
-    chip_ids: &Vec<String>,
+    chip_ids: &[String],
 ) -> Result<HashMap<String, Strong<dyn IUwbChipAsync<Tokio>>>> {
     let service_name: &str = "android.hardware.uwb.IUwb/default";
     let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
@@ -101,7 +101,7 @@ async fn get_hal_service(
 
     // If this is a single-chip system with chip_id == "default", then the name of the chip
     // doesn't matter. In that case, just grab the first IUwbChip from the list returned by getChips
-    if chip_ids == &vec![String::from("default")] {
+    if *chip_ids == vec![String::from("default")] {
         if chips.is_empty() {
             error!("No chips are provided by vendor");
             return Err(UwbErr::UwbStatus(UwbStatus::FAILED));
@@ -190,7 +190,7 @@ impl UwbAdaptationImpl {
 
     pub async fn new(
         rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
-        chip_ids: &Vec<String>,
+        chip_ids: &[String],
     ) -> Result<Self> {
         let hal_map = get_hal_service(chip_ids).await?;
 
