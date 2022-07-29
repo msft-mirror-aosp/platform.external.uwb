@@ -15,6 +15,7 @@ rust_defaults {
         "libanyhow",
         "libbinder_ndk_sys",
         "libbinder_rs",
+        "libbinder_tokio_rs",
         "libbytes",
         "libjni",
         "liblazy_static",
@@ -24,7 +25,6 @@ rust_defaults {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
-        "libbinder_tokio_rs",
     ],
     target: {
         android: {
