@@ -24,50 +24,82 @@ use crate::params::uci_packets::{
     StatusCode,
 };
 
+/// enum of all UCI notifications with structured fields.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum UciNotification {
+pub enum UciNotification {
+    /// CoreNotificationPacket equivalent.
     Core(CoreNotification),
+    /// SessionNotificationPacket equivalent.
     Session(SessionNotification),
+    /// UciVendor_X_Notification equivalent.
     Vendor(RawVendorMessage),
 }
 
+/// UCI CoreNotification.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum CoreNotification {
+pub enum CoreNotification {
+    /// DeviceStatusNtf equivalent.
     DeviceStatus(DeviceState),
+    /// GenericErrorPacket equivalent.
     GenericError(StatusCode),
 }
 
+/// UCI SessionNotification.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum SessionNotification {
+pub enum SessionNotification {
+    /// SessionStatusNtf equivalent.
     Status {
+        /// SessionId : u32
         session_id: SessionId,
+        /// uwb_uci_packets::SessionState.
         session_state: SessionState,
+        /// uwb_uci_packets::Reasoncode.
         reason_code: ReasonCode,
     },
+    /// SessionUpdateControllerMulticastListNtf equivalent.
     UpdateControllerMulticastList {
+        /// SessionId : u32
         session_id: SessionId,
+        /// count of controlees: u8
         remaining_multicast_list_size: usize,
+        /// list of controlees.
         status_list: Vec<ControleeStatus>,
     },
+    /// (Short/Extended)Mac()RangeDataNtf equivalent
     RangeData(SessionRangeData),
 }
+
+/// The session range data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionRangeData {
+    /// The sequence counter that starts with 0 when the session is started.
     pub sequence_number: u32,
+
+    /// The identifier of the session.
     pub session_id: SessionId,
+
+    /// The current ranging interval setting in the unit of ms.
     pub current_ranging_interval_ms: u32,
+
+    /// The ranging measurement type.
     pub ranging_measurement_type: RangingMeasurementType,
+
+    /// The ranging measurement data.
     pub ranging_measurements: RangingMeasurements,
 }
 
+/// The ranging measurements.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RangingMeasurements {
+    /// The measurement with short address.
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
+
+    /// The measurement with extended address.
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 }
 
 impl UciNotification {
-    pub fn need_retry(&self) -> bool {
+    pub(crate) fn need_retry(&self) -> bool {
         matches!(
             self,
             Self::Core(CoreNotification::GenericError(StatusCode::UciStatusCommandRetry))

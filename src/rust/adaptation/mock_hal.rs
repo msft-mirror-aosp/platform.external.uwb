@@ -53,13 +53,13 @@ enum ExpectedHalCall {
 
 #[cfg(any(test, fuzzing))]
 pub struct MockHal {
-    rsp_sender: Option<mpsc::UnboundedSender<HalCallback>>,
+    rsp_sender: Option<mpsc::UnboundedSender<(HalCallback, String)>>,
     expected_calls: StdMutex<VecDeque<ExpectedHalCall>>,
 }
 
 #[cfg(any(test, fuzzing))]
 impl MockHal {
-    pub fn new(rsp_sender: Option<mpsc::UnboundedSender<HalCallback>>) -> Self {
+    pub fn new(rsp_sender: Option<mpsc::UnboundedSender<(HalCallback, String)>>) -> Self {
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
         );
@@ -162,10 +162,13 @@ impl<P: binder::BinderAsyncPool> IUwbChipAsync<P> for MockHal {
                 Some(ExpectedHalCall::Close { out }) => {
                     if let Some(sender) = self.rsp_sender.as_ref() {
                         sender
-                            .send(HalCallback::Event {
-                                event: UwbEvent::CLOSE_CPLT,
-                                event_status: UwbStatus::OK,
-                            })
+                            .send((
+                                HalCallback::Event {
+                                    event: UwbEvent::CLOSE_CPLT,
+                                    event_status: UwbStatus::OK,
+                                },
+                                String::from("default"),
+                            ))
                             .unwrap();
                     }
                     Some(out)
@@ -238,7 +241,7 @@ impl<P: binder::BinderAsyncPool> IUwbChipAsync<P> for MockHal {
                     if expected_data == cmd =>
                 {
                     if let (Some(rsp), Some(sender)) = (expected_rsp, self.rsp_sender.as_ref()) {
-                        sender.send(HalCallback::UciRsp(rsp)).unwrap();
+                        sender.send((HalCallback::UciRsp(rsp), String::from("default"))).unwrap();
                     }
                     Some(out)
                 }
