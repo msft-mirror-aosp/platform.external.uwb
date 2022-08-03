@@ -211,6 +211,8 @@ enum CapTlvType : 8 {
     SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
     SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
     SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
+    SUPPORTED_RSSI_REPORTING = 0xE6,
+    SUPPORTED_DIAGNOSTICS = 0xE7,
 
     // CCC specific
     CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
@@ -839,11 +841,11 @@ test AndroidSetCountryCodeRsp {
 
 struct FrameReportTlv {
     t: FrameReportTlvType,
-    length: 8,
+    _size_(v): 8,
     v: 8[],
 }
 
-packet AoaMeasurement {
+struct AoaMeasurement {
     tdoa: 16,
     pdoa: 16,
     aoa: 16,
@@ -851,7 +853,7 @@ packet AoaMeasurement {
     t: 8,
 }
 
-packet Cir {
+struct CirValue {
     first_path_index : 16,
     first_path_snr: 16,
     first_path_ns: 16,
@@ -859,9 +861,14 @@ packet Cir {
     peak_path_snr: 16,
     peak_path_ns: 16,
     first_path_sample_offset: 8,
-    sample_size: 8,
     samples_number: 8,
+    _size_(sample_window): 16,
     sample_window: 8[],
+}
+
+struct Cir {
+    _count_(cir_value): 8,
+    cir_value: CirValue[],
 }
 
 struct FrameReport {
@@ -872,15 +879,16 @@ struct FrameReport {
     frame_report_tlvs: FrameReportTlv[],
 }
 
-packet AndroidFiraRangeDiagnosticsNtf : AndroidNotification (opcode = 0x2) { //QORVO_FIRA_RANGE_DIAGNOSTICS
+packet AndroidRangeDiagnosticsNtf : AndroidNotification (opcode = 0x2) { //FIRA_RANGE_DIAGNOSTICS
     session_id: 32,
     sequence_number: 32,
     _count_(frame_reports): 8,
     frame_reports: FrameReport[],
 }
 
-test AndroidFiraRangeDiagnosticsNtf {
+test AndroidRangeDiagnosticsNtf {
     "\x6c\x02\x00\x10\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x01\x00\x01\x00",
+    "\x6c\x02\x00\x31\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x03\x01\x08\x01\x02\x01\x02\x01\x02\x01\x01\x02\x15\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04\x00\x01\x00",
 }
 
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {
