@@ -129,7 +129,7 @@ impl IUwbClientCallbackAsyncServer for RawUciCallback {
 /// Implentation of UciHal trait for Android.
 #[derive(Default)]
 pub struct UciHalAndroid {
-    // Has a copy of msg_sender via RawUciCallback.
+    // Has a copy of uci_rsp_ntf_sender via RawUciCallback.
     hal_uci_recipient: Option<Strong<dyn IUwbChipAsync<Tokio>>>,
     hal_death_recipient: Option<Arc<Mutex<DeathRecipient>>>,
     hal_close_result_receiver: Option<mpsc::Receiver<Result<()>>>,
@@ -148,7 +148,7 @@ impl UciHal for UciHalAndroid {
     /// Open the UCI HAL and power on the UWBS.
     async fn open(
         &mut self,
-        msg_sender: mpsc::UnboundedSender<RawUciMessage>,
+        uci_rsp_ntf_sender: mpsc::UnboundedSender<RawUciMessage>,
     ) -> UwbCoreResult<()> {
         // Returns error if UciHalAndroid is already open.
         if self.hal_uci_recipient.is_some() {
@@ -157,10 +157,9 @@ impl UciHal for UciHalAndroid {
 
         // Get hal service.
         let service_name = "android.hardware.uwb.IUwb/default";
-        let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
-            binder_tokio::get_interface(service_name)
-                .await
-                .map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::wait_for_interface(service_name)
+            .await
+            .map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let chip_names = i_uwb.getChips().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let i_uwb_chip = i_uwb
             .getChip(&chip_names[0])
@@ -170,9 +169,9 @@ impl UciHal for UciHalAndroid {
 
         // If the binder object unexpectedly goes away (typically because its hosting process has
         // been killed), then the `DeathRecipient`'s callback will be called.
-        let msg_sender_clone = msg_sender.clone();
+        let uci_rsp_ntf_sender_clone = uci_rsp_ntf_sender.clone();
         let mut bare_death_recipient = DeathRecipient::new(move || {
-            send_device_state_error_notification(&msg_sender_clone).unwrap_or_else(|e| {
+            send_device_state_error_notification(&uci_rsp_ntf_sender_clone).unwrap_or_else(|e| {
                 error!("Error sending device state error notification: {:?}", e);
             });
         });
@@ -181,15 +180,22 @@ impl UciHal for UciHalAndroid {
             .link_to_death(&mut bare_death_recipient)
             .map_err(|e| UwbCoreError::from(Error::from(e)))?;
 
-        // Connect callback to msg_sender.
+        // Connect callback to uci_rsp_ntf_sender.
         let (hal_open_result_sender, mut hal_open_result_receiver) = mpsc::channel::<Result<()>>(1);
         let (hal_close_result_sender, hal_close_result_receiver) = mpsc::channel::<Result<()>>(1);
         let m_cback = BnUwbClientCallback::new_async_binder(
-            RawUciCallback::new(msg_sender, hal_open_result_sender, hal_close_result_sender),
+            RawUciCallback::new(
+                uci_rsp_ntf_sender,
+                hal_open_result_sender,
+                hal_close_result_sender,
+            ),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
         i_uwb_chip.open(&m_cback).await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
+
+        // Initialize core and wait for POST_INIT_CPLT.
+        i_uwb_chip.coreInit().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
         match hal_open_result_receiver.recv().await {
             Some(Ok(())) => {
                 self.hal_uci_recipient.replace(i_uwb_chip);
