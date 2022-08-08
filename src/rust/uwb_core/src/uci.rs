@@ -24,6 +24,7 @@ pub(crate) mod notification;
 pub(crate) mod uci_manager;
 
 pub mod uci_hal;
+pub mod uci_manager_sync;
 
 #[cfg(test)]
 pub(crate) mod mock_uci_hal;
@@ -31,5 +32,7 @@ pub(crate) mod mock_uci_hal;
 pub(crate) mod mock_uci_manager;
 
 // Re-export the public elements.
-pub use notification::{RangingMeasurements, SessionRangeData};
+pub use notification::{
+    CoreNotification, RangingMeasurements, SessionNotification, SessionRangeData, UciNotification,
+};
 pub use uci_hal::{RawUciMessage, UciHal};
