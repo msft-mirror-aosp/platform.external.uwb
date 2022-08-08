@@ -105,7 +105,11 @@ impl Drop for MockEventManager {
 }
 #[cfg(any(test, fuzzing))]
 impl EventManager for MockEventManager {
-    fn device_status_notification_received(&self, _data: DeviceStatusNtfPacket) -> Result<()> {
+    fn device_status_notification_received(
+        &self,
+        _data: DeviceStatusNtfPacket,
+        _chip_id: &str,
+    ) -> Result<()> {
         let out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -121,7 +125,11 @@ impl EventManager for MockEventManager {
         self.unwrap_out(out, "device_status_notification_received")
     }
 
-    fn core_generic_error_notification_received(&self, _data: GenericErrorPacket) -> Result<()> {
+    fn core_generic_error_notification_received(
+        &self,
+        _data: GenericErrorPacket,
+        _chip_id: &str,
+    ) -> Result<()> {
         let out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
@@ -209,7 +217,11 @@ impl EventManager for MockEventManager {
         self.unwrap_out(out, "session_update_controller_multicast_list_notification_received")
     }
 
-    fn vendor_uci_notification_received(&self, _data: UciNotificationPacket) -> Result<()> {
+    fn vendor_uci_notification_received(
+        &self,
+        _data: UciNotificationPacket,
+        _chip_id: &str,
+    ) -> Result<()> {
         let out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {

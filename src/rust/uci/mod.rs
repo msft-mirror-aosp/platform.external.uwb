@@ -351,7 +351,7 @@ impl<T: EventManager> Driver<T> {
         log::debug!("Received hal notification {:?}", response);
         match response {
             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
-                self.event_manager.device_status_notification_received(response)?;
+                self.event_manager.device_status_notification_received(response, &chip_id)?;
             }
             uci_hrcv::UciNotification::GenericError(response) => {
                 if let (StatusCode::UciStatusCommandRetry, Some((_, retryer))) =
@@ -359,7 +359,7 @@ impl<T: EventManager> Driver<T> {
                 {
                     retryer.retry();
                 }
-                self.event_manager.core_generic_error_notification_received(response)?;
+                self.event_manager.core_generic_error_notification_received(response, &chip_id)?;
             }
             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
                 self.invoke_hal_session_init_if_necessary(&response, chip_id).await;
@@ -376,7 +376,7 @@ impl<T: EventManager> Driver<T> {
                     .session_update_controller_multicast_list_notification_received(response)?;
             }
             uci_hrcv::UciNotification::RawVendorNtf(response) => {
-                self.event_manager.vendor_uci_notification_received(response)?;
+                self.event_manager.vendor_uci_notification_received(response, &chip_id)?;
             }
         }
         Ok(())
@@ -418,7 +418,7 @@ impl<T: EventManager> Driver<T> {
                             UwbEvent::ERROR => {
                                 // Send device status notification with error state.
                                 let device_status_ntf = DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateError}.build();
-                                self.event_manager.device_status_notification_received(device_status_ntf)?;
+                                self.event_manager.device_status_notification_received(device_status_ntf, &chip_id)?;
                                 self.set_state(UwbState::None);
                             }
                             _ => ()
