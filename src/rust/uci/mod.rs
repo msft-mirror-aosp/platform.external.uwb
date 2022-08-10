@@ -375,6 +375,7 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager
                     .session_update_controller_multicast_list_notification_received(response)?;
             }
+            uci_hrcv::UciNotification::AndroidRangeDiagnosticsNtf(_response) => {}
             uci_hrcv::UciNotification::RawVendorNtf(response) => {
                 self.event_manager.vendor_uci_notification_received(response, &chip_id)?;
             }
