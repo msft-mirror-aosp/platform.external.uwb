@@ -50,8 +50,16 @@ const EXTENDED_MAC_ADDRESS_LEN: usize = 8;
 // of less safety.
 
 pub trait EventManager {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()>;
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()>;
+    fn device_status_notification_received(
+        &self,
+        data: DeviceStatusNtfPacket,
+        chip_id: &str,
+    ) -> Result<()>;
+    fn core_generic_error_notification_received(
+        &self,
+        data: GenericErrorPacket,
+        chip_id: &str,
+    ) -> Result<()>;
     fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()>;
     fn short_range_data_notification_received(
         &self,
@@ -65,7 +73,11 @@ pub trait EventManager {
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()>;
-    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()>;
+    fn vendor_uci_notification_received(
+        &self,
+        data: UciNotificationPacket,
+        chip_id: &str,
+    ) -> Result<()>;
 }
 
 // Manages calling Java callbacks through the JNI.
@@ -77,16 +89,24 @@ pub struct EventManagerImpl {
 }
 
 impl EventManager for EventManagerImpl {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+    fn device_status_notification_received(
+        &self,
+        data: DeviceStatusNtfPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_device_status_notification_received(&env, data);
+        let result = self.handle_device_status_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
 
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+    fn core_generic_error_notification_received(
+        &self,
+        data: GenericErrorPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_core_generic_error_notification_received(&env, data);
+        let result = self.handle_core_generic_error_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
@@ -128,9 +148,13 @@ impl EventManager for EventManagerImpl {
         self.clear_exception(env);
         result
     }
-    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()> {
+    fn vendor_uci_notification_received(
+        &self,
+        data: UciNotificationPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_vendor_uci_notification_received(&env, data);
+        let result = self.handle_vendor_uci_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
@@ -178,6 +202,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: DeviceStatusNtfPacket,
+        chip_id: &str,
     ) -> Result<()> {
         let state = data.get_device_state().to_i32().ok_or_else(|| {
             error!("Failed converting device_state to i32");
@@ -186,8 +211,8 @@ impl EventManagerImpl {
         env.call_method(
             self.obj.as_obj(),
             "onDeviceStatusNotificationReceived",
-            "(I)V",
-            &[JValue::Int(state)],
+            "(ILjava/lang/String;)V",
+            &[JValue::Int(state), JValue::Object(JObject::from(env.new_string(chip_id)?))],
         )
         .map(|_| ()) // drop void method return
     }
@@ -222,6 +247,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: GenericErrorPacket,
+        chip_id: &str,
     ) -> Result<()> {
         let status = data.get_status().to_i32().ok_or_else(|| {
             error!("Failed converting status to i32");
@@ -230,8 +256,8 @@ impl EventManagerImpl {
         env.call_method(
             self.obj.as_obj(),
             "onCoreGenericErrorNotificationReceived",
-            "(I)V",
-            &[JValue::Int(status)],
+            "(ILjava/lang/String;)V",
+            &[JValue::Int(status), JValue::Object(JObject::from(env.new_string(chip_id)?))],
         )
         .map(|_| ()) // drop void method return
     }
@@ -681,6 +707,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: UciNotificationPacket,
+        _chip_id: &str,
     ) -> Result<()> {
         let gid: i32 = data.get_group_id().to_i32().ok_or_else(|| {
             error!("Failed to convert gid");
@@ -693,6 +720,7 @@ impl EventManagerImpl {
         let payload: Vec<u8> = EventManagerImpl::get_vendor_uci_payload(data)?;
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
 
+        // TODO(b/237533396): Add chip_id parameter to onVendorUciNotificationReceived
         env.call_method(
             self.obj.as_obj(),
             "onVendorUciNotificationReceived",
