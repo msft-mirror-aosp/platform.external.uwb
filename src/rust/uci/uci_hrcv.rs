@@ -54,6 +54,7 @@ pub enum UciNotification {
     SessionUpdateControllerMulticastListNtf(SessionUpdateControllerMulticastListNtfPacket),
     ShortMacTwoWayRangeDataNtf(ShortMacTwoWayRangeDataNtfPacket),
     ExtendedMacTwoWayRangeDataNtf(ExtendedMacTwoWayRangeDataNtfPacket),
+    AndroidRangeDiagnosticsNtf(ParsedDiagnosticNtfPacket),
     RawVendorNtf(UciNotificationPacket),
 }
 
@@ -194,7 +195,12 @@ fn range_data_notification(evt: RangeDataNtfPacket) -> Result<UciNotification, U
 }
 
 fn android_notification(evt: AndroidNotificationPacket) -> Result<UciNotification, UwbErr> {
-    Err(UwbErr::Specialize(evt.to_vec()))
+    match evt.specialize() {
+        AndroidNotificationChild::AndroidRangeDiagnosticsNtf(evt) => {
+            Ok(UciNotification::AndroidRangeDiagnosticsNtf(parse_diagnostics_ntf(evt)?))
+        }
+        _ => Err(UwbErr::Specialize(evt.to_vec())),
+    }
 }
 
 fn vendor_notification(evt: UciNotificationPacket) -> Result<UciNotification, UwbErr> {
