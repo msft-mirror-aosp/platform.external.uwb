@@ -129,17 +129,22 @@ impl IUwbClientCallbackAsyncServer for RawUciCallback {
 /// Implentation of UciHal trait for Android.
 #[derive(Default)]
 pub struct UciHalAndroid {
-    // Has a copy of uci_rsp_ntf_sender via RawUciCallback.
-    hal_uci_recipient: Option<Strong<dyn IUwbChipAsync<Tokio>>>,
-    hal_death_recipient: Option<Arc<Mutex<DeathRecipient>>>,
+    chip_id: String,
     hal_close_result_receiver: Option<mpsc::Receiver<Result<()>>>,
+    hal_death_recipient: Option<Arc<Mutex<DeathRecipient>>>,
+    hal_uci_recipient: Option<Strong<dyn IUwbChipAsync<Tokio>>>,
 }
 
 #[allow(dead_code)]
 impl UciHalAndroid {
     /// Constructor for empty UciHal.
-    pub fn new() -> Self {
-        Self { hal_uci_recipient: None, hal_death_recipient: None, hal_close_result_receiver: None }
+    pub fn new(chip_id: &str) -> Self {
+        Self {
+            chip_id: chip_id.to_owned(),
+            hal_close_result_receiver: None,
+            hal_death_recipient: None,
+            hal_uci_recipient: None,
+        }
     }
 }
 
@@ -161,8 +166,19 @@ impl UciHal for UciHalAndroid {
             .await
             .map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let chip_names = i_uwb.getChips().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        if chip_names.is_empty() {
+            error!("No UWB chip available.");
+            return Err(UwbCoreError::BadParameters);
+        }
+        let chip_name: &str = match &self.chip_id == "default" {
+            false => &chip_names[0],
+            true => &self.chip_id,
+        };
+        if !chip_names.contains(&chip_name.to_string()) {
+            return Err(UwbCoreError::BadParameters);
+        }
         let i_uwb_chip = i_uwb
-            .getChip(&chip_names[0])
+            .getChip(chip_name)
             .await
             .map_err(|e| UwbCoreError::from(Error::from(e)))?
             .into_async();
