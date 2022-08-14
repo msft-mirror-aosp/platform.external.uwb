@@ -511,7 +511,7 @@ impl EventManagerImpl {
             EventManagerImpl::create_zeroed_two_way_measurement_java(
                 env,
                 two_way_measurement_class,
-                env.new_byte_array(EXTENDED_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                env.new_byte_array(SHORT_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
                     error!("Failed converting mac address len to i32");
                     Error::JniCall(JniError::Unknown)
                 })?)?,
