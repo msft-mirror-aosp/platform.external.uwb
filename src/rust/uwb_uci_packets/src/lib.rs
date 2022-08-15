@@ -169,3 +169,114 @@ impl PacketDefrager {
         }
     }
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct ParsedDiagnosticNtfPacket {
+    session_id: u32,
+    sequence_number: u32,
+    frame_reports: Vec<ParsedFrameReport>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct ParsedFrameReport {
+    uwb_msg_id: u8,
+    action: u8,
+    antenna_set: u8,
+    rssi: Vec<u8>,
+    aoa: Vec<AoaMeasurement>,
+    cir: Vec<CirValue>,
+}
+
+pub fn parse_diagnostics_ntf(
+    evt: AndroidRangeDiagnosticsNtfPacket,
+) -> Result<ParsedDiagnosticNtfPacket> {
+    let session_id = evt.get_session_id();
+    let sequence_number = evt.get_sequence_number();
+    let mut parsed_frame_reports = Vec::new();
+    for report in evt.get_frame_reports() {
+        let mut rssi_vec = Vec::new();
+        let mut aoa_vec = Vec::new();
+        let mut cir_vec = Vec::new();
+        for tlv in &report.frame_report_tlvs {
+            match FrameReportTlvPacketPacket::parse(
+                &[vec![tlv.t as u8, tlv.v.len() as u8], tlv.v.clone()].concat(),
+            ) {
+                Ok(pkt) => match pkt.specialize() {
+                    FrameReportTlvPacketChild::Rssi(rssi) => {
+                        rssi_vec.append(&mut rssi.get_rssi().clone())
+                    }
+                    FrameReportTlvPacketChild::Aoa(aoa) => {
+                        aoa_vec.append(&mut aoa.get_aoa().clone())
+                    }
+                    FrameReportTlvPacketChild::Cir(cir) => {
+                        cir_vec.append(&mut cir.get_cir_value().clone())
+                    }
+                    _ => return Err(Error::InvalidPacketError),
+                },
+                Err(e) => {
+                    error!("Failed to parse the packet {:?}", e);
+                    return Err(Error::InvalidPacketError);
+                }
+            }
+        }
+        parsed_frame_reports.push(ParsedFrameReport {
+            uwb_msg_id: report.uwb_msg_id,
+            action: report.action,
+            antenna_set: report.antenna_set,
+            rssi: rssi_vec,
+            aoa: aoa_vec,
+            cir: cir_vec,
+        });
+    }
+    Ok(ParsedDiagnosticNtfPacket {
+        session_id,
+        sequence_number,
+        frame_reports: parsed_frame_reports,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_diagnostics_ntf() {
+        let rssi_vec = vec![0x01, 0x02, 0x03];
+        let rssi = RssiBuilder { rssi: rssi_vec.clone() }.build();
+        let aoa_1 = AoaMeasurement { tdoa: 1, pdoa: 2, aoa: 3, fom: 4, t: 1 };
+        let aoa_2 = AoaMeasurement { tdoa: 5, pdoa: 6, aoa: 7, fom: 8, t: 2 };
+        let aoa = AoaBuilder { aoa: vec![aoa_1.clone(), aoa_2.clone()] }.build();
+        let cir_vec = vec![CirValue {
+            first_path_index: 1,
+            first_path_snr: 2,
+            first_path_ns: 3,
+            peak_path_index: 4,
+            peak_path_snr: 5,
+            peak_path_ns: 6,
+            first_path_sample_offset: 7,
+            samples_number: 2,
+            sample_window: vec![0, 1, 2, 3],
+        }];
+        let cir = CirBuilder { cir_value: cir_vec.clone() }.build();
+        let mut frame_reports = Vec::new();
+        let tlvs = vec![
+            FrameReportTlv { t: rssi.get_t(), v: rssi.get_rssi().to_vec() },
+            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[2..].to_vec() },
+            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[2..].to_vec() },
+        ];
+        let frame_report =
+            FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
+        frame_reports.push(frame_report);
+        let packet =
+            AndroidRangeDiagnosticsNtfBuilder { session_id: 1, sequence_number: 1, frame_reports }
+                .build();
+        let mut parsed_packet = parse_diagnostics_ntf(packet).unwrap();
+        let parsed_frame_report = parsed_packet.frame_reports.pop().unwrap();
+        assert_eq!(rssi_vec, parsed_frame_report.rssi);
+        assert_eq!(aoa_1, parsed_frame_report.aoa[0]);
+        assert_eq!(aoa_2, parsed_frame_report.aoa[1]);
+        assert_eq!(cir_vec, parsed_frame_report.cir);
+    }
+}
