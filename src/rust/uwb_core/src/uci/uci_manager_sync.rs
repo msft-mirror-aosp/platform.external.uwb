@@ -19,10 +19,11 @@
 //! behavior aligned with the Android JNI UCI, and routes the UciNotifications to NotificationManager.
 
 use log::{error, info};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use tokio::sync::mpsc;
+use tokio::task;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawVendorMessage,
@@ -38,7 +39,8 @@ use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 /// The UciManagerSync assumes the NotificationManager takes the responsibility to properly handle
 /// the notifications, including tracking the state of HAL. UciManagerSync and lower levels only
 /// redirect and categorize the notifications. The notifications are processed through callbacks.
-pub trait NotificationManager: 'static + Send {
+/// NotificationManager can be !Send and !Sync, as interfacing with other programs may require.
+pub trait NotificationManager: 'static {
     /// Callback for CoreNotification.
     fn on_core_notification(&mut self, core_notification: CoreNotification) -> Result<()>;
 
@@ -48,6 +50,13 @@ pub trait NotificationManager: 'static + Send {
     /// Callback for RawVendorMessage.
     fn on_vendor_notification(&mut self, vendor_notification: RawVendorMessage) -> Result<()>;
 }
+
+/// Builder for NotificationManager. Builder is sent between threads.
+pub trait NotificationManagerBuilder<T: NotificationManager>: 'static + Send + Sync {
+    /// Builds NotificationManager. The build operation Consumes Builder.
+    fn build(self) -> Option<T>;
+}
+
 struct NotificationDriver<U: NotificationManager> {
     core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
     session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
@@ -55,31 +64,18 @@ struct NotificationDriver<U: NotificationManager> {
     notification_manager: U,
 }
 impl<U: NotificationManager> NotificationDriver<U> {
-    fn new(notification_manager: U) -> Self {
+    fn new(
+        core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
+        session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
+        vendor_notification_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
+        notification_manager: U,
+    ) -> Self {
         Self {
-            core_notification_receiver: mpsc::unbounded_channel::<CoreNotification>().1,
-            session_notification_receiver: mpsc::unbounded_channel::<SessionNotification>().1,
-            vendor_notification_receiver: mpsc::unbounded_channel::<RawVendorMessage>().1,
+            core_notification_receiver,
+            session_notification_receiver,
+            vendor_notification_receiver,
             notification_manager,
         }
-    }
-    fn set_core_notification_receiver(
-        &mut self,
-        core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
-    ) {
-        self.core_notification_receiver = core_notification_receiver;
-    }
-    fn set_session_notification_receiver(
-        &mut self,
-        session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
-    ) {
-        self.session_notification_receiver = session_notification_receiver;
-    }
-    fn set_vendor_notification_receiver(
-        &mut self,
-        vendor_notification_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
-    ) {
-        self.vendor_notification_receiver = vendor_notification_receiver;
     }
     async fn run(&mut self) {
         loop {
@@ -116,36 +112,67 @@ pub struct UciManagerSync {
     uci_manager_impl: UciManagerImpl,
 }
 impl UciManagerSync {
-    /// UciHal and NotificationManager required at construction as they are required before open_hal
-    /// called. runtime is taken with ownership for blocking on async steps only.
-    pub fn new<T: UciHal, U: NotificationManager>(
-        runtime: Runtime,
+    /// UciHal and NotificationManagerBuilder required at construction as they are required before
+    /// open_hal is called. runtime is taken with ownership for blocking on async steps only.
+    pub fn new<T: UciHal, U: NotificationManager, V: NotificationManagerBuilder<U>>(
+        uci_manager_runtime: Runtime,
         hal: T,
-        notification_manager: U,
-    ) -> Self {
+        notification_manager_builder: V,
+    ) -> Result<Self> {
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
-        let mut uci_manager_impl = runtime.block_on(async { UciManagerImpl::new(hal) });
-        let mut notification_driver = NotificationDriver::new(notification_manager);
-        runtime.block_on(async {
-            let (core_notification_sender, core_notification_receiver) =
-                mpsc::unbounded_channel::<CoreNotification>();
+        let mut uci_manager_impl = uci_manager_runtime.block_on(async { UciManagerImpl::new(hal) });
+        let (core_notification_sender, core_notification_receiver) =
+            mpsc::unbounded_channel::<CoreNotification>();
+        let (session_notification_sender, session_notification_receiver) =
+            mpsc::unbounded_channel::<SessionNotification>();
+        let (vendor_notification_sender, vendor_notification_receiver) =
+            mpsc::unbounded_channel::<RawVendorMessage>();
+        uci_manager_runtime.block_on(async {
             uci_manager_impl.set_core_notification_sender(core_notification_sender).await;
-            notification_driver.set_core_notification_receiver(core_notification_receiver);
-        });
-        runtime.block_on(async {
-            let (session_notification_sender, session_notification_receiver) =
-                mpsc::unbounded_channel::<SessionNotification>();
             uci_manager_impl.set_session_notification_sender(session_notification_sender).await;
-            notification_driver.set_session_notification_receiver(session_notification_receiver);
-        });
-        runtime.block_on(async {
-            let (vendor_notification_sender, vendor_notification_receiver) =
-                mpsc::unbounded_channel::<RawVendorMessage>();
             uci_manager_impl.set_vendor_notification_sender(vendor_notification_sender).await;
-            notification_driver.set_vendor_notification_receiver(vendor_notification_receiver);
         });
-        runtime.spawn(async move { notification_driver.run().await });
-        Self { runtime, uci_manager_impl }
+        // The potentially !Send NotificationManager is created in a separate thread.
+        let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
+        std::thread::spawn(move || {
+            let notification_runtime =
+                match RuntimeBuilder::new_current_thread().enable_all().build() {
+                    Ok(nr) => nr,
+                    Err(_) => {
+                        // unwrap safe since receiver is in scope
+                        driver_status_sender.send(false).unwrap();
+                        return;
+                    }
+                };
+
+            let local = task::LocalSet::new();
+            let notification_manager = match notification_manager_builder.build() {
+                Some(nm) => {
+                    // unwrap safe since receiver is in scope
+                    driver_status_sender.send(true).unwrap();
+                    nm
+                }
+                None => {
+                    // unwrap safe since receiver is in scope
+                    driver_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
+            let mut notification_driver = NotificationDriver::new(
+                core_notification_receiver,
+                session_notification_receiver,
+                vendor_notification_receiver,
+                notification_manager,
+            );
+            local.spawn_local(async move {
+                task::spawn_local(async move { notification_driver.run().await }).await.unwrap();
+            });
+            notification_runtime.block_on(local);
+        });
+        match driver_status_receiver.blocking_recv() {
+            Some(true) => Ok(Self { runtime: uci_manager_runtime, uci_manager_impl }),
+            _ => Err(Error::Unknown),
+        }
     }
 
     /// Start UCI HAL and blocking until UCI commands can be sent.
@@ -182,7 +209,7 @@ impl UciManagerSync {
         self.runtime.block_on(self.uci_manager_impl.core_set_config(config_tlvs))
     }
 
-    /// Send UCI command for getting core configuration.  
+    /// Send UCI command for getting core configuration.
     pub fn core_get_config(
         &mut self,
         config_ids: Vec<DeviceConfigId>,
@@ -281,6 +308,9 @@ impl UciManagerSync {
 mod tests {
     use super::*;
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use tokio::runtime::Builder;
     use uwb_uci_packets::DeviceState;
 
@@ -290,16 +320,14 @@ mod tests {
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
-    }
-    impl MockNotificationManager {
-        fn new(device_state_sender: mpsc::UnboundedSender<DeviceState>) -> Self {
-            MockNotificationManager { device_state_sender }
-        }
+        // nonsend_counter is an example of a !Send property.
+        nonsend_counter: Rc<RefCell<usize>>,
     }
     impl NotificationManager for MockNotificationManager {
         fn on_core_notification(&mut self, core_notification: CoreNotification) -> Result<()> {
             match core_notification {
                 CoreNotification::DeviceStatus(device_state) => {
+                    self.nonsend_counter.replace_with(|&mut prev| prev + 1);
                     self.device_state_sender.send(device_state).map_err(|_| Error::Unknown)?;
                 }
                 CoreNotification::GenericError(_) => {}
@@ -314,6 +342,19 @@ mod tests {
         }
         fn on_vendor_notification(&mut self, _vendor_notification: RawVendorMessage) -> Result<()> {
             Ok(())
+        }
+    }
+    struct MockNotificationManagerBuilder {
+        device_state_sender: mpsc::UnboundedSender<DeviceState>,
+        // initial_count is an example for a parameter undetermined at compile time.
+        initial_count: usize,
+    }
+    impl NotificationManagerBuilder<MockNotificationManager> for MockNotificationManagerBuilder {
+        fn build(self) -> Option<MockNotificationManager> {
+            Some(MockNotificationManager {
+                device_state_sender: self.device_state_sender,
+                nonsend_counter: Rc::new(RefCell::new(self.initial_count)),
+            })
         }
     }
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -335,8 +376,9 @@ mod tests {
         let mut uci_manager_sync = UciManagerSync::new(
             Builder::new_multi_thread().enable_all().build().unwrap(),
             hal,
-            MockNotificationManager::new(device_state_sender),
-        );
+            MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
+        )
+        .unwrap();
         assert!(uci_manager_sync.open_hal().is_ok());
         let device_state = test_rt.block_on(async { device_state_receiver.recv().await });
         assert_eq!(device_state, Some(DeviceState::DeviceStateReady));
