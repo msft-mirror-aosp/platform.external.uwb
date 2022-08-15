@@ -2,12 +2,13 @@
 #![allow(missing_docs)]
 
 use android_hardware_uwb::aidl::android::hardware::uwb::{
-    UwbEvent::UwbEvent, UwbStatus::UwbStatus,
+    IUwbChip::IUwbChipAsync, UwbEvent::UwbEvent, UwbStatus::UwbStatus,
 };
 use android_hardware_uwb::binder::{DeathRecipient, Strong};
 use libfuzzer_sys::{arbitrary::Arbitrary, fuzz_target};
 use log::{error, info};
 use num_traits::cast::FromPrimitive;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Builder;
 use tokio::sync::{mpsc, Mutex};
@@ -84,6 +85,7 @@ struct ShortAddressMeasurement {
     aoa_destination_elevation: u16,
     aoa_destination_elevation_fom: u8,
     slot_index: u8,
+    rssi: u8,
 }
 
 impl ShortAddressMeasurement {
@@ -102,6 +104,7 @@ impl ShortAddressMeasurement {
             aoa_destination_elevation: self.aoa_destination_elevation,
             aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
             slot_index: self.slot_index,
+            rssi: self.rssi,
         })
     }
 }
@@ -121,6 +124,7 @@ struct ExtendedAddressMeasurement {
     aoa_destination_elevation: u16,
     aoa_destination_elevation_fom: u8,
     slot_index: u8,
+    rssi: u8,
 }
 
 impl ExtendedAddressMeasurement {
@@ -139,6 +143,7 @@ impl ExtendedAddressMeasurement {
             aoa_destination_elevation: self.aoa_destination_elevation,
             aoa_destination_elevation_fom: self.aoa_destination_elevation_fom,
             slot_index: self.slot_index,
+            rssi: self.rssi,
         })
     }
 }
@@ -168,8 +173,8 @@ enum Command {
 
 async fn create_dispatcher_with_mock_adaptation(
     msgs: Vec<Command>,
-) -> Result<(DispatcherImpl, mpsc::UnboundedSender<HalCallback>), UwbErr> {
-    let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+) -> Result<(DispatcherImpl, mpsc::UnboundedSender<(HalCallback, String)>), UwbErr> {
+    let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<(HalCallback, String)>();
     let mut mock_hal = MockHal::new(Some(rsp_sender.clone()));
     let mut mock_event_manager = MockEventManager::new();
     for msg in &msgs {
@@ -290,8 +295,11 @@ async fn create_dispatcher_with_mock_adaptation(
     let mut adaptation = Arc::new(
         UwbAdaptationImpl::new_with_args(
             rsp_sender.clone(),
-            Strong::new(Box::new(mock_hal)),
-            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+            HashMap::from([(
+                String::from("chip_id"),
+                Strong::new(Box::new(mock_hal) as Box<dyn IUwbChipAsync<_> + 'static>),
+            )]),
+            Arc::new(Mutex::new(Vec::from([DeathRecipient::new(|| {})]))),
         )
         .await?,
     );
@@ -466,17 +474,22 @@ fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
     let rt = Builder::new_current_thread().enable_all().build()?;
     let (mut mock_dispatcher, mut rsp_sender) =
         rt.block_on(create_dispatcher_with_mock_adaptation(msgs.clone()))?;
+    let chip_id = String::from("chip_id");
     for msg in msgs {
         match msg {
             Command::JNICmd(cmd) => match cmd {
                 JNICommand::Enable => {
-                    mock_dispatcher.send_jni_command(JNICommand::Enable)?;
+                    mock_dispatcher
+                        .send_jni_command(JNICommand::Enable, chip_id.clone())
+                        .expect(format!("Failed to send {:?}", cmd).as_str());
                 }
                 JNICommand::Disable(_graceful) => {
                     break;
                 }
                 _ => {
-                    mock_dispatcher.block_on_jni_command(cmd)?;
+                    mock_dispatcher
+                        .block_on_jni_command(cmd.clone(), chip_id.clone())
+                        .expect(format!("Failed to send {:?}", cmd).as_str());
                 }
             },
             Command::UciNtf(ntf) => {
@@ -576,12 +589,14 @@ fn consume_command(msgs: Vec<Command>) -> Result<(), UwbErr> {
                     }
                 };
                 rsp_sender
-                    .send(HalCallback::UciNtf(evt))
-                    .unwrap_or_else(|e| error!("Error sending uci notification: {:?}", e));
+                    .send((HalCallback::UciNtf(evt.clone()), chip_id.clone()))
+                    .expect(format!("Error sending uci notification: {:?}", evt).as_str());
             }
         }
     }
-    mock_dispatcher.send_jni_command(JNICommand::Disable(true))?;
+    mock_dispatcher
+        .send_jni_command(JNICommand::Disable(true), chip_id)
+        .expect("Failed to send JNICommand::Disable cmd.");
     mock_dispatcher.wait_for_exit()?;
     Ok(())
 }

@@ -20,6 +20,7 @@ use binder_tokio::{Tokio, TokioRuntime};
 use log::error;
 #[cfg(target_os = "android")]
 use rustutils::system_properties;
+use std::collections::hash_map::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
@@ -33,14 +34,19 @@ type SyncUciLogger = Arc<dyn UciLogger + Send + Sync>;
 const UCI_LOG_DEFAULT: UciLogMode = UciLogMode::Disabled;
 
 pub struct UwbClientCallback {
-    rsp_sender: mpsc::UnboundedSender<HalCallback>,
+    rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
     logger: SyncUciLogger,
     defrager: Mutex<PacketDefrager>,
+    chip_id: String,
 }
 
 impl UwbClientCallback {
-    fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>, logger: SyncUciLogger) -> Self {
-        UwbClientCallback { rsp_sender, logger, defrager: Default::default() }
+    fn new(
+        rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
+        logger: SyncUciLogger,
+        chip_id: String,
+    ) -> Self {
+        UwbClientCallback { rsp_sender, logger, defrager: Default::default(), chip_id }
     }
 
     async fn log_uci_packet(&self, packet: UciPacketPacket) {
@@ -58,7 +64,7 @@ impl Interface for UwbClientCallback {}
 impl IUwbClientCallbackAsyncServer for UwbClientCallback {
     async fn onHalEvent(&self, event: UwbEvent, event_status: UwbStatus) -> BinderResult<()> {
         self.rsp_sender
-            .send(HalCallback::Event { event, event_status })
+            .send((HalCallback::Event { event, event_status }, self.chip_id.clone()))
             .unwrap_or_else(|e| error!("Error sending evt callback: {:?}", e));
         Ok(())
     }
@@ -71,11 +77,11 @@ impl IUwbClientCallbackAsyncServer for UwbClientCallback {
             match packet_msg {
                 Ok(uci_hrcv::UciMessage::Response(evt)) => self
                     .rsp_sender
-                    .send(HalCallback::UciRsp(evt))
+                    .send((HalCallback::UciRsp(evt), self.chip_id.clone()))
                     .unwrap_or_else(|e| error!("Error sending uci response: {:?}", e)),
                 Ok(uci_hrcv::UciMessage::Notification(evt)) => self
                     .rsp_sender
-                    .send(HalCallback::UciNtf(evt))
+                    .send((HalCallback::UciNtf(evt), self.chip_id.clone()))
                     .unwrap_or_else(|e| error!("Error sending uci notification: {:?}", e)),
                 _ => error!("UCI message which is neither a UCI RSP or NTF: {:?}", data),
             }
@@ -84,31 +90,56 @@ impl IUwbClientCallbackAsyncServer for UwbClientCallback {
     }
 }
 
-async fn get_hal_service() -> Result<Strong<dyn IUwbChipAsync<Tokio>>> {
+async fn get_hal_service(
+    chip_ids: &[String],
+) -> Result<HashMap<String, Strong<dyn IUwbChipAsync<Tokio>>>> {
     let service_name: &str = "android.hardware.uwb.IUwb/default";
-    let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::get_interface(service_name).await?;
-    let chip_names = i_uwb.getChips().await?;
-    let i_uwb_chip = i_uwb.getChip(&chip_names[0]).await?.into_async();
-    Ok(i_uwb_chip)
+    let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
+        binder_tokio::wait_for_interface(service_name).await?;
+    let mut hal_map = HashMap::new();
+    let chips = i_uwb.getChips().await?;
+
+    // If this is a single-chip system with chip_id == "default", then the name of the chip
+    // doesn't matter. In that case, just grab the first IUwbChip from the list returned by getChips
+    if *chip_ids == vec![String::from("default")] {
+        if chips.is_empty() {
+            error!("No chips are provided by vendor");
+            return Err(UwbErr::UwbStatus(UwbStatus::FAILED));
+        }
+        let i_uwb_chip = i_uwb.getChip(chips.get(0).unwrap()).await?.into_async();
+        hal_map.insert(String::from("default"), i_uwb_chip);
+        return Ok(hal_map);
+    }
+
+    for chip_id in chip_ids {
+        if !chips.contains(chip_id) {
+            error!("Chip {} is not present in list of chip ids provided by vendor", chip_id);
+            return Err(UwbErr::UwbStatus(UwbStatus::FAILED));
+        }
+        let i_uwb_chip = i_uwb.getChip(chip_id).await?.into_async();
+        hal_map.insert(chip_id.clone(), i_uwb_chip);
+    }
+
+    Ok(hal_map)
 }
 
 #[async_trait]
 pub trait UwbAdaptation {
     async fn finalize(&mut self, exit_status: bool);
-    async fn hal_open(&self) -> Result<()>;
-    async fn hal_close(&self) -> Result<()>;
-    async fn core_initialization(&self) -> Result<()>;
-    async fn session_initialization(&self, session_id: i32) -> Result<()>;
-    async fn send_uci_message(&self, cmd: UciCommandPacket) -> Result<()>;
+    async fn hal_open(&self, chip_id: &str) -> Result<()>;
+    async fn hal_close(&self, chip_id: &str) -> Result<()>;
+    async fn core_initialization(&self, chip_id: &str) -> Result<()>;
+    async fn session_initialization(&self, session_id: i32, chip_id: &str) -> Result<()>;
+    async fn send_uci_message(&self, cmd: UciCommandPacket, chip_id: &str) -> Result<()>;
 }
 
 #[derive(Clone)]
 pub struct UwbAdaptationImpl {
-    hal: Strong<dyn IUwbChipAsync<Tokio>>,
+    hal_map: HashMap<String, Strong<dyn IUwbChipAsync<Tokio>>>,
     #[allow(dead_code)]
     // Need to store the death recipient since link_to_death stores a weak pointer.
-    hal_death_recipient: Arc<Mutex<DeathRecipient>>,
-    rsp_sender: mpsc::UnboundedSender<HalCallback>,
+    hal_death_recipients: Arc<Mutex<Vec<DeathRecipient>>>,
+    rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
     logger: SyncUciLogger,
 }
 
@@ -140,34 +171,54 @@ impl UwbAdaptationImpl {
     }
 
     pub async fn new_with_args(
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
-        hal: Strong<dyn IUwbChipAsync<Tokio>>,
-        hal_death_recipient: Arc<Mutex<DeathRecipient>>,
+        rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
+        hal_map: HashMap<String, Strong<dyn IUwbChipAsync<Tokio>>>,
+        hal_death_recipients: Arc<Mutex<Vec<DeathRecipient>>>,
     ) -> Result<Self> {
         let logger = UciLoggerImpl::new(
             UwbAdaptationImpl::get_uci_log_mode(),
             Arc::new(Mutex::new(RealFileFactory::default())),
         )
         .await;
-        Ok(UwbAdaptationImpl { hal, rsp_sender, logger: Arc::new(logger), hal_death_recipient })
+        Ok(UwbAdaptationImpl {
+            hal_map,
+            rsp_sender,
+            logger: Arc::new(logger),
+            hal_death_recipients,
+        })
     }
 
-    pub async fn new(rsp_sender: mpsc::UnboundedSender<HalCallback>) -> Result<Self> {
-        let hal = get_hal_service().await?;
-        let rsp_sender_clone = rsp_sender.clone();
-        let mut hal_death_recipient = DeathRecipient::new(move || {
-            error!("UWB HAL died. Resetting stack...");
-            // Send error HAL event to trigger stack recovery.
-            rsp_sender_clone
-                .send(HalCallback::Event {
-                    event: UwbEvent::ERROR,
-                    event_status: UwbStatus::FAILED,
-                })
-                .unwrap_or_else(|e| error!("Error sending error evt callback: {:?}", e));
-        });
+    pub async fn new(
+        rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
+        chip_ids: &[String],
+    ) -> Result<Self> {
+        let hal_map = get_hal_service(chip_ids).await?;
+
+        let mut hal_death_recipients = Vec::new();
         // Register for death notification.
-        hal.as_binder().link_to_death(&mut hal_death_recipient)?;
-        Self::new_with_args(rsp_sender, hal, Arc::new(Mutex::new(hal_death_recipient))).await
+        for chip_id in chip_ids {
+            let rsp_sender_clone = rsp_sender.clone();
+            let mut hal_death_recipient = DeathRecipient::new({
+                let chip_id_clone = chip_id.clone();
+
+                move || {
+                    error!("UWB HAL died. Resetting stack...");
+                    // Send error HAL event to trigger stack recovery.
+                    rsp_sender_clone
+                        .send((
+                            HalCallback::Event {
+                                event: UwbEvent::ERROR,
+                                event_status: UwbStatus::FAILED,
+                            },
+                            chip_id_clone.clone(),
+                        ))
+                        .unwrap_or_else(|e| error!("Error sending error evt callback: {:?}", e));
+                }
+            });
+            hal_map.get(chip_id).unwrap().as_binder().link_to_death(&mut hal_death_recipient)?;
+            hal_death_recipients.push(hal_death_recipient);
+        }
+        Self::new_with_args(rsp_sender, hal_map, Arc::new(Mutex::new(hal_death_recipients))).await
     }
 }
 
@@ -175,35 +226,42 @@ impl UwbAdaptationImpl {
 impl UwbAdaptation for UwbAdaptationImpl {
     async fn finalize(&mut self, _exit_status: bool) {}
 
-    async fn hal_open(&self) -> Result<()> {
+    async fn hal_open(&self, chip_id: &str) -> Result<()> {
         let m_cback = BnUwbClientCallback::new_async_binder(
-            UwbClientCallback::new(self.rsp_sender.clone(), self.logger.clone()),
+            UwbClientCallback::new(
+                self.rsp_sender.clone(),
+                self.logger.clone(),
+                chip_id.to_string(),
+            ),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
-        Ok(self.hal.open(&m_cback).await?)
+        match self.hal_map.get(chip_id) {
+            Some(chip) => Ok(chip.open(&m_cback).await?),
+            _ => Err(UwbErr::UwbStatus(UwbStatus::FAILED)),
+        }
     }
 
-    async fn hal_close(&self) -> Result<()> {
+    async fn hal_close(&self, chip_id: &str) -> Result<()> {
         self.logger.close_file().await;
-        Ok(self.hal.close().await?)
+        Ok(self.hal_map.get(chip_id).unwrap().close().await?)
     }
 
-    async fn core_initialization(&self) -> Result<()> {
-        Ok(self.hal.coreInit().await?)
+    async fn core_initialization(&self, chip_id: &str) -> Result<()> {
+        Ok(self.hal_map.get(chip_id).unwrap().coreInit().await?)
     }
 
-    async fn session_initialization(&self, session_id: i32) -> Result<()> {
-        Ok(self.hal.sessionInit(session_id).await?)
+    async fn session_initialization(&self, session_id: i32, chip_id: &str) -> Result<()> {
+        Ok(self.hal_map.get(chip_id).unwrap().sessionInit(session_id).await?)
     }
 
-    async fn send_uci_message(&self, cmd: UciCommandPacket) -> Result<()> {
+    async fn send_uci_message(&self, cmd: UciCommandPacket, chip_id: &str) -> Result<()> {
         self.logger.log_uci_command(cmd.clone()).await;
         let packet: UciPacketPacket = cmd.into();
         // fragment packet.
         let fragmented_packets: Vec<UciPacketHalPacket> = packet.into();
         for packet in fragmented_packets {
-            self.hal.sendUciMessage(&packet.to_vec()).await?;
+            self.hal_map.get(chip_id).unwrap().sendUciMessage(&packet.to_vec()).await?;
         }
         // TODO should we be validating the returned number?
         Ok(())
@@ -224,20 +282,21 @@ pub mod tests {
     use uwb_uci_packets::*;
 
     fn create_uwb_client_callback(
-        rsp_sender: mpsc::UnboundedSender<HalCallback>,
+        rsp_sender: mpsc::UnboundedSender<(HalCallback, String)>,
     ) -> UwbClientCallback {
         // Add tests for the mock logger.
-        UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()))
+        UwbClientCallback::new(rsp_sender, Arc::new(MockUciLogger::new()), String::from("default"))
     }
 
-    fn setup_client_callback() -> (mpsc::UnboundedReceiver<HalCallback>, UwbClientCallback) {
+    fn setup_client_callback() -> (mpsc::UnboundedReceiver<(HalCallback, String)>, UwbClientCallback)
+    {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
             logger::Config::default()
                 .with_tag_on_device("uwb_test")
                 .with_min_level(log::Level::Debug),
         );
-        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<(HalCallback, String)>();
         let uwb_client_callback = create_uwb_client_callback(rsp_sender);
         (rsp_receiver, uwb_client_callback)
     }
@@ -250,7 +309,7 @@ pub mod tests {
         let result = uwb_client_callback.onHalEvent(event, event_status).await;
         assert_eq!(result, Ok(()));
         let response = rsp_receiver.recv().await;
-        assert!(matches!(response, Some(HalCallback::Event { event: _, event_status: _ })));
+        assert!(matches!(response, Some((HalCallback::Event { event: _, event_status: _ }, _))));
     }
 
     #[tokio::test]
@@ -265,7 +324,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::GetDeviceInfoRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::GetDeviceInfoRsp(_)), _))
         ));
     }
 
@@ -278,7 +337,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::GetCapsInfoRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::GetCapsInfoRsp(_)), _))
         ));
     }
 
@@ -291,7 +350,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SetConfigRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SetConfigRsp(_)), _))
         ));
     }
 
@@ -304,7 +363,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::GetConfigRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::GetConfigRsp(_)), _))
         ));
     }
 
@@ -317,7 +376,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::DeviceResetRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::DeviceResetRsp(_)), _))
         ));
     }
 
@@ -330,7 +389,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionInitRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionInitRsp(_)), _))
         ));
     }
 
@@ -343,7 +402,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionDeinitRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionDeinitRsp(_)), _))
         ));
     }
 
@@ -356,7 +415,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetAppConfigRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetAppConfigRsp(_)), _))
         ));
     }
 
@@ -369,7 +428,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionSetAppConfigRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionSetAppConfigRsp(_)), _))
         ));
     }
 
@@ -382,7 +441,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetStateRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetStateRsp(_)), _))
         ));
     }
 
@@ -395,7 +454,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetCountRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::SessionGetCountRsp(_)), _))
         ));
     }
 
@@ -408,8 +467,11 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(
-                uci_hrcv::UciResponse::SessionUpdateControllerMulticastListRsp(_)
+            Some((
+                HalCallback::UciRsp(
+                    uci_hrcv::UciResponse::SessionUpdateControllerMulticastListRsp(_)
+                ),
+                _
             ))
         ));
     }
@@ -423,7 +485,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStartRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStartRsp(_)), _))
         ));
     }
 
@@ -436,7 +498,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStopRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::RangeStopRsp(_)), _))
         ));
     }
 
@@ -449,7 +511,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidSetCountryCodeRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidSetCountryCodeRsp(_)), _))
         ));
     }
 
@@ -465,7 +527,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidGetPowerStatsRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::AndroidGetPowerStatsRsp(_)), _))
         ));
     }
 
@@ -514,7 +576,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciRsp(uci_hrcv::UciResponse::RawVendorRsp(_)))
+            Some((HalCallback::UciRsp(uci_hrcv::UciResponse::RawVendorRsp(_)), _))
         ));
     }
 
@@ -527,7 +589,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::GenericError(_)))
+            Some((HalCallback::UciNtf(uci_hrcv::UciNotification::GenericError(_)), _))
         ));
     }
 
@@ -540,7 +602,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::DeviceStatusNtf(_)))
+            Some((HalCallback::UciNtf(uci_hrcv::UciNotification::DeviceStatusNtf(_)), _))
         ));
     }
 
@@ -553,7 +615,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::SessionStatusNtf(_)))
+            Some((HalCallback::UciNtf(uci_hrcv::UciNotification::SessionStatusNtf(_)), _))
         ));
     }
 
@@ -566,8 +628,11 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(
-                uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(_)
+            Some((
+                HalCallback::UciNtf(
+                    uci_hrcv::UciNotification::SessionUpdateControllerMulticastListNtf(_)
+                ),
+                _
             ))
         ));
     }
@@ -585,7 +650,10 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(_)))
+            Some((
+                HalCallback::UciNtf(uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(_)),
+                _
+            ))
         ));
     }
 
@@ -602,7 +670,10 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(_)))
+            Some((
+                HalCallback::UciNtf(uci_hrcv::UciNotification::ExtendedMacTwoWayRangeDataNtf(_)),
+                _
+            ))
         ));
     }
 
@@ -651,7 +722,7 @@ pub mod tests {
         let response = rsp_receiver.recv().await;
         assert!(matches!(
             response,
-            Some(HalCallback::UciNtf(uci_hrcv::UciNotification::RawVendorNtf(_)))
+            Some((HalCallback::UciNtf(uci_hrcv::UciNotification::RawVendorNtf(_)), _))
         ));
     }
 
@@ -675,14 +746,17 @@ pub mod tests {
                 .with_tag_on_device("uwb_test")
                 .with_min_level(log::Level::Debug),
         );
-        let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
+        let (rsp_sender, _) = mpsc::unbounded_channel::<(HalCallback, _)>();
         let mock_hal = MockHal::new(None);
         config_fn(&mock_hal);
 
         UwbAdaptationImpl::new_with_args(
             rsp_sender,
-            binder::Strong::new(Box::new(mock_hal)),
-            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+            HashMap::from([(
+                String::from("default"),
+                binder::Strong::new(Box::new(mock_hal) as Box<dyn IUwbChipAsync<_> + 'static>),
+            )]),
+            Arc::new(Mutex::new(Vec::from([DeathRecipient::new(|| {})]))),
         )
         .await
     }
@@ -703,12 +777,12 @@ pub mod tests {
         })
         .await
         .unwrap();
-        adaptation_impl.send_uci_message(cmd).await.unwrap();
+        adaptation_impl.send_uci_message(cmd, "default").await.unwrap();
     }
 
     #[tokio::test]
     async fn test_send_uci_message_fragmented_packet() {
-        let (rsp_sender, _) = mpsc::unbounded_channel::<HalCallback>();
+        let (rsp_sender, _) = mpsc::unbounded_channel::<(HalCallback, _)>();
         let mock_hal = MockHal::new(None);
 
         let cmd_payload: [u8; 400] = [
@@ -799,11 +873,14 @@ pub mod tests {
         );
         let adaptation_impl = UwbAdaptationImpl::new_with_args(
             rsp_sender,
-            binder::Strong::new(Box::new(mock_hal)),
-            Arc::new(Mutex::new(DeathRecipient::new(|| {}))),
+            HashMap::from([(
+                String::from("default"),
+                binder::Strong::new(Box::new(mock_hal) as Box<dyn IUwbChipAsync<_> + 'static>),
+            )]),
+            Arc::new(Mutex::new(Vec::from([DeathRecipient::new(|| {})]))),
         )
         .await
         .unwrap();
-        adaptation_impl.send_uci_message(cmd).await.unwrap();
+        adaptation_impl.send_uci_message(cmd, "default").await.unwrap();
     }
 }
