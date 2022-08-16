@@ -16,33 +16,55 @@
 
 //! MockHal
 
+use crate::uci::{uci_hrcv, HalCallback};
 use android_hardware_uwb::aidl::android::hardware::uwb::{
-    IUwbChip::IUwbChipAsync, IUwbClientCallback::IUwbClientCallback,
+    IUwbChip::IUwbChipAsync, IUwbClientCallback::IUwbClientCallback, UwbEvent::UwbEvent,
+    UwbStatus::UwbStatus,
 };
 use android_hardware_uwb::binder::{Result as BinderResult, Strong};
 use async_trait::async_trait;
 use binder::{SpIBinder, StatusCode};
+use log::info;
 use std::collections::VecDeque;
 use std::sync::Mutex as StdMutex;
+use tokio::sync::mpsc;
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 enum ExpectedHalCall {
-    Open { out: BinderResult<()> },
-    Close { out: BinderResult<()> },
-    CoreInit { out: BinderResult<()> },
-    SessionInit { expected_session_id: i32, out: BinderResult<()> },
-    SendUciMessage { expected_data: Vec<u8>, out: BinderResult<i32> },
+    Open {
+        out: BinderResult<()>,
+    },
+    Close {
+        out: BinderResult<()>,
+    },
+    CoreInit {
+        out: BinderResult<()>,
+    },
+    SessionInit {
+        expected_session_id: i32,
+        out: BinderResult<()>,
+    },
+    SendUciMessage {
+        expected_data: Vec<u8>,
+        expected_rsp: Option<uci_hrcv::UciResponse>,
+        out: BinderResult<i32>,
+    },
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 pub struct MockHal {
+    rsp_sender: Option<mpsc::UnboundedSender<(HalCallback, String)>>,
     expected_calls: StdMutex<VecDeque<ExpectedHalCall>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl MockHal {
-    pub fn new() -> Self {
-        Self { expected_calls: StdMutex::new(VecDeque::new()) }
+    pub fn new(rsp_sender: Option<mpsc::UnboundedSender<(HalCallback, String)>>) -> Self {
+        logger::init(
+            logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
+        );
+        info!("created mock hal.");
+        Self { rsp_sender, expected_calls: StdMutex::new(VecDeque::new()) }
     }
     #[allow(dead_code)]
     pub fn expect_open(&self, out: BinderResult<()>) {
@@ -63,39 +85,48 @@ impl MockHal {
             .unwrap()
             .push_back(ExpectedHalCall::SessionInit { expected_session_id, out });
     }
-    pub fn expect_send_uci_message(&self, expected_data: Vec<u8>, out: BinderResult<i32>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedHalCall::SendUciMessage { expected_data, out });
+    pub fn expect_send_uci_message(
+        &self,
+        expected_data: Vec<u8>,
+        expected_rsp: Option<uci_hrcv::UciResponse>,
+        out: BinderResult<i32>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedHalCall::SendUciMessage {
+            expected_data,
+            expected_rsp,
+            out,
+        });
+    }
+    pub fn clear_expected_calls(&self) {
+        self.expected_calls.lock().unwrap().clear();
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl Drop for MockHal {
     fn drop(&mut self) {
         assert!(self.expected_calls.lock().unwrap().is_empty());
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl Default for MockHal {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl binder::Interface for MockHal {}
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl binder::FromIBinder for MockHal {
     fn try_from(_ibinder: SpIBinder) -> std::result::Result<Strong<Self>, binder::StatusCode> {
         Err(binder::StatusCode::OK)
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 #[async_trait]
 impl<P: binder::BinderAsyncPool> IUwbChipAsync<P> for MockHal {
     fn getName(&self) -> binder::BoxFuture<BinderResult<String>> {
@@ -128,7 +159,20 @@ impl<P: binder::BinderAsyncPool> IUwbChipAsync<P> for MockHal {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedHalCall::Close { out }) => Some(out),
+                Some(ExpectedHalCall::Close { out }) => {
+                    if let Some(sender) = self.rsp_sender.as_ref() {
+                        sender
+                            .send((
+                                HalCallback::Event {
+                                    event: UwbEvent::CLOSE_CPLT,
+                                    event_status: UwbStatus::OK,
+                                },
+                                String::from("default"),
+                            ))
+                            .unwrap();
+                    }
+                    Some(out)
+                }
                 Some(call) => {
                     expected_calls.push_front(call);
                     None
@@ -193,9 +237,12 @@ impl<P: binder::BinderAsyncPool> IUwbChipAsync<P> for MockHal {
         let expected_out = {
             let mut expected_calls = self.expected_calls.lock().unwrap();
             match expected_calls.pop_front() {
-                Some(ExpectedHalCall::SendUciMessage { expected_data, out })
+                Some(ExpectedHalCall::SendUciMessage { expected_data, expected_rsp, out })
                     if expected_data == cmd =>
                 {
+                    if let (Some(rsp), Some(sender)) = (expected_rsp, self.rsp_sender.as_ref()) {
+                        sender.send((HalCallback::UciRsp(rsp), String::from("default"))).unwrap();
+                    }
                     Some(out)
                 }
                 Some(call) => {

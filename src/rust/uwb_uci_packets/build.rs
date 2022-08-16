@@ -12,18 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::env;
+use std::path::Path;
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=uci_packets.pdl");
+    let out_dir = std::env::var_os("OUT_DIR").unwrap();
+    let generated_file = "uci_packets.rs";
+
+    if Path::new(generated_file).exists() {
+        // Copy the rust code directly if the file exists.
+        let dst_path = Path::new(&out_dir).join(generated_file);
+        let result = std::fs::copy(generated_file, &dst_path);
+        eprintln!("{} exists, copy to {:?}: {:?}", generated_file, dst_path, result);
+        return;
+    }
 
     // Generate the rust code by bluetooth_packetgen.
     // The binary should be compiled by `m bluetooth_packetgen -j32` before calling cargo.
-    let out_dir = env::var_os("OUT_DIR").unwrap();
     let output = Command::new("env")
         .arg("bluetooth_packetgen")
-        .arg("--out=".to_owned() + out_dir.as_os_str().to_str().unwrap())
+        .arg("--out=".to_owned() + out_dir.to_str().unwrap())
         .arg("--include=.")
         .arg("--rust")
         .arg("uci_packets.pdl")

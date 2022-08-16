@@ -21,15 +21,16 @@ use tokio::sync::{mpsc, oneshot};
 use uwb_uci_packets::{Packet, UciCommandPacket};
 
 use crate::uci::command::UciCommand;
-use crate::uci::error::{Error, Result};
-use crate::uci::message::UciMessage;
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
-use crate::uci::params::{
+//use crate::uci::error::{Error, Result};
+use crate::error::{Error, Result};
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
     RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
+use crate::uci::message::UciMessage;
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{RawUciMessage, UciHal};
@@ -61,7 +62,7 @@ pub(crate) trait UciManager: 'static + Send + Clone {
     async fn open_hal(&mut self) -> Result<()>;
 
     // Close the UCI HAL.
-    async fn close_hal(&mut self) -> Result<()>;
+    async fn close_hal(&mut self, force: bool) -> Result<()>;
 
     // Send the standard UCI Commands.
     async fn device_reset(&mut self, reset_config: ResetConfig) -> Result<()>;
@@ -91,7 +92,7 @@ pub(crate) trait UciManager: 'static + Send + Clone {
         session_id: SessionId,
         config_ids: Vec<AppConfigTlvType>,
     ) -> Result<Vec<AppConfigTlv>>;
-    async fn session_get_count(&mut self) -> Result<usize>;
+    async fn session_get_count(&mut self) -> Result<u8>;
     async fn session_get_state(&mut self, session_id: SessionId) -> Result<SessionState>;
     async fn session_update_controller_multicast_list(
         &mut self,
@@ -136,10 +137,10 @@ impl UciManagerImpl {
     async fn send_cmd(&self, cmd: UciManagerCmd) -> Result<UciResponse> {
         let (result_sender, result_receiver) = oneshot::channel();
         match self.cmd_sender.send((cmd, result_sender)) {
-            Ok(()) => result_receiver.await.unwrap_or(Err(Error::HalFailed)),
+            Ok(()) => result_receiver.await.unwrap_or(Err(Error::Unknown)),
             Err(cmd) => {
                 error!("Failed to send cmd: {:?}", cmd.0);
-                Err(Error::HalFailed)
+                Err(Error::Unknown)
             }
         }
     }
@@ -172,15 +173,15 @@ impl UciManager for UciManagerImpl {
     async fn open_hal(&mut self) -> Result<()> {
         match self.send_cmd(UciManagerCmd::OpenHal).await {
             Ok(UciResponse::OpenHal) => Ok(()),
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
 
-    async fn close_hal(&mut self) -> Result<()> {
-        match self.send_cmd(UciManagerCmd::CloseHal).await {
+    async fn close_hal(&mut self, force: bool) -> Result<()> {
+        match self.send_cmd(UciManagerCmd::CloseHal { force }).await {
             Ok(UciResponse::CloseHal) => Ok(()),
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -189,7 +190,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::DeviceReset { reset_config };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::DeviceReset(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -198,7 +199,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreGetDeviceInfo;
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreGetDeviceInfo(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -207,7 +208,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreGetCapsInfo;
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreGetCapsInfo(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -219,7 +220,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreSetConfig { config_tlvs };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreSetConfig(resp)) => Ok(resp),
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -231,7 +232,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreGetConfig { cfg_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreGetConfig(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -244,7 +245,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionInit { session_id, session_type };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionInit(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -253,7 +254,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionDeinit { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionDeinit(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -266,7 +267,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionSetAppConfig { session_id, config_tlvs };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionSetAppConfig(resp)) => Ok(resp),
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -279,16 +280,16 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionGetAppConfig { session_id, app_cfg };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionGetAppConfig(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
 
-    async fn session_get_count(&mut self) -> Result<usize> {
+    async fn session_get_count(&mut self) -> Result<u8> {
         let cmd = UciCommand::SessionGetCount;
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionGetCount(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -297,7 +298,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionGetState { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionGetState(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -310,13 +311,13 @@ impl UciManager for UciManagerImpl {
     ) -> Result<()> {
         if !(1..=8).contains(&controlees.len()) {
             warn!("Number of controlees should be between 1 to 8");
-            return Err(Error::InvalidArgs);
+            return Err(Error::BadParameters);
         }
         let cmd =
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -325,7 +326,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::RangeStart { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::RangeStart(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -334,7 +335,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::RangeStop { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::RangeStop(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -343,7 +344,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::RangeGetRangingCount { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::RangeGetRangingCount(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -352,7 +353,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::AndroidSetCountryCode { country_code };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::AndroidSetCountryCode(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -361,7 +362,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::AndroidGetPowerStats;
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::AndroidGetPowerStats(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -375,7 +376,7 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::RawVendorCmd { gid, oid, payload };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::RawVendorCmd(resp)) => resp,
-            Ok(_) => Err(Error::ResponseMismatched),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
@@ -524,7 +525,7 @@ impl<T: UciHal> UciManagerActor<T> {
             UciManagerCmd::OpenHal => {
                 if self.is_hal_opened {
                     warn!("The UCI HAL is already opened, skip.");
-                    let _ = result_sender.send(Err(Error::WrongState));
+                    let _ = result_sender.send(Err(Error::BadParameters));
                     return;
                 }
 
@@ -543,18 +544,25 @@ impl<T: UciHal> UciManagerActor<T> {
                 }
             }
 
-            UciManagerCmd::CloseHal => {
-                if !self.is_hal_opened {
-                    warn!("The UCI HAL is already closed, skip.");
-                    let _ = result_sender.send(Err(Error::WrongState));
-                    return;
-                }
-
-                let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
-                if result.is_ok() {
+            UciManagerCmd::CloseHal { force } => {
+                if force {
+                    debug!("Force closing the UCI HAL");
+                    let _ = self.hal.close().await;
                     self.on_hal_closed();
+                    let _ = result_sender.send(Ok(UciResponse::CloseHal));
+                } else {
+                    if !self.is_hal_opened {
+                        warn!("The UCI HAL is already closed, skip.");
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                        return;
+                    }
+
+                    let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
+                    if result.is_ok() {
+                        self.on_hal_closed();
+                    }
+                    let _ = result_sender.send(result);
                 }
-                let _ = result_sender.send(result);
             }
 
             UciManagerCmd::SendUciCommand { cmd } => {
@@ -587,7 +595,7 @@ impl<T: UciHal> UciManagerActor<T> {
     async fn send_uci_command(&mut self, cmd: UciCommand) -> Result<()> {
         if !self.is_hal_opened {
             warn!("The UCI HAL is already closed, skip.");
-            return Err(Error::WrongState);
+            return Err(Error::BadParameters);
         }
 
         let packet = TryInto::<UciCommandPacket>::try_into(cmd)?;
@@ -622,7 +630,7 @@ impl<T: UciHal> UciManagerActor<T> {
                             DeviceState::DeviceStateReady | DeviceState::DeviceStateActive => {
                                 Ok(UciResponse::OpenHal)
                             }
-                            _ => Err(Error::HalFailed),
+                            _ => Err(Error::Unknown),
                         };
                         let _ = result_sender.send(result);
                     }
@@ -692,7 +700,7 @@ enum UciManagerCmd {
     SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
     SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
     OpenHal,
-    CloseHal,
+    CloseHal { force: bool },
     SendUciCommand { cmd: UciCommand },
 }
 
@@ -703,11 +711,8 @@ mod tests {
     use bytes::Bytes;
     use num_traits::ToPrimitive;
 
+    use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::params::{
-        app_config_tlvs_eq, cap_tlv_eq, device_config_tlvs_eq, power_stats_eq, CapTlvType,
-        StatusCode,
-    };
     use crate::utils::init_test_logging;
 
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -757,7 +762,7 @@ mod tests {
         })
         .await;
 
-        let result = uci_manager.close_hal().await;
+        let result = uci_manager.close_hal(false).await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
@@ -781,8 +786,8 @@ mod tests {
         let mut hal = MockUciHal::new();
         let mut uci_manager = UciManagerImpl::new(hal.clone());
 
-        let result = uci_manager.close_hal().await;
-        assert!(matches!(result, Err(Error::WrongState)));
+        let result = uci_manager.close_hal(false).await;
+        assert!(matches!(result, Err(Error::BadParameters)));
         assert!(hal.wait_expected_calls_done().await);
     }
 
@@ -855,7 +860,7 @@ mod tests {
 
         let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
         let result = uci_manager.core_get_caps_info().await.unwrap();
-        assert!(cap_tlv_eq(&result[0], &tlv));
+        assert_eq!(result[0], tlv);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -910,7 +915,7 @@ mod tests {
         }];
         CoreSetConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
         let result = uci_manager.core_get_config(vec![config_id]).await.unwrap();
-        assert!(device_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1022,7 +1027,7 @@ mod tests {
         let expected_result =
             vec![AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] }];
         let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
-        assert!(app_config_tlvs_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
@@ -1200,7 +1205,7 @@ mod tests {
             total_wake_count: 5,
         };
         let result = uci_manager.android_get_power_stats().await.unwrap();
-        assert!(power_stats_eq(&result, &expected_result));
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
