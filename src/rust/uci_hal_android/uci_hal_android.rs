@@ -171,8 +171,8 @@ impl UciHal for UciHalAndroid {
             return Err(UwbCoreError::BadParameters);
         }
         let chip_name: &str = match &self.chip_id == "default" {
-            false => &chip_names[0],
-            true => &self.chip_id,
+            true => &chip_names[0],
+            false => &self.chip_id,
         };
         if !chip_names.contains(&chip_name.to_string()) {
             return Err(UwbCoreError::BadParameters);
