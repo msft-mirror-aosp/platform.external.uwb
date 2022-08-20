@@ -48,6 +48,7 @@ pub type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq)]
 pub enum JNICommand {
     // Blocking UCI commands
+    Enable,
     UciGetCapsInfo,
     UciGetDeviceInfo,
     UciSessionInit(u32, u8),
@@ -90,7 +91,6 @@ pub enum JNICommand {
     UciGetPowerStats,
 
     // Non blocking commands
-    Enable,
     Disable(bool),
 }
 
@@ -250,6 +250,24 @@ impl<T: EventManager> Driver<T> {
     ) -> Result<()> {
         log::debug!("Received blocking cmd {:?}", cmd);
         let command: UciCommandPacket = match cmd {
+            JNICommand::Enable => {
+                match (
+                    self.adaptation.hal_open(&chip_id).await,
+                    self.adaptation.core_initialization(&chip_id).await,
+                ) {
+                    (Ok(()), Ok(())) => {
+                        tx.send(UciResponse::EnableRsp(true))
+                            .unwrap_or_else(|e| error!("Error sending Enable response: {:?}", e));
+                        self.set_state(UwbState::W4HalOpen);
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        error!("Enable UWB failed with: {:?}", e);
+                        tx.send(UciResponse::EnableRsp(false))
+                            .unwrap_or_else(|e| error!("Error sending Enable response: {:?}", e));
+                    }
+                }
+                return Ok(());
+            }
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
             JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
@@ -325,11 +343,6 @@ impl<T: EventManager> Driver<T> {
     ) -> Result<()> {
         log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
-            JNICommand::Enable => {
-                self.adaptation.hal_open(&chip_id).await?;
-                self.adaptation.core_initialization(&chip_id).await?;
-                self.set_state(UwbState::W4HalOpen);
-            }
             JNICommand::Disable(_graceful) => match self.adaptation.hal_close(&chip_id).await {
                 Ok(()) => self.set_state(UwbState::W4HalClose),
                 Err(e) => {
@@ -637,7 +650,7 @@ mod tests {
                 mock_adaptation.expect_core_initialization(Ok(()));
             });
 
-        dispatcher.send_jni_command(JNICommand::Enable, String::from("chip_id")).unwrap();
+        dispatcher.block_on_jni_command(JNICommand::Enable, String::from("chip_id")).unwrap();
     }
 
     #[test]
@@ -650,7 +663,7 @@ mod tests {
             });
         let chip_id = String::from("chip_id");
 
-        dispatcher.send_jni_command(JNICommand::Enable, chip_id.clone()).unwrap();
+        dispatcher.block_on_jni_command(JNICommand::Enable, chip_id.clone()).unwrap();
         hal_sender
             .send((
                 HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED },
