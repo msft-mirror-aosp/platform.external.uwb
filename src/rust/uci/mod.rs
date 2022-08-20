@@ -102,7 +102,7 @@ pub enum HalCallback {
     UciNtf(uci_hrcv::UciNotification),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum UwbState {
     None,
     W4HalOpen,
