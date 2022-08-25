@@ -171,7 +171,15 @@ impl UciManager for UciManagerImpl {
 
     async fn open_hal(&mut self) -> Result<()> {
         match self.send_cmd(UciManagerCmd::OpenHal).await {
-            Ok(UciResponse::OpenHal) => Ok(()),
+            Ok(UciResponse::OpenHal) => {
+                // According to the UCI spec: "The Host shall send CORE_GET_DEVICE_INFO_CMD to
+                // retrieve the device information.", we call get_device_info() after successfully
+                // opening the HAL.
+                let device_info = self.core_get_device_info().await;
+                debug!("UCI device info: {:?}", device_info);
+
+                Ok(())
+            }
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -723,11 +731,25 @@ mod tests {
     ) -> (UciManagerImpl, MockUciHal) {
         init_test_logging();
 
+        // Open the hal.
         let mut hal = MockUciHal::new();
         let notf = into_uci_hal_packets(uwb_uci_packets::DeviceStatusNtfBuilder {
             device_state: uwb_uci_packets::DeviceState::DeviceStateReady,
         });
         hal.expected_open(Some(notf), Ok(()));
+
+        // Get the device info.
+        let cmd = UciCommand::CoreGetDeviceInfo;
+        let resp = into_uci_hal_packets(uwb_uci_packets::GetDeviceInfoRspBuilder {
+            status: uwb_uci_packets::StatusCode::UciStatusOk,
+            uci_version: 0x1234,
+            mac_version: 0x5678,
+            phy_version: 0x90ab,
+            uci_test_version: 0x1357,
+            vendor_spec_info: vec![0x1, 0x2],
+        });
+        hal.expected_send_command(cmd, resp, Ok(()));
+
         setup_hal_fn(&mut hal);
 
         // Verify open_hal() is working.
