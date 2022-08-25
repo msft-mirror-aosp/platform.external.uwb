@@ -14,29 +14,46 @@
 
 //! This module defines the UwbServiceBuilder, the builder of the UwbService.
 
-use tokio::sync::mpsc;
+use tokio::runtime::Runtime;
 
-use crate::service::uwb_service::{UwbNotification, UwbService};
+use crate::service::uwb_service::{UwbService, UwbServiceCallback};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_manager::UciManagerImpl;
 
+/// Create the default runtime for UwbService.
+pub fn default_runtime() -> Option<Runtime> {
+    tokio::runtime::Builder::new_multi_thread().thread_name("UwbService").enable_all().build().ok()
+}
+
 /// The builder of UwbService, used to keep the backward compatibility when adding new parameters
 /// of creating a UwbService instance.
-pub struct UwbServiceBuilder<U: UciHal> {
-    notf_sender: mpsc::UnboundedSender<UwbNotification>,
+pub struct UwbServiceBuilder<C: UwbServiceCallback, U: UciHal> {
+    runtime: Option<Runtime>,
+    callback: Option<C>,
     uci_hal: Option<U>,
 }
 
-#[allow(clippy::new_without_default)]
-impl<U: UciHal> UwbServiceBuilder<U> {
+impl<C: UwbServiceCallback, U: UciHal> Default for UwbServiceBuilder<C, U> {
+    fn default() -> Self {
+        Self { runtime: None, callback: None, uci_hal: None }
+    }
+}
+
+impl<C: UwbServiceCallback, U: UciHal> UwbServiceBuilder<C, U> {
     /// Create a new builder.
     pub fn new() -> Self {
-        Self { notf_sender: mpsc::unbounded_channel().0, uci_hal: None }
+        Default::default()
     }
 
-    /// Set the notf_sender field.
-    pub fn notf_sender(mut self, notf_sender: mpsc::UnboundedSender<UwbNotification>) -> Self {
-        self.notf_sender = notf_sender;
+    /// Set the runtime field.
+    pub fn runtime(mut self, runtime: Runtime) -> Self {
+        self.runtime = Some(runtime);
+        self
+    }
+
+    /// Set the callback field.
+    pub fn callback(mut self, callback: C) -> Self {
+        self.callback = Some(callback);
         self
     }
 
@@ -47,23 +64,32 @@ impl<U: UciHal> UwbServiceBuilder<U> {
     }
 
     /// Build the UwbService.
-    pub fn build(self) -> Option<UwbService> {
-        let uci_manager = UciManagerImpl::new(self.uci_hal?);
-        Some(UwbService::new(self.notf_sender, uci_manager))
+    pub fn build(mut self) -> Option<UwbService> {
+        let runtime = self.runtime.take().or_else(default_runtime)?;
+        let uci_hal = self.uci_hal.take()?;
+        let uci_manager = runtime.block_on(async move { UciManagerImpl::new(uci_hal) });
+        Some(UwbService::new(runtime, self.callback.take()?, uci_manager))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::uci::mock_uci_hal::MockUciHal;
 
-    #[tokio::test]
-    async fn test_uci_hal() {
-        let result = UwbServiceBuilder::<MockUciHal>::new().build();
+    #[test]
+    fn test_build_fail() {
+        let result = UwbServiceBuilder::<MockUwbServiceCallback, MockUciHal>::new().build();
         assert!(result.is_none());
+    }
 
-        let result = UwbServiceBuilder::new().uci_hal(MockUciHal::new()).build();
+    #[test]
+    fn test_build_ok() {
+        let result = UwbServiceBuilder::new()
+            .callback(MockUwbServiceCallback::new())
+            .uci_hal(MockUciHal::new())
+            .build();
         assert!(result.is_some());
     }
 }

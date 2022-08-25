@@ -12,28 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This module provides the functionalities related to UWB Command Interface (UCI).
+//! This library provides adaptation to UWB core from Android UCI HAL library.
 
-mod command;
-mod message;
-mod response;
-mod timeout_uci_hal;
-
-pub(crate) mod error;
-pub(crate) mod notification;
-pub(crate) mod uci_manager;
-
-pub mod uci_hal;
-pub mod uci_manager_sync;
-
-#[cfg(test)]
-pub(crate) mod mock_uci_hal;
-#[cfg(test)]
-pub(crate) mod mock_uci_manager;
-
-// Re-export the public elements.
-pub use command::UciCommand;
-pub use notification::{
-    CoreNotification, RangingMeasurements, SessionNotification, SessionRangeData, UciNotification,
-};
-pub use uci_hal::{UciHal, UciHalPacket};
+pub mod error;
+pub mod uci_hal_android;
