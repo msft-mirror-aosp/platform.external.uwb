@@ -24,8 +24,10 @@ use crate::params::uci_packets::{
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
 
-#[derive(Debug, Clone)]
-pub(super) enum UciCommand {
+/// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum UciCommand {
     DeviceReset {
         reset_config: ResetConfig,
     },

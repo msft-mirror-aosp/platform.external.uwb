@@ -316,7 +316,7 @@ mod tests {
 
     use crate::error::Error;
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::uci_hal::RawUciMessage;
+    use crate::uci::uci_hal::UciHalPacket;
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
@@ -344,6 +344,7 @@ mod tests {
             Ok(())
         }
     }
+
     struct MockNotificationManagerBuilder {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
         // initial_count is an example for a parameter undetermined at compile time.
@@ -357,12 +358,14 @@ mod tests {
             })
         }
     }
+
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
         builder: T,
-    ) -> Vec<RawUciMessage> {
+    ) -> Vec<UciHalPacket> {
         let packets: Vec<uwb_uci_packets::UciPacketHalPacket> = builder.into().into();
         packets.into_iter().map(|packet| packet.into()).collect()
     }
+
     #[test]
     fn test_sync_uci_open_hal() {
         let mut hal = MockUciHal::new();
