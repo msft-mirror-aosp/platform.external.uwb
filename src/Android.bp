@@ -279,7 +279,7 @@ rust_library {
         "libasync_trait",
     ],
     apex_available: [
-        "com.android.ucihal",
+        "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
