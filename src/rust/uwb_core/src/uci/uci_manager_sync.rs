@@ -115,10 +115,10 @@ impl UciManagerSync {
     /// UciHal and NotificationManagerBuilder required at construction as they are required before
     /// open_hal is called. runtime is taken with ownership for blocking on async steps only.
     pub fn new<T: UciHal, U: NotificationManager, V: NotificationManagerBuilder<U>>(
-        uci_manager_runtime: Runtime,
         hal: T,
         notification_manager_builder: V,
     ) -> Result<Self> {
+        let uci_manager_runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
         let mut uci_manager_impl = uci_manager_runtime.block_on(async { UciManagerImpl::new(hal) });
         let (core_notification_sender, core_notification_receiver) =
@@ -377,7 +377,6 @@ mod tests {
         let (device_state_sender, mut device_state_receiver) =
             mpsc::unbounded_channel::<DeviceState>();
         let mut uci_manager_sync = UciManagerSync::new(
-            Builder::new_multi_thread().enable_all().build().unwrap(),
             hal,
             MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
         )
