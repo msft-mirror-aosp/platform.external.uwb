@@ -203,16 +203,30 @@ impl UciHal for UciHalAndroid {
         let (hal_open_result_sender, mut hal_open_result_receiver) = mpsc::channel::<Result<()>>(1);
         let (hal_close_result_sender, hal_close_result_receiver) = mpsc::channel::<Result<()>>(1);
         let m_cback = BnUwbClientCallback::new_async_binder(
-            RawUciCallback::new(packet_sender, hal_open_result_sender, hal_close_result_sender),
+            RawUciCallback::new(
+                packet_sender.clone(),
+                hal_open_result_sender,
+                hal_close_result_sender,
+            ),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
         i_uwb_chip.open(&m_cback).await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
-
         // Initialize core and wait for POST_INIT_CPLT.
         i_uwb_chip.coreInit().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
         match hal_open_result_receiver.recv().await {
             Some(Ok(())) => {
+                // Workaround while http://b/243140882 is not fixed:
+                // Send DEVICE_STATE_READY notification as chip is not sending this notification.
+                let device_ready_ntfs = input_uci_hal_packet(
+                    DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build(),
+                );
+                for device_ready_ntf in device_ready_ntfs {
+                    packet_sender.send(device_ready_ntf).unwrap_or_else(|e| {
+                        error!("UCI HAL: failed to send device ready notification: {:?}", e);
+                    });
+                }
+                // End of workaround.
                 self.hal_uci_recipient.replace(i_uwb_chip);
                 self.hal_death_recipient.replace(Arc::new(Mutex::new(bare_death_recipient)));
                 self.hal_close_result_receiver.replace(hal_close_result_receiver);
