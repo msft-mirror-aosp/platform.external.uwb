@@ -22,12 +22,13 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::SessionId;
-use crate::uci::uci_hal::{RawUciMessage, UciHal};
+use crate::uci::command::UciCommand;
+use crate::uci::uci_hal::{UciHal, UciHalPacket};
 
 /// The mock implementation of UciHal.
 #[derive(Default, Clone)]
 pub struct MockUciHal {
-    msg_sender: Option<mpsc::UnboundedSender<RawUciMessage>>,
+    packet_sender: Option<mpsc::UnboundedSender<UciHalPacket>>,
     expected_calls: Arc<Mutex<VecDeque<ExpectedCall>>>,
     expect_call_consumed: Arc<Notify>,
 }
@@ -37,8 +38,8 @@ impl MockUciHal {
         Default::default()
     }
 
-    pub fn expected_open(&mut self, msgs: Option<Vec<RawUciMessage>>, out: Result<()>) {
-        self.expected_calls.lock().unwrap().push_back(ExpectedCall::Open { msgs, out });
+    pub fn expected_open(&mut self, packets: Option<Vec<UciHalPacket>>, out: Result<()>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::Open { packets, out });
     }
 
     pub fn expected_close(&mut self, out: Result<()>) {
@@ -47,13 +48,13 @@ impl MockUciHal {
 
     pub fn expected_send_command(
         &mut self,
-        expected_cmd: RawUciMessage,
-        msgs: Vec<RawUciMessage>,
+        expected_cmd: UciCommand,
+        packets: Vec<UciHalPacket>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendCommand {
             expected_cmd,
-            msgs,
+            packets,
             out,
         });
     }
@@ -82,18 +83,18 @@ impl MockUciHal {
 
 #[async_trait]
 impl UciHal for MockUciHal {
-    async fn open(&mut self, msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> Result<()> {
+    async fn open(&mut self, packet_sender: mpsc::UnboundedSender<UciHalPacket>) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::Open { msgs, out }) => {
+            Some(ExpectedCall::Open { packets, out }) => {
                 self.expect_call_consumed.notify_one();
-                if let Some(msgs) = msgs {
-                    for msg in msgs.into_iter() {
-                        let _ = msg_sender.send(msg);
+                if let Some(packets) = packets {
+                    for msg in packets.into_iter() {
+                        let _ = packet_sender.send(msg);
                     }
                 }
                 if out.is_ok() {
-                    self.msg_sender.replace(msg_sender);
+                    self.packet_sender.replace(packet_sender);
                 }
                 out
             }
@@ -111,7 +112,7 @@ impl UciHal for MockUciHal {
             Some(ExpectedCall::Close { out }) => {
                 self.expect_call_consumed.notify_one();
                 if out.is_ok() {
-                    self.msg_sender = None;
+                    self.packet_sender = None;
                 }
                 out
             }
@@ -123,14 +124,16 @@ impl UciHal for MockUciHal {
         }
     }
 
-    async fn send_command(&mut self, cmd: RawUciMessage) -> Result<()> {
+    async fn send_command(&mut self, cmd: UciCommand) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SendCommand { expected_cmd, msgs, out }) if expected_cmd == cmd => {
+            Some(ExpectedCall::SendCommand { expected_cmd, packets, out })
+                if expected_cmd == cmd =>
+            {
                 self.expect_call_consumed.notify_one();
-                let msg_sender = self.msg_sender.as_mut().unwrap();
-                for msg in msgs.into_iter() {
-                    let _ = msg_sender.send(msg);
+                let packet_sender = self.packet_sender.as_mut().unwrap();
+                for msg in packets.into_iter() {
+                    let _ = packet_sender.send(msg);
                 }
                 out
             }
@@ -140,6 +143,11 @@ impl UciHal for MockUciHal {
             }
             None => Err(Error::MockUndefined),
         }
+    }
+
+    async fn send_packet(&mut self, _packet: UciHalPacket) -> Result<()> {
+        // We mock the send_command(), so send_packet() would not be called.
+        Err(Error::MockUndefined)
     }
 
     async fn notify_session_initialized(&mut self, session_id: SessionId) -> Result<()> {
@@ -161,8 +169,8 @@ impl UciHal for MockUciHal {
 }
 
 enum ExpectedCall {
-    Open { msgs: Option<Vec<RawUciMessage>>, out: Result<()> },
+    Open { packets: Option<Vec<UciHalPacket>>, out: Result<()> },
     Close { out: Result<()> },
-    SendCommand { expected_cmd: RawUciMessage, msgs: Vec<RawUciMessage>, out: Result<()> },
+    SendCommand { expected_cmd: UciCommand, packets: Vec<UciHalPacket>, out: Result<()> },
     NotifySessionInitialized { expected_session_id: SessionId, out: Result<()> },
 }
