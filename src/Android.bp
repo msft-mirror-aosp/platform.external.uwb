@@ -190,6 +190,9 @@ rust_library {
     name: "libuwb_core",
     defaults: ["libuwb_core_defaults"],
     crate_name: "uwb_core",
+    apex_available: [
+        "com.android.uwb",
+    ],
 }
 
 rust_test {
@@ -276,7 +279,7 @@ rust_library {
         "libasync_trait",
     ],
     apex_available: [
-        "com.android.ucihal",
+        "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,

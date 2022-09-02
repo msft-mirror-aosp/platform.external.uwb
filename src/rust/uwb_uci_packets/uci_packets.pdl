@@ -163,8 +163,8 @@ enum AppConfigTlvType : 8 {
     BPRF_PHR_DATA_RATE = 0x31,
     MAX_NUMBER_OF_MEASUREMENTS = 0x32,
     STS_LENGTH = 0x35,
-    SESSION_KEY = 0x36,
-    SUBSESSION_KEY = 0x37,
+    SESSION_KEY = 0x45,
+    SUBSESSION_KEY = 0x46,
 
     // CCC specific
     CCC_HOP_MODE_KEY = 0xA0,
@@ -845,12 +845,30 @@ struct FrameReportTlv {
     v: 8[],
 }
 
+packet FrameReportTlvPacket {
+    t: FrameReportTlvType,
+    _size_(_body_): 8,
+    _body_,
+}
+
+packet Rssi : FrameReportTlvPacket (t = RSSI) {
+    rssi: 8[],
+}
+
 struct AoaMeasurement {
     tdoa: 16,
     pdoa: 16,
     aoa: 16,
     fom: 8,
     t: 8,
+}
+
+packet Aoa : FrameReportTlvPacket (t = AOA) {
+    aoa: AoaMeasurement[],
+}
+
+test Aoa {
+    "\x01\x08\x00\x01\x00\x01\x00\x01\x01\x01",
 }
 
 struct CirValue {
@@ -866,9 +884,13 @@ struct CirValue {
     sample_window: 8[],
 }
 
-struct Cir {
+packet Cir : FrameReportTlvPacket (t = CIR) {
     _count_(cir_value): 8,
     cir_value: CirValue[],
+}
+
+test Cir {
+    "\x02\x15\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04",
 }
 
 struct FrameReport {

@@ -102,6 +102,10 @@ impl UwbSession {
         ));
     }
 
+    pub fn params(&mut self, result_sender: ResponseSender) {
+        let _ = self.cmd_sender.send((Command::GetParams, result_sender));
+    }
+
     pub fn on_session_status_changed(&mut self, state: SessionState) {
         let _ = self.state_sender.send(state);
     }
@@ -160,7 +164,8 @@ impl<T: UciManager> UwbSessionActor<T> {
                                         notf_receiver,
                                     )
                                     .await
-                                }
+                                },
+                                Command::GetParams => self.params().await,
                             };
                             let _ = result_sender.send(result);
                         }
@@ -352,6 +357,13 @@ impl<T: UciManager> UwbSessionActor<T> {
 
         Ok(())
     }
+
+    async fn params(&mut self) -> Result<Response> {
+        match &self.params {
+            None => Err(Error::BadParameters),
+            Some(params) => Ok(Response::AppConfigParams(params.clone())),
+        }
+    }
 }
 
 enum Command {
@@ -369,4 +381,5 @@ enum Command {
         controlees: Vec<Controlee>,
         notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
     },
+    GetParams,
 }
