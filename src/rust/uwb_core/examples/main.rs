@@ -21,13 +21,13 @@ use tokio::sync::mpsc;
 use uwb_core::error::{Error as UwbError, Result as UwbResult};
 use uwb_core::params::uci_packets::{DeviceState, ReasonCode, SessionId, SessionState};
 use uwb_core::service::{UwbServiceBuilder, UwbServiceCallback};
-use uwb_core::uci::{RawUciMessage, SessionRangeData, UciHal};
+use uwb_core::uci::{SessionRangeData, UciHal, UciHalPacket};
 
 /// A placeholder implementation for UciHal.
 struct UciHalImpl {}
 #[async_trait]
 impl UciHal for UciHalImpl {
-    async fn open(&mut self, _msg_sender: mpsc::UnboundedSender<RawUciMessage>) -> UwbResult<()> {
+    async fn open(&mut self, _packet_sender: mpsc::UnboundedSender<UciHalPacket>) -> UwbResult<()> {
         debug!("UciHalImpl::open() is called");
         Ok(())
     }
@@ -35,8 +35,8 @@ impl UciHal for UciHalImpl {
         debug!("UciHalImpl::close() is called");
         Ok(())
     }
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UwbResult<()> {
-        debug!("UciHalImpl::send_command({:?}) is called", cmd);
+    async fn send_packet(&mut self, packet: UciHalPacket) -> UwbResult<()> {
+        debug!("UciHalImpl::send_packet({:?}) is called", packet);
         Ok(())
     }
 }
