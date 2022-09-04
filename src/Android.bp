@@ -181,6 +181,7 @@ rust_defaults {
     ],
     proc_macros: [
         "libasync_trait",
+        "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
@@ -279,7 +280,7 @@ rust_library {
         "libasync_trait",
     ],
     apex_available: [
-        "com.android.ucihal",
+        "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,

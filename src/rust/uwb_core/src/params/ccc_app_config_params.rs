@@ -25,6 +25,7 @@ use crate::params::fira_app_config_params::{
 use crate::params::uci_packets::{AppConfigTlvType, SessionState};
 use crate::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
 use crate::utils::builder_field;
+use num_derive::{FromPrimitive, ToPrimitive};
 
 const CHAP_IN_RSTU: u16 = 400; // 1 Chap = 400 RSTU.
 pub(super) const MINIMUM_BLOCK_DURATION_MS: u32 = 96;
@@ -201,7 +202,7 @@ impl From<CccProtocolVersion> for Vec<u8> {
 }
 
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum CccUwbConfig {
     Config0 = 0,
     Config1 = 1,
@@ -220,7 +221,7 @@ impl From<CccPulseShapeCombo> for Vec<u8> {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum PulseShape {
     SymmetricalRootRaisedCosine = 0x0,
     PrecursorFree = 0x1,
@@ -228,14 +229,14 @@ pub enum PulseShape {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum CccUwbChannel {
     Channel5 = 5,
     Channel9 = 9,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum HoppingConfigMode {
     None = 0,
     Continuous = 1,
@@ -243,14 +244,14 @@ pub enum HoppingConfigMode {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum HoppingSequence {
     Default = 0,
     Aes = 1,
 }
 
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum ChapsPerSlot {
     Value3 = 3,
     Value4 = 4,
@@ -262,7 +263,7 @@ pub enum ChapsPerSlot {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum CccHoppingMode {
     Disable = 0,
     AdaptiveDefault = 2,
