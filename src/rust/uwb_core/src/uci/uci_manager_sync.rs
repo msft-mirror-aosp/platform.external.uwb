@@ -23,7 +23,7 @@ use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use tokio::sync::mpsc;
 use tokio::task;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawVendorMessage,
@@ -54,7 +54,7 @@ pub trait NotificationManager: 'static {
 /// Builder for NotificationManager. Builder is sent between threads.
 pub trait NotificationManagerBuilder<T: NotificationManager>: 'static + Send + Sync {
     /// Builds NotificationManager. The build operation Consumes Builder.
-    fn build(self) -> T;
+    fn build(self) -> Option<T>;
 }
 
 struct NotificationDriver<U: NotificationManager> {
@@ -115,10 +115,10 @@ impl UciManagerSync {
     /// UciHal and NotificationManagerBuilder required at construction as they are required before
     /// open_hal is called. runtime is taken with ownership for blocking on async steps only.
     pub fn new<T: UciHal, U: NotificationManager, V: NotificationManagerBuilder<U>>(
-        uci_manager_runtime: Runtime,
         hal: T,
         notification_manager_builder: V,
-    ) -> Self {
+    ) -> Result<Self> {
+        let uci_manager_runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
         let mut uci_manager_impl = uci_manager_runtime.block_on(async { UciManagerImpl::new(hal) });
         let (core_notification_sender, core_notification_receiver) =
@@ -133,24 +133,46 @@ impl UciManagerSync {
             uci_manager_impl.set_vendor_notification_sender(vendor_notification_sender).await;
         });
         // The potentially !Send NotificationManager is created in a separate thread.
+        let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
         std::thread::spawn(move || {
-            let notification_runtime = RuntimeBuilder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("uwb_core: Failed to build Tokio Runtime!");
+            let notification_runtime =
+                match RuntimeBuilder::new_current_thread().enable_all().build() {
+                    Ok(nr) => nr,
+                    Err(_) => {
+                        // unwrap safe since receiver is in scope
+                        driver_status_sender.send(false).unwrap();
+                        return;
+                    }
+                };
+
             let local = task::LocalSet::new();
+            let notification_manager = match notification_manager_builder.build() {
+                Some(nm) => {
+                    // unwrap safe since receiver is in scope
+                    driver_status_sender.send(true).unwrap();
+                    nm
+                }
+                None => {
+                    // unwrap safe since receiver is in scope
+                    driver_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
             let mut notification_driver = NotificationDriver::new(
                 core_notification_receiver,
                 session_notification_receiver,
                 vendor_notification_receiver,
-                notification_manager_builder.build(),
+                notification_manager,
             );
             local.spawn_local(async move {
                 task::spawn_local(async move { notification_driver.run().await }).await.unwrap();
             });
             notification_runtime.block_on(local);
         });
-        Self { runtime: uci_manager_runtime, uci_manager_impl }
+        match driver_status_receiver.blocking_recv() {
+            Some(true) => Ok(Self { runtime: uci_manager_runtime, uci_manager_impl }),
+            _ => Err(Error::Unknown),
+        }
     }
 
     /// Start UCI HAL and blocking until UCI commands can be sent.
@@ -294,7 +316,7 @@ mod tests {
 
     use crate::error::Error;
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::uci_hal::RawUciMessage;
+    use crate::uci::uci_hal::UciHalPacket;
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
@@ -322,25 +344,28 @@ mod tests {
             Ok(())
         }
     }
+
     struct MockNotificationManagerBuilder {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
         // initial_count is an example for a parameter undetermined at compile time.
         initial_count: usize,
     }
     impl NotificationManagerBuilder<MockNotificationManager> for MockNotificationManagerBuilder {
-        fn build(self) -> MockNotificationManager {
-            MockNotificationManager {
+        fn build(self) -> Option<MockNotificationManager> {
+            Some(MockNotificationManager {
                 device_state_sender: self.device_state_sender,
                 nonsend_counter: Rc::new(RefCell::new(self.initial_count)),
-            }
+            })
         }
     }
+
     fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
         builder: T,
-    ) -> Vec<RawUciMessage> {
+    ) -> Vec<UciHalPacket> {
         let packets: Vec<uwb_uci_packets::UciPacketHalPacket> = builder.into().into();
         packets.into_iter().map(|packet| packet.into()).collect()
     }
+
     #[test]
     fn test_sync_uci_open_hal() {
         let mut hal = MockUciHal::new();
@@ -352,10 +377,10 @@ mod tests {
         let (device_state_sender, mut device_state_receiver) =
             mpsc::unbounded_channel::<DeviceState>();
         let mut uci_manager_sync = UciManagerSync::new(
-            Builder::new_multi_thread().enable_all().build().unwrap(),
             hal,
             MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
-        );
+        )
+        .unwrap();
         assert!(uci_manager_sync.open_hal().is_ok());
         let device_state = test_rt.block_on(async { device_state_receiver.recv().await });
         assert_eq!(device_state, Some(DeviceState::DeviceStateReady));
