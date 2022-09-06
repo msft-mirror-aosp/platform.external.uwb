@@ -15,6 +15,7 @@
 //! This module defines the UCI application config parameters for the FiRa ranging session.
 
 use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
 
 use log::warn;
 
