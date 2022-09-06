@@ -26,6 +26,7 @@ use crate::params::uci_packets::{
 };
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
+use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
 
 /// The callback of the UwbService which is used to send the notification to UwbService's caller.
@@ -73,6 +74,12 @@ impl UwbService {
         runtime.spawn(async move { actor.run().await });
 
         Self { runtime, cmd_sender }
+    }
+
+    /// Set UCI log mode.
+    pub fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
+        self.block_on_cmd(Command::SetLoggerMode { logger_mode })?;
+        Ok(())
     }
 
     /// Enable the UWB service.
@@ -263,6 +270,10 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
 
     async fn handle_cmd(&mut self, cmd: Command) -> Result<Response> {
         match cmd {
+            Command::SetLoggerMode { logger_mode } => {
+                self.uci_manager.set_logger_mode(logger_mode).await?;
+                Ok(Response::Null)
+            }
             Command::Enable => {
                 self.enable_service().await?;
                 Ok(Response::Null)
@@ -428,6 +439,9 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
 
 #[derive(Debug)]
 enum Command {
+    SetLoggerMode {
+        logger_mode: UciLoggerMode,
+    },
     Enable,
     Disable,
     InitSession {
