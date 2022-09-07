@@ -24,7 +24,7 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
 use crate::params::uci_packets::{AppConfigTlvType, SessionState, SubSessionId};
 use crate::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
-use crate::utils::builder_field;
+use crate::utils::{builder_field, getter_field};
 
 // The default value of each parameters.
 const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
@@ -129,7 +129,57 @@ pub struct FiraAppConfigParams {
     number_of_aoa_elevation_measurements: u8,
 }
 
+#[allow(missing_docs)]
 impl FiraAppConfigParams {
+    // Generate the getter methods for all the fields.
+    getter_field!(device_type, DeviceType);
+    getter_field!(ranging_round_usage, RangingRoundUsage);
+    getter_field!(sts_config, StsConfig);
+    getter_field!(multi_node_mode, MultiNodeMode);
+    getter_field!(channel_number, UwbChannel);
+    getter_field!(device_mac_address, UwbAddress);
+    getter_field!(dst_mac_address, Vec<UwbAddress>);
+    getter_field!(slot_duration_rstu, u16);
+    getter_field!(ranging_interval_ms, u32);
+    getter_field!(mac_fcs_type, MacFcsType);
+    getter_field!(ranging_round_control, RangingRoundControl);
+    getter_field!(aoa_result_request, AoaResultRequest);
+    getter_field!(range_data_ntf_config, RangeDataNtfConfig);
+    getter_field!(range_data_ntf_proximity_near_cm, u16);
+    getter_field!(range_data_ntf_proximity_far_cm, u16);
+    getter_field!(device_role, DeviceRole);
+    getter_field!(rframe_config, RframeConfig);
+    getter_field!(preamble_code_index, u8);
+    getter_field!(sfd_id, u8);
+    getter_field!(psdu_data_rate, PsduDataRate);
+    getter_field!(preamble_duration, PreambleDuration);
+    getter_field!(ranging_time_struct, RangingTimeStruct);
+    getter_field!(slots_per_rr, u8);
+    getter_field!(tx_adaptive_payload_power, TxAdaptivePayloadPower);
+    getter_field!(responder_slot_index, u8);
+    getter_field!(prf_mode, PrfMode);
+    getter_field!(scheduled_mode, ScheduledMode);
+    getter_field!(key_rotation, KeyRotation);
+    getter_field!(key_rotation_rate, u8);
+    getter_field!(session_priority, u8);
+    getter_field!(mac_address_mode, MacAddressMode);
+    getter_field!(vendor_id, [u8; 2]);
+    getter_field!(static_sts_iv, [u8; 6]);
+    getter_field!(number_of_sts_segments, u8);
+    getter_field!(max_rr_retry, u16);
+    getter_field!(uwb_initiation_time_ms, u32);
+    getter_field!(hopping_mode, HoppingMode);
+    getter_field!(block_stride_length, u8);
+    getter_field!(result_report_config, ResultReportConfig);
+    getter_field!(in_band_termination_attempt_count, u8);
+    getter_field!(sub_session_id, u32);
+    getter_field!(bprf_phr_data_rate, BprfPhrDataRate);
+    getter_field!(max_number_of_measurements, u16);
+    getter_field!(sts_length, StsLength);
+    getter_field!(number_of_range_measurements, u8);
+    getter_field!(number_of_aoa_azimuth_measurements, u8);
+    getter_field!(number_of_aoa_elevation_measurements, u8);
+
     /// validate if the params are valid.
     fn is_valid(&self) -> Option<()> {
         if self.device_type == DeviceType::Controlee {
