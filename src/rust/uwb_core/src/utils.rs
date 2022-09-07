@@ -50,7 +50,38 @@ macro_rules! builder_field {
 }
 pub(crate) use builder_field;
 
+/// Generate the getter method for the field of the struct.
+macro_rules! getter_field {
+    ($field:ident, $ty:ty) => {
+        pub fn $field(&self) -> &$ty {
+            &self.$field
+        }
+    };
+}
+pub(crate) use getter_field;
+
 #[cfg(test)]
 pub fn init_test_logging() {
     let _ = env_logger::builder().is_test(true).try_init();
+}
+
+#[cfg(test)]
+mod tests {
+    struct Foo {
+        value: u32,
+    }
+
+    impl Foo {
+        pub fn new(value: u32) -> Self {
+            Self { value }
+        }
+
+        getter_field!(value, u32);
+    }
+
+    #[test]
+    fn test_getter_field() {
+        let foo = Foo::new(5);
+        assert_eq!(foo.value(), &5);
+    }
 }
