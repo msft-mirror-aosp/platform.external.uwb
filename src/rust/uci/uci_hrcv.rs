@@ -43,6 +43,7 @@ pub enum UciResponse {
     AndroidSetCountryCodeRsp(AndroidSetCountryCodeRspPacket),
     AndroidGetPowerStatsRsp(AndroidGetPowerStatsRspPacket),
     RawVendorRsp(UciResponsePacket),
+    EnableRsp(bool),
     DisableRsp,
 }
 
