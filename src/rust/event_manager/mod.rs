@@ -243,10 +243,9 @@ impl EventManagerImpl {
     ) -> Result<JObject<'a>> {
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
-                JValue::Int(0),
                 JValue::Int(0),
                 JValue::Int(0),
                 JValue::Int(0),
@@ -279,7 +278,7 @@ impl EventManagerImpl {
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
                 JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
@@ -338,10 +337,6 @@ impl EventManagerImpl {
                 ),
                 JValue::Int(two_way_measurement.slot_index.to_i32().ok_or_else(|| {
                     error!("Failed converting slot index to i32");
-                    Error::JniCall(JniError::Unknown)
-                })?),
-                JValue::Int(two_way_measurement.rssi.to_i32().ok_or_else(|| {
-                    error!("Failed converting rssi to i32");
                     Error::JniCall(JniError::Unknown)
                 })?),
             ],
@@ -364,7 +359,7 @@ impl EventManagerImpl {
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
                 JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
@@ -423,10 +418,6 @@ impl EventManagerImpl {
                 ),
                 JValue::Int(two_way_measurement.slot_index.to_i32().ok_or_else(|| {
                     error!("Failed converting slot index to i32");
-                    Error::JniCall(JniError::Unknown)
-                })?),
-                JValue::Int(two_way_measurement.rssi.to_i32().ok_or_else(|| {
-                    error!("Failed converting rssi to i32");
                     Error::JniCall(JniError::Unknown)
                 })?),
             ],

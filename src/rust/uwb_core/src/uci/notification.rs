@@ -25,20 +25,20 @@ use crate::params::uci_packets::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum UciNotification {
+pub(crate) enum UciNotification {
     Core(CoreNotification),
     Session(SessionNotification),
     Vendor(RawVendorMessage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum CoreNotification {
+pub(crate) enum CoreNotification {
     DeviceStatus(DeviceState),
     GenericError(StatusCode),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SessionNotification {
+pub(crate) enum SessionNotification {
     Status {
         session_id: SessionId,
         session_state: SessionState,
@@ -51,33 +51,18 @@ pub enum SessionNotification {
     },
     RangeData(SessionRangeData),
 }
-
-/// The session range data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionRangeData {
-    /// The sequence counter that starts with 0 when the session is started.
     pub sequence_number: u32,
-
-    /// The identifier of the session.
     pub session_id: SessionId,
-
-    /// The current ranging interval setting in the unit of ms.
     pub current_ranging_interval_ms: u32,
-
-    /// The ranging measurement type.
     pub ranging_measurement_type: RangingMeasurementType,
-
-    /// The ranging measurement data.
     pub ranging_measurements: RangingMeasurements,
 }
 
-/// The ranging measurements.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RangingMeasurements {
-    /// The measurement with short address.
     Short(Vec<ShortAddressTwoWayRangingMeasurement>),
-
-    /// The measurement with extended address.
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 }
 
@@ -299,7 +284,6 @@ mod tests {
                 aoa_destination_elevation: 11,
                 aoa_destination_elevation_fom: 12,
                 slot_index: 0,
-                rssi: u8::MAX,
             }]);
         let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
         assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
@@ -358,7 +342,6 @@ mod tests {
             aoa_destination_elevation: 11,
             aoa_destination_elevation_fom: 12,
             slot_index: 0,
-            rssi: u8::MAX,
         };
         let extended_two_way_range_data_ntf =
             uwb_uci_packets::ExtendedMacTwoWayRangeDataNtfBuilder {
@@ -403,7 +386,6 @@ mod tests {
             aoa_destination_elevation: 11,
             aoa_destination_elevation_fom: 12,
             slot_index: 0,
-            rssi: u8::MAX,
         };
         let short_two_way_range_data_ntf = uwb_uci_packets::ShortMacTwoWayRangeDataNtfBuilder {
             sequence_number: 0x10,
