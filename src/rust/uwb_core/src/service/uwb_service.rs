@@ -166,6 +166,14 @@ impl UwbService {
         }
     }
 
+    /// Get app config params for the given session id
+    pub fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.block_on_cmd(Command::GetParams { session_id })? {
+            Response::AppConfigParams(params) => Ok(params),
+            _ => panic!("session_params() should return AppConfigParams"),
+        }
+    }
+
     /// Send the |cmd| to UwbServiceActor and wait until receiving the response.
     fn block_on_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -331,6 +339,15 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
                 let msg = self.uci_manager.raw_vendor_cmd(gid, oid, payload).await?;
                 Ok(Response::RawVendorMessage(msg))
             }
+            Command::GetParams { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    let params = session_manager.session_params(session_id).await?;
+                    Ok(Response::AppConfigParams(params))
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::BadParameters)
+                }
+            }
         }
     }
 
@@ -444,6 +461,9 @@ enum Command {
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
+    },
+    GetParams {
+        session_id: SessionId,
     },
 }
 
