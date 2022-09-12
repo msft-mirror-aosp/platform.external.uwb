@@ -15,13 +15,16 @@
 //! This module defines the UCI application config parameters for the FiRa ranging session.
 
 use std::collections::{HashMap, HashSet};
+use std::convert::{TryFrom, TryInto};
 
 use log::warn;
+
+use num_derive::{FromPrimitive, ToPrimitive};
 
 use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
 use crate::params::uci_packets::{AppConfigTlvType, SessionState, SubSessionId};
 use crate::params::utils::{u16_to_bytes, u32_to_bytes, u8_to_bytes, validate};
-use crate::utils::builder_field;
+use crate::utils::{builder_field, getter_field};
 
 // The default value of each parameters.
 const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
@@ -126,7 +129,57 @@ pub struct FiraAppConfigParams {
     number_of_aoa_elevation_measurements: u8,
 }
 
+#[allow(missing_docs)]
 impl FiraAppConfigParams {
+    // Generate the getter methods for all the fields.
+    getter_field!(device_type, DeviceType);
+    getter_field!(ranging_round_usage, RangingRoundUsage);
+    getter_field!(sts_config, StsConfig);
+    getter_field!(multi_node_mode, MultiNodeMode);
+    getter_field!(channel_number, UwbChannel);
+    getter_field!(device_mac_address, UwbAddress);
+    getter_field!(dst_mac_address, Vec<UwbAddress>);
+    getter_field!(slot_duration_rstu, u16);
+    getter_field!(ranging_interval_ms, u32);
+    getter_field!(mac_fcs_type, MacFcsType);
+    getter_field!(ranging_round_control, RangingRoundControl);
+    getter_field!(aoa_result_request, AoaResultRequest);
+    getter_field!(range_data_ntf_config, RangeDataNtfConfig);
+    getter_field!(range_data_ntf_proximity_near_cm, u16);
+    getter_field!(range_data_ntf_proximity_far_cm, u16);
+    getter_field!(device_role, DeviceRole);
+    getter_field!(rframe_config, RframeConfig);
+    getter_field!(preamble_code_index, u8);
+    getter_field!(sfd_id, u8);
+    getter_field!(psdu_data_rate, PsduDataRate);
+    getter_field!(preamble_duration, PreambleDuration);
+    getter_field!(ranging_time_struct, RangingTimeStruct);
+    getter_field!(slots_per_rr, u8);
+    getter_field!(tx_adaptive_payload_power, TxAdaptivePayloadPower);
+    getter_field!(responder_slot_index, u8);
+    getter_field!(prf_mode, PrfMode);
+    getter_field!(scheduled_mode, ScheduledMode);
+    getter_field!(key_rotation, KeyRotation);
+    getter_field!(key_rotation_rate, u8);
+    getter_field!(session_priority, u8);
+    getter_field!(mac_address_mode, MacAddressMode);
+    getter_field!(vendor_id, [u8; 2]);
+    getter_field!(static_sts_iv, [u8; 6]);
+    getter_field!(number_of_sts_segments, u8);
+    getter_field!(max_rr_retry, u16);
+    getter_field!(uwb_initiation_time_ms, u32);
+    getter_field!(hopping_mode, HoppingMode);
+    getter_field!(block_stride_length, u8);
+    getter_field!(result_report_config, ResultReportConfig);
+    getter_field!(in_band_termination_attempt_count, u8);
+    getter_field!(sub_session_id, u32);
+    getter_field!(bprf_phr_data_rate, BprfPhrDataRate);
+    getter_field!(max_number_of_measurements, u16);
+    getter_field!(sts_length, StsLength);
+    getter_field!(number_of_range_measurements, u8);
+    getter_field!(number_of_aoa_azimuth_measurements, u8);
+    getter_field!(number_of_aoa_elevation_measurements, u8);
+
     /// validate if the params are valid.
     fn is_valid(&self) -> Option<()> {
         if self.device_type == DeviceType::Controlee {
@@ -641,7 +694,7 @@ impl FiraAppConfigParamsBuilder {
 
 /// The device type.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum DeviceType {
     /// Controlee
     Controlee = 0,
@@ -651,7 +704,7 @@ pub enum DeviceType {
 
 /// The mode of ranging round usage.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum RangingRoundUsage {
     /// SS-TWR with Deferred Mode
     SsTwr = 1,
@@ -665,7 +718,7 @@ pub enum RangingRoundUsage {
 
 /// This parameter indicates how the system shall generate the STS.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum StsConfig {
     /// Static STS (default)
     Static = 0,
@@ -677,7 +730,7 @@ pub enum StsConfig {
 
 /// The mode of multi node.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum MultiNodeMode {
     /// Single device to Single device (Unicast)
     Unicast = 0,
@@ -690,7 +743,7 @@ pub enum MultiNodeMode {
 /// The UWB channel number. (default = 9)
 #[allow(missing_docs)]
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum UwbChannel {
     Channel5 = 5,
     Channel6 = 6,
@@ -720,13 +773,24 @@ impl From<UwbAddress> for Vec<u8> {
     }
 }
 
+impl TryFrom<Vec<u8>> for UwbAddress {
+    type Error = &'static str;
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        match value.len() {
+            2 => Ok(UwbAddress::Short(value.try_into().unwrap())),
+            8 => Ok(UwbAddress::Extended(value.try_into().unwrap())),
+            _ => Err("Invalid address length"),
+        }
+    }
+}
+
 fn addresses_to_bytes(addresses: Vec<UwbAddress>) -> Vec<u8> {
     addresses.into_iter().flat_map(Into::<Vec<u8>>::into).collect()
 }
 
 /// CRC type in MAC footer.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum MacFcsType {
     /// CRC 16 (default)
     Crc16 = 0,
@@ -785,7 +849,7 @@ impl RangingRoundControl {
 
 /// This parameter is used to configure AOA results in the range data notification.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum AoaResultRequest {
     /// Disable AOA
     NoAoaReport = 0,
@@ -801,7 +865,7 @@ pub enum AoaResultRequest {
 
 /// This config is used to enable/disable the range data notification.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum RangeDataNtfConfig {
     /// Disable range data notification
     Disable = 0,
@@ -813,7 +877,7 @@ pub enum RangeDataNtfConfig {
 
 /// The device role.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum DeviceRole {
     /// Responder of the session
     Responder = 0,
@@ -823,7 +887,7 @@ pub enum DeviceRole {
 
 /// Rframe config.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum RframeConfig {
     /// SP0
     SP0 = 0,
@@ -835,7 +899,7 @@ pub enum RframeConfig {
 
 /// This value configures the data rate.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum PsduDataRate {
     /// 6.81 Mbps (default)
     Rate6m81 = 0,
@@ -853,7 +917,7 @@ pub enum PsduDataRate {
 ///
 /// Two configurations are possible. BPRF uses only 64 symbols. HPRF can use both.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum PreambleDuration {
     /// 32 symbols
     T32Symbols = 0,
@@ -863,7 +927,7 @@ pub enum PreambleDuration {
 
 /// The type of ranging time scheduling.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum RangingTimeStruct {
     /// Interval Based Scheduling
     IntervalBasedScheduling = 0,
@@ -873,7 +937,7 @@ pub enum RangingTimeStruct {
 
 /// This configuration is used to enable/disable adaptive payload power for TX.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum TxAdaptivePayloadPower {
     /// Disable (default)
     Disable = 0,
@@ -883,7 +947,7 @@ pub enum TxAdaptivePayloadPower {
 
 /// This parameter is used to configure the mean PRF.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum PrfMode {
     /// 62.4 MHz PRF. BPRF mode (default)
     Bprf = 0,
@@ -895,7 +959,7 @@ pub enum PrfMode {
 
 /// This parameter is used to set the Multinode Ranging Type.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum ScheduledMode {
     /// Time scheduled ranging (default)
     TimeScheduledRanging = 1,
@@ -904,7 +968,7 @@ pub enum ScheduledMode {
 /// This configuration is used to enable/disable the key rotation feature during Dynamic STS
 /// ranging.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum KeyRotation {
     /// Disable (default)
     Disable = 0,
@@ -914,7 +978,7 @@ pub enum KeyRotation {
 
 /// MAC Addressing mode to be used in UWBS.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum MacAddressMode {
     /// MAC address is 2 bytes and 2 bytes to be used in MAC header (default)
     MacAddress2Bytes = 0,
@@ -928,7 +992,7 @@ pub enum MacAddressMode {
 ///
 /// Note: This config is applicable only for controller and ignored in case of controlee.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum HoppingMode {
     /// Hopping Diable (default)
     Disable = 0,
@@ -979,7 +1043,7 @@ impl ResultReportConfig {
 
 /// The data rate for BPRF mode.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum BprfPhrDataRate {
     /// 850 kbps (default)
     Rate850k = 0,
@@ -989,7 +1053,7 @@ pub enum BprfPhrDataRate {
 
 /// The number of symbols in an STS segment.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, ToPrimitive)]
 pub enum StsLength {
     /// 32 symbols
     Length32 = 0,
