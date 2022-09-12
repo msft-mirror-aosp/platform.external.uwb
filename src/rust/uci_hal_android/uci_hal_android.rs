@@ -34,22 +34,25 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_core::error::{Error as UwbCoreError, Result as UwbCoreResult};
 use uwb_core::params::uci_packets::SessionId;
-use uwb_core::uci::uci_hal::{RawUciMessage, UciHal};
+use uwb_core::uci::uci_hal::{UciHal, UciHalPacket};
 use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder};
 
 use crate::error::{Error, Result};
 
-fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(builder: T) -> Vec<RawUciMessage> {
+fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciPacketPacket>>(
+    builder: T,
+) -> Vec<UciHalPacket> {
     let packets: Vec<uwb_uci_packets::UciPacketHalPacket> = builder.into().into();
     packets.into_iter().map(|packet| packet.into()).collect()
 }
 
 /// Send device status notification with error state.
 fn send_device_state_error_notification(
-    uci_sender: &mpsc::UnboundedSender<RawUciMessage>,
+    uci_sender: &mpsc::UnboundedSender<UciHalPacket>,
 ) -> UwbCoreResult<()> {
-    let raw_message_packets =
-        into_raw_messages(DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateError });
+    let raw_message_packets = input_uci_hal_packet(DeviceStatusNtfBuilder {
+        device_state: DeviceState::DeviceStateError,
+    });
     for raw_message_packet in raw_message_packets {
         if let Err(e) = uci_sender.send(raw_message_packet) {
             error!("Error sending device state error notification: {:?}", e);
@@ -66,14 +69,14 @@ fn send_device_state_error_notification(
 /// trait is consumed by BnUwbClientCallback, thus it cannot be implemented for UciHalAndroid.
 #[derive(Clone, Debug)]
 struct RawUciCallback {
-    uci_sender: mpsc::UnboundedSender<RawUciMessage>,
+    uci_sender: mpsc::UnboundedSender<UciHalPacket>,
     hal_open_result_sender: mpsc::Sender<Result<()>>,
     hal_close_result_sender: mpsc::Sender<Result<()>>,
 }
 
 impl RawUciCallback {
     pub fn new(
-        uci_sender: mpsc::UnboundedSender<RawUciMessage>,
+        uci_sender: mpsc::UnboundedSender<UciHalPacket>,
         hal_open_result_sender: mpsc::Sender<Result<()>>,
         hal_close_result_sender: mpsc::Sender<Result<()>>,
     ) -> Self {
@@ -129,17 +132,22 @@ impl IUwbClientCallbackAsyncServer for RawUciCallback {
 /// Implentation of UciHal trait for Android.
 #[derive(Default)]
 pub struct UciHalAndroid {
-    // Has a copy of msg_sender via RawUciCallback.
-    hal_uci_recipient: Option<Strong<dyn IUwbChipAsync<Tokio>>>,
-    hal_death_recipient: Option<Arc<Mutex<DeathRecipient>>>,
+    chip_id: String,
     hal_close_result_receiver: Option<mpsc::Receiver<Result<()>>>,
+    hal_death_recipient: Option<Arc<Mutex<DeathRecipient>>>,
+    hal_uci_recipient: Option<Strong<dyn IUwbChipAsync<Tokio>>>,
 }
 
 #[allow(dead_code)]
 impl UciHalAndroid {
     /// Constructor for empty UciHal.
-    pub fn new() -> Self {
-        Self { hal_uci_recipient: None, hal_death_recipient: None, hal_close_result_receiver: None }
+    pub fn new(chip_id: &str) -> Self {
+        Self {
+            chip_id: chip_id.to_owned(),
+            hal_close_result_receiver: None,
+            hal_death_recipient: None,
+            hal_uci_recipient: None,
+        }
     }
 }
 
@@ -148,7 +156,7 @@ impl UciHal for UciHalAndroid {
     /// Open the UCI HAL and power on the UWBS.
     async fn open(
         &mut self,
-        msg_sender: mpsc::UnboundedSender<RawUciMessage>,
+        packet_sender: mpsc::UnboundedSender<UciHalPacket>,
     ) -> UwbCoreResult<()> {
         // Returns error if UciHalAndroid is already open.
         if self.hal_uci_recipient.is_some() {
@@ -157,22 +165,32 @@ impl UciHal for UciHalAndroid {
 
         // Get hal service.
         let service_name = "android.hardware.uwb.IUwb/default";
-        let i_uwb: Strong<dyn IUwbAsync<Tokio>> =
-            binder_tokio::get_interface(service_name)
-                .await
-                .map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        let i_uwb: Strong<dyn IUwbAsync<Tokio>> = binder_tokio::wait_for_interface(service_name)
+            .await
+            .map_err(|e| UwbCoreError::from(Error::from(e)))?;
         let chip_names = i_uwb.getChips().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        if chip_names.is_empty() {
+            error!("No UWB chip available.");
+            return Err(UwbCoreError::BadParameters);
+        }
+        let chip_name: &str = match &self.chip_id == "default" {
+            true => &chip_names[0],
+            false => &self.chip_id,
+        };
+        if !chip_names.contains(&chip_name.to_string()) {
+            return Err(UwbCoreError::BadParameters);
+        }
         let i_uwb_chip = i_uwb
-            .getChip(&chip_names[0])
+            .getChip(chip_name)
             .await
             .map_err(|e| UwbCoreError::from(Error::from(e)))?
             .into_async();
 
         // If the binder object unexpectedly goes away (typically because its hosting process has
         // been killed), then the `DeathRecipient`'s callback will be called.
-        let msg_sender_clone = msg_sender.clone();
+        let packet_sender_clone = packet_sender.clone();
         let mut bare_death_recipient = DeathRecipient::new(move || {
-            send_device_state_error_notification(&msg_sender_clone).unwrap_or_else(|e| {
+            send_device_state_error_notification(&packet_sender_clone).unwrap_or_else(|e| {
                 error!("Error sending device state error notification: {:?}", e);
             });
         });
@@ -181,17 +199,34 @@ impl UciHal for UciHalAndroid {
             .link_to_death(&mut bare_death_recipient)
             .map_err(|e| UwbCoreError::from(Error::from(e)))?;
 
-        // Connect callback to msg_sender.
+        // Connect callback to packet_sender.
         let (hal_open_result_sender, mut hal_open_result_receiver) = mpsc::channel::<Result<()>>(1);
         let (hal_close_result_sender, hal_close_result_receiver) = mpsc::channel::<Result<()>>(1);
         let m_cback = BnUwbClientCallback::new_async_binder(
-            RawUciCallback::new(msg_sender, hal_open_result_sender, hal_close_result_sender),
+            RawUciCallback::new(
+                packet_sender.clone(),
+                hal_open_result_sender,
+                hal_close_result_sender,
+            ),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
         i_uwb_chip.open(&m_cback).await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        // Initialize core and wait for POST_INIT_CPLT.
+        i_uwb_chip.coreInit().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
         match hal_open_result_receiver.recv().await {
             Some(Ok(())) => {
+                // Workaround while http://b/243140882 is not fixed:
+                // Send DEVICE_STATE_READY notification as chip is not sending this notification.
+                let device_ready_ntfs = input_uci_hal_packet(
+                    DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build(),
+                );
+                for device_ready_ntf in device_ready_ntfs {
+                    packet_sender.send(device_ready_ntf).unwrap_or_else(|e| {
+                        error!("UCI HAL: failed to send device ready notification: {:?}", e);
+                    });
+                }
+                // End of workaround.
                 self.hal_uci_recipient.replace(i_uwb_chip);
                 self.hal_death_recipient.replace(Arc::new(Mutex::new(bare_death_recipient)));
                 self.hal_close_result_receiver.replace(hal_close_result_receiver);
@@ -224,11 +259,11 @@ impl UciHal for UciHalAndroid {
         }
     }
 
-    async fn send_command(&mut self, cmd: RawUciMessage) -> UwbCoreResult<()> {
+    async fn send_packet(&mut self, packet: UciHalPacket) -> UwbCoreResult<()> {
         match &self.hal_uci_recipient {
             Some(i_uwb_chip) => {
                 i_uwb_chip
-                    .sendUciMessage(&cmd)
+                    .sendUciMessage(&packet)
                     .await
                     .map_err(|e| UwbCoreError::from(Error::from(e)))?;
                 Ok(())

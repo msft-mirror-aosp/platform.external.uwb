@@ -15,6 +15,7 @@ rust_defaults {
         "libanyhow",
         "libbinder_ndk_sys",
         "libbinder_rs",
+        "libbinder_tokio_rs",
         "libbytes",
         "libjni",
         "liblazy_static",
@@ -24,7 +25,6 @@ rust_defaults {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
-        "libbinder_tokio_rs",
     ],
     target: {
         android: {
@@ -98,6 +98,7 @@ rust_defaults {
         "rust/uwb_uci_packets/src/lib.rs",
         ":UwbGeneratedPackets_rust",
     ],
+    edition: "2021",
     proc_macros: ["libnum_derive"],
     rustlibs:[
         "libbytes",
@@ -169,6 +170,7 @@ genrule {
 rust_defaults {
     name: "libuwb_core_defaults",
     srcs: ["rust/uwb_core/src/lib.rs"],
+    edition: "2021",
     lints: "android",
     clippy_lints: "android",
     rustlibs: [
@@ -181,6 +183,7 @@ rust_defaults {
     ],
     proc_macros: [
         "libasync_trait",
+        "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
@@ -190,6 +193,9 @@ rust_library {
     name: "libuwb_core",
     defaults: ["libuwb_core_defaults"],
     crate_name: "uwb_core",
+    apex_available: [
+        "com.android.uwb",
+    ],
 }
 
 rust_test {
@@ -276,7 +282,7 @@ rust_library {
         "libasync_trait",
     ],
     apex_available: [
-        "com.android.ucihal",
+        "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
