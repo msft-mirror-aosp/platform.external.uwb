@@ -18,7 +18,7 @@
 //! of UciNotifications is different in UciManager and UciManagerSync as the sync version has its
 //! behavior aligned with the Android JNI UCI, and routes the UciNotifications to NotificationManager.
 
-use log::{error, info};
+use log::{debug, error};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use tokio::sync::mpsc;
 use tokio::task;
@@ -96,7 +96,8 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 });
                 }
                 else =>{
-                    info!("NotificationDriver dropping.");
+                    debug!("NotificationDriver dropping.");
+                    break;
                 }
             }
         }
