@@ -1,9 +1,10 @@
 {
   "presubmit": [
-    {
-      "name": "libuwb_core_cargo_test",
-      "host": true
-    },
+    // TODO(b/245028544): Disable the presubmit check temporarily.
+    // {
+    //   "name": "libuwb_core_cargo_test",
+    //   "host": true
+    // },
     {
       "name": "libuwb_uci_rust_tests"
     },
