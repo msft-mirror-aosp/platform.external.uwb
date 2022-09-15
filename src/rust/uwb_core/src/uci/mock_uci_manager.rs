@@ -29,7 +29,6 @@ use crate::params::uci_packets::{
     SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
-use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
 
 #[derive(Clone)]
@@ -287,9 +286,6 @@ impl MockUciManager {
 
 #[async_trait]
 impl UciManager for MockUciManager {
-    async fn set_logger_mode(&mut self, _logger_mode: UciLoggerMode) -> Result<()> {
-        Ok(())
-    }
     async fn set_core_notification_sender(
         &mut self,
         core_notf_sender: mpsc::UnboundedSender<CoreNotification>,

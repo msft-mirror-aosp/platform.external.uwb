@@ -33,7 +33,6 @@ use crate::uci::notification::{CoreNotification, SessionNotification, UciNotific
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
-use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::PinSleep;
 
 const UCI_TIMEOUT_MS: u64 = 800;
@@ -43,7 +42,6 @@ const MAX_RETRY_COUNT: usize = 3;
 /// abstracts the UCI commands, responses, and notifications.
 #[async_trait]
 pub(crate) trait UciManager: 'static + Send + Clone {
-    async fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()>;
     // Set the sendor of the UCI notificaions.
     async fn set_core_notification_sender(
         &mut self,
@@ -126,9 +124,9 @@ pub(crate) struct UciManagerImpl {
 }
 
 impl UciManagerImpl {
-    pub fn new<T: UciHal, U: UciLogger>(hal: T, logger: U, logger_mode: UciLoggerMode) -> Self {
+    pub fn new<T: UciHal>(hal: T) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = UciManagerActor::new(hal, logger, logger_mode, cmd_receiver);
+        let mut actor = UciManagerActor::new(hal, cmd_receiver);
         tokio::spawn(async move { actor.run().await });
 
         Self { cmd_sender }
@@ -149,13 +147,6 @@ impl UciManagerImpl {
 
 #[async_trait]
 impl UciManager for UciManagerImpl {
-    async fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
-        match self.send_cmd(UciManagerCmd::SetLoggerMode { logger_mode }).await {
-            Ok(UciResponse::SetLoggerMode) => Ok(()),
-            Ok(_) => (Err(Error::Unknown)),
-            Err(e) => Err(e),
-        }
-    }
     async fn set_core_notification_sender(
         &mut self,
         core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
@@ -398,11 +389,9 @@ impl UciManager for UciManagerImpl {
     }
 }
 
-struct UciManagerActor<T: UciHal, U: UciLogger> {
+struct UciManagerActor<T: UciHal> {
     // The UCI HAL.
     hal: TimeoutUciHal<T>,
-    // UCI Log.
-    logger: UciLoggerWrapper<U>,
     // Receive the commands and the corresponding response senders from UciManager.
     cmd_receiver: mpsc::UnboundedReceiver<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
 
@@ -433,11 +422,9 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
 }
 
-impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
+impl<T: UciHal> UciManagerActor<T> {
     fn new(
         hal: T,
-        logger: U,
-        logger_mode: UciLoggerMode,
         cmd_receiver: mpsc::UnboundedReceiver<(
             UciManagerCmd,
             oneshot::Sender<Result<UciResponse>>,
@@ -445,7 +432,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     ) -> Self {
         Self {
             hal: TimeoutUciHal::new(hal),
-            logger: UciLoggerWrapper::new(logger, logger_mode),
             cmd_receiver,
             is_hal_opened: false,
             packet_receiver: mpsc::unbounded_channel().1,
@@ -486,7 +472,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         },
                         Some(packet) => {
                             if let Some(packet) = self.defrager.defragment_packet(&packet) {
-                                self.logger.log_uci_response_or_notification(&packet);
                                 match packet.try_into() {
                                     Ok(UciMessage::Response(resp)) => {
                                         self.handle_response(resp).await;
@@ -532,10 +517,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         debug!("Received cmd: {:?}", cmd);
 
         match cmd {
-            UciManagerCmd::SetLoggerMode { logger_mode } => {
-                self.logger.set_logger_mode(logger_mode);
-                let _ = result_sender.send(Ok(UciResponse::SetLoggerMode));
-            }
             UciManagerCmd::SetCoreNotificationSender { core_notf_sender } => {
                 self.core_notf_sender = core_notf_sender;
                 let _ = result_sender.send(Ok(UciResponse::SetNotification));
@@ -556,9 +537,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 }
 
                 let (packet_sender, packet_receiver) = mpsc::unbounded_channel();
-                let result = self.hal.open(packet_sender).await;
-                self.logger.log_hal_open(&result);
-                match result {
+                match self.hal.open(packet_sender).await {
                     Ok(()) => {
                         self.on_hal_open(packet_receiver);
                         self.wait_device_status_timeout =
@@ -575,8 +554,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciManagerCmd::CloseHal { force } => {
                 if force {
                     debug!("Force closing the UCI HAL");
-                    let close_result = self.hal.close().await;
-                    self.logger.log_hal_close(&close_result);
+                    let _ = self.hal.close().await;
                     self.on_hal_closed();
                     let _ = result_sender.send(Ok(UciResponse::CloseHal));
                 } else {
@@ -586,12 +564,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         return;
                     }
 
-                    let result = self.hal.close().await;
-                    self.logger.log_hal_close(&result);
+                    let result = self.hal.close().await.map(|_| UciResponse::CloseHal);
                     if result.is_ok() {
                         self.on_hal_closed();
                     }
-                    let _ = result_sender.send(result.map(|_| UciResponse::CloseHal));
+                    let _ = result_sender.send(result);
                 }
             }
 
@@ -627,11 +604,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             warn!("The UCI HAL is already closed, skip.");
             return Err(Error::BadParameters);
         }
-        let result = self.hal.send_command(cmd.clone()).await;
-        if result.is_ok() {
-            self.logger.log_uci_command(&cmd);
-        }
-        result
+
+        self.hal.send_command(cmd).await
     }
 
     async fn handle_response(&mut self, resp: UciResponse) {
@@ -727,7 +701,6 @@ impl Retryer {
 
 #[derive(Debug)]
 enum UciManagerCmd {
-    SetLoggerMode { logger_mode: UciLoggerMode },
     SetCoreNotificationSender { core_notf_sender: mpsc::UnboundedSender<CoreNotification> },
     SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
     SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
@@ -741,12 +714,9 @@ mod tests {
     use super::*;
 
     use bytes::Bytes;
-    use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
 
     use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
-    use crate::uci::uci_logger::UciLoggerNull;
     use crate::utils::init_test_logging;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -756,11 +726,7 @@ mod tests {
         packets.into_iter().map(|packet| packet.into()).collect()
     }
 
-    async fn setup_uci_manager_with_open_hal<F>(
-        setup_hal_fn: F,
-        uci_logger_mode: UciLoggerMode,
-        log_sender: mpsc::UnboundedSender<UciLogEvent>,
-    ) -> (UciManagerImpl, MockUciHal)
+    async fn setup_uci_manager_with_open_hal<F>(setup_hal_fn: F) -> (UciManagerImpl, MockUciHal)
     where
         F: FnOnce(&mut MockUciHal),
     {
@@ -788,8 +754,7 @@ mod tests {
         setup_hal_fn(&mut hal);
 
         // Verify open_hal() is working.
-        let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), MockUciLogger::new(log_sender), uci_logger_mode);
+        let mut uci_manager = UciManagerImpl::new(hal.clone());
         let result = uci_manager.open_hal().await;
         assert!(result.is_ok());
 
@@ -802,8 +767,7 @@ mod tests {
 
         let mut hal = MockUciHal::new();
         hal.expected_open(None, Ok(()));
-        let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+        let mut uci_manager = UciManagerImpl::new(hal.clone());
 
         let result = uci_manager.open_hal().await;
         assert!(matches!(result, Err(Error::Timeout)));
@@ -812,13 +776,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_hal_explicitly() {
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                hal.expected_close(Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            hal.expected_close(Ok(()));
+        })
         .await;
 
         let result = uci_manager.close_hal(false).await;
@@ -828,14 +788,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_hal_when_exit() {
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                // UciManager should close the hal if the hal is still opened when exit.
-                hal.expected_close(Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            // UciManager should close the hal if the hal is still opened when exit.
+            hal.expected_close(Ok(()));
+        })
         .await;
 
         drop(uci_manager);
@@ -847,8 +803,7 @@ mod tests {
         init_test_logging();
 
         let mut hal = MockUciHal::new();
-        let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+        let mut uci_manager = UciManagerImpl::new(hal.clone());
 
         let result = uci_manager.close_hal(false).await;
         assert!(matches!(result, Err(Error::BadParameters)));
@@ -857,18 +812,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_reset_ok() {
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                let cmd = UciCommand::DeviceReset { reset_config: ResetConfig::UwbsReset };
-                let resp = into_uci_hal_packets(uwb_uci_packets::DeviceResetRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = UciCommand::DeviceReset { reset_config: ResetConfig::UwbsReset };
+            let resp = into_uci_hal_packets(uwb_uci_packets::DeviceResetRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.device_reset(ResetConfig::UwbsReset).await;
@@ -886,23 +837,19 @@ mod tests {
         let vendor_spec_info = vec![0x1, 0x2];
         let vendor_spec_info_clone = vendor_spec_info.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::CoreGetDeviceInfo;
-                let resp = into_uci_hal_packets(uwb_uci_packets::GetDeviceInfoRspBuilder {
-                    status,
-                    uci_version,
-                    mac_version,
-                    phy_version,
-                    uci_test_version,
-                    vendor_spec_info: vendor_spec_info_clone,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::CoreGetDeviceInfo;
+            let resp = into_uci_hal_packets(uwb_uci_packets::GetDeviceInfoRspBuilder {
+                status,
+                uci_version,
+                mac_version,
+                phy_version,
+                uci_test_version,
+                vendor_spec_info: vendor_spec_info_clone,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result = GetDeviceInfoResponse {
@@ -922,19 +869,15 @@ mod tests {
         let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
         let tlv_clone = tlv.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::CoreGetCapsInfo;
-                let resp = into_uci_hal_packets(uwb_uci_packets::GetCapsInfoRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone],
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::CoreGetCapsInfo;
+            let resp = into_uci_hal_packets(uwb_uci_packets::GetCapsInfoRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv_clone],
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.core_get_caps_info().await.unwrap();
@@ -953,19 +896,15 @@ mod tests {
         let config_status = vec![];
         let config_status_clone = config_status.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::CoreSetConfig { config_tlvs: vec![tlv_clone] };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SetConfigRspBuilder {
-                    status,
-                    cfg_status: config_status_clone,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::CoreSetConfig { config_tlvs: vec![tlv_clone] };
+            let resp = into_uci_hal_packets(uwb_uci_packets::SetConfigRspBuilder {
+                status,
+                cfg_status: config_status_clone,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result = CoreSetConfigResponse { status, config_status };
@@ -980,19 +919,15 @@ mod tests {
         let tlv = DeviceConfigTlv { cfg_id, v: vec![0x12, 0x34, 0x56] };
         let tlv_clone = tlv.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::CoreGetConfig { cfg_id: vec![cfg_id] };
-                let resp = into_uci_hal_packets(uwb_uci_packets::GetConfigRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone],
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::CoreGetConfig { cfg_id: vec![cfg_id] };
+            let resp = into_uci_hal_packets(uwb_uci_packets::GetConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv_clone],
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result = vec![tlv];
@@ -1006,26 +941,21 @@ mod tests {
         let session_id = 0x123;
         let session_type = SessionType::FiraRangingSession;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionInit { session_id, session_type };
-                let mut resp = into_uci_hal_packets(uwb_uci_packets::SessionInitRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
-                let mut notf = into_uci_hal_packets(uwb_uci_packets::SessionStatusNtfBuilder {
-                    session_id,
-                    session_state: uwb_uci_packets::SessionState::SessionStateInit,
-                    reason_code:
-                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
-                });
-                resp.append(&mut notf);
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionInit { session_id, session_type };
+            let mut resp = into_uci_hal_packets(uwb_uci_packets::SessionInitRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
+            let mut notf = into_uci_hal_packets(uwb_uci_packets::SessionStatusNtfBuilder {
+                session_id,
+                session_state: uwb_uci_packets::SessionState::SessionStateInit,
+                reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+            });
+            resp.append(&mut notf);
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-                hal.expected_notify_session_initialized(session_id, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+            hal.expected_notify_session_initialized(session_id, Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_init(session_id, session_type).await;
@@ -1037,18 +967,14 @@ mod tests {
     async fn test_session_deinit_ok() {
         let session_id = 0x123;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionDeinit { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionDeinitRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionDeinit { session_id };
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionDeinitRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_deinit(session_id).await;
@@ -1063,22 +989,16 @@ mod tests {
             AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
         let config_tlv_clone = config_tlv.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                let cmd = UciCommand::SessionSetAppConfig {
-                    session_id,
-                    config_tlvs: vec![config_tlv_clone],
-                };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    cfg_status: vec![],
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd =
+                UciCommand::SessionSetAppConfig { session_id, config_tlvs: vec![config_tlv_clone] };
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                cfg_status: vec![],
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result =
@@ -1096,19 +1016,15 @@ mod tests {
         let tlv = AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
         let tlv_clone = tlv.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionGetAppConfig { session_id, app_cfg: vec![config_id] };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone],
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionGetAppConfig { session_id, app_cfg: vec![config_id] };
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                tlvs: vec![tlv_clone],
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result = vec![tlv];
@@ -1121,19 +1037,15 @@ mod tests {
     async fn test_session_get_count_ok() {
         let session_count = 5;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    session_count,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionGetCount;
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_count,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_get_count().await.unwrap();
@@ -1146,19 +1058,15 @@ mod tests {
         let session_id = 0x123;
         let session_state = SessionState::SessionStateActive;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionGetState { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetStateRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    session_state,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionGetState { session_id };
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetStateRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_state,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_get_state(session_id).await.unwrap();
@@ -1173,24 +1081,20 @@ mod tests {
         let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
         let controlee_clone = controlee.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionUpdateControllerMulticastList {
-                    session_id,
-                    action,
-                    controlees: vec![controlee_clone],
-                };
-                let resp = into_uci_hal_packets(
-                    uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
-                        status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    },
-                );
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionUpdateControllerMulticastList {
+                session_id,
+                action,
+                controlees: vec![controlee_clone],
+            };
+            let resp = into_uci_hal_packets(
+                uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                },
+            );
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager
@@ -1204,18 +1108,14 @@ mod tests {
     async fn test_range_start_ok() {
         let session_id = 0x123;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::RangeStart { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeStartRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::RangeStart { session_id };
+            let resp = into_uci_hal_packets(uwb_uci_packets::RangeStartRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.range_start(session_id).await;
@@ -1227,18 +1127,14 @@ mod tests {
     async fn test_range_stop_ok() {
         let session_id = 0x123;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::RangeStop { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeStopRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::RangeStop { session_id };
+            let resp = into_uci_hal_packets(uwb_uci_packets::RangeStopRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.range_stop(session_id).await;
@@ -1251,19 +1147,15 @@ mod tests {
         let session_id = 0x123;
         let count = 3;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::RangeGetRangingCount { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeGetRangingCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    count,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::RangeGetRangingCount { session_id };
+            let resp = into_uci_hal_packets(uwb_uci_packets::RangeGetRangingCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                count,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.range_get_ranging_count(session_id).await.unwrap();
@@ -1276,18 +1168,14 @@ mod tests {
         let country_code = CountryCode::new(b"US").unwrap();
         let country_code_clone = country_code.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::AndroidSetCountryCode { country_code: country_code_clone };
-                let resp = into_uci_hal_packets(uwb_uci_packets::AndroidSetCountryCodeRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::AndroidSetCountryCode { country_code: country_code_clone };
+            let resp = into_uci_hal_packets(uwb_uci_packets::AndroidSetCountryCodeRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.android_set_country_code(country_code).await;
@@ -1306,18 +1194,14 @@ mod tests {
         };
         let power_stats_clone = power_stats.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::AndroidGetPowerStats;
-                let resp = into_uci_hal_packets(uwb_uci_packets::AndroidGetPowerStatsRspBuilder {
-                    stats: power_stats_clone,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::AndroidGetPowerStats;
+            let resp = into_uci_hal_packets(uwb_uci_packets::AndroidGetPowerStatsRspBuilder {
+                stats: power_stats_clone,
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.android_get_power_stats().await.unwrap();
@@ -1334,19 +1218,15 @@ mod tests {
         let resp_payload = vec![0x55, 0x66, 0x77, 0x88];
         let resp_payload_clone = resp_payload.clone();
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::RawVendorCmd { gid, oid, payload: cmd_payload_clone };
-                let resp = into_uci_hal_packets(uwb_uci_packets::UciVendor_F_ResponseBuilder {
-                    opcode: oid as u8,
-                    payload: Some(Bytes::from(resp_payload_clone)),
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::RawVendorCmd { gid, oid, payload: cmd_payload_clone };
+            let resp = into_uci_hal_packets(uwb_uci_packets::UciVendor_F_ResponseBuilder {
+                opcode: oid as u8,
+                payload: Some(Bytes::from(resp_payload_clone)),
+            });
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let expected_result = RawVendorMessage { gid, oid, payload: resp_payload };
@@ -1357,14 +1237,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_retry_no_response() {
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                hal.expected_send_command(cmd, vec![], Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = UciCommand::SessionGetCount;
+            hal.expected_send_command(cmd, vec![], Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_get_count().await;
@@ -1374,14 +1250,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_timeout() {
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                hal.expected_send_command(cmd, vec![], Err(Error::Timeout));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = UciCommand::SessionGetCount;
+            hal.expected_send_command(cmd, vec![], Err(Error::Timeout));
+        })
         .await;
 
         let result = uci_manager.session_get_count().await;
@@ -1391,21 +1263,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_get_count_retry_too_many_times() {
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                let retry_resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
-                    session_count: 0,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(|hal| {
+            let cmd = UciCommand::SessionGetCount;
+            let retry_resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
+                session_count: 0,
+            });
 
-                for _ in 0..MAX_RETRY_COUNT {
-                    hal.expected_send_command(cmd.clone(), retry_resp.clone(), Ok(()));
-                }
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            for _ in 0..MAX_RETRY_COUNT {
+                hal.expected_send_command(cmd.clone(), retry_resp.clone(), Ok(()));
+            }
+        })
         .await;
 
         let result = uci_manager.session_get_count().await;
@@ -1417,71 +1285,25 @@ mod tests {
     async fn test_session_get_count_retry_notification() {
         let session_count = 5;
 
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                let retry_resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
-                    session_count: 0,
-                });
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    session_count,
-                });
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(move |hal| {
+            let cmd = UciCommand::SessionGetCount;
+            let retry_resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusCommandRetry,
+                session_count: 0,
+            });
+            let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
+                status: uwb_uci_packets::StatusCode::UciStatusOk,
+                session_count,
+            });
 
-                hal.expected_send_command(cmd.clone(), retry_resp.clone(), Ok(()));
-                hal.expected_send_command(cmd.clone(), retry_resp, Ok(()));
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
+            hal.expected_send_command(cmd.clone(), retry_resp.clone(), Ok(()));
+            hal.expected_send_command(cmd.clone(), retry_resp, Ok(()));
+            hal.expected_send_command(cmd, resp, Ok(()));
+        })
         .await;
 
         let result = uci_manager.session_get_count().await.unwrap();
         assert_eq!(result, session_count);
-        assert!(mock_hal.wait_expected_calls_done().await);
-    }
-
-    #[tokio::test]
-    async fn test_log_manager_interaction() {
-        let (log_sender, mut log_receiver) = mpsc::unbounded_channel::<UciLogEvent>();
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionGetCount;
-                let resp1 = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    session_count: 1,
-                });
-                let resp2 = into_uci_hal_packets(uwb_uci_packets::SessionGetCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    session_count: 2,
-                });
-                hal.expected_send_command(cmd.clone(), resp1, Ok(()));
-                hal.expected_send_command(cmd, resp2, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            log_sender,
-        )
-        .await;
-
-        // Under Disabled mode, initialization and first command and response are not logged.
-        uci_manager.session_get_count().await.unwrap();
-        assert!(log_receiver.try_recv().is_err());
-
-        // Second command and response after change in logger mode are logged.
-        uci_manager.set_logger_mode(UciLoggerMode::Filtered).await.unwrap();
-        uci_manager.session_get_count().await.unwrap();
-        let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
-        let cmd_packet: Vec<u8> = SessionGetCountCmdBuilder {}.build().into();
-        assert_eq!(&packet, &cmd_packet);
-        let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
-        let rsp_packet: Vec<u8> =
-            SessionGetCountRspBuilder { status: StatusCode::UciStatusOk, session_count: 2 }
-                .build()
-                .into();
-        assert_eq!(&packet, &rsp_packet);
-
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 }
