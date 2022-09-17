@@ -18,6 +18,7 @@ use tokio::runtime::Runtime;
 
 use crate::service::uwb_service::{UwbService, UwbServiceCallback};
 use crate::uci::uci_hal::UciHal;
+use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::UciManagerImpl;
 
 /// Create the default runtime for UwbService.
@@ -27,19 +28,42 @@ pub fn default_runtime() -> Option<Runtime> {
 
 /// The builder of UwbService, used to keep the backward compatibility when adding new parameters
 /// of creating a UwbService instance.
-pub struct UwbServiceBuilder<C: UwbServiceCallback, U: UciHal> {
+pub struct UwbServiceBuilder<C, U, L>
+where
+    C: UwbServiceCallback,
+    U: UciHal,
+    L: UciLogger,
+{
     runtime: Option<Runtime>,
     callback: Option<C>,
     uci_hal: Option<U>,
+    uci_logger: Option<L>,
+    uci_logger_mode: UciLoggerMode,
 }
 
-impl<C: UwbServiceCallback, U: UciHal> Default for UwbServiceBuilder<C, U> {
+impl<C, U, L> Default for UwbServiceBuilder<C, U, L>
+where
+    C: UwbServiceCallback,
+    U: UciHal,
+    L: UciLogger,
+{
     fn default() -> Self {
-        Self { runtime: None, callback: None, uci_hal: None }
+        Self {
+            runtime: None,
+            callback: None,
+            uci_hal: None,
+            uci_logger: None,
+            uci_logger_mode: UciLoggerMode::Disabled,
+        }
     }
 }
 
-impl<C: UwbServiceCallback, U: UciHal> UwbServiceBuilder<C, U> {
+impl<C, U, L> UwbServiceBuilder<C, U, L>
+where
+    C: UwbServiceCallback,
+    U: UciHal,
+    L: UciLogger,
+{
     /// Create a new builder.
     pub fn new() -> Self {
         Default::default()
@@ -63,11 +87,26 @@ impl<C: UwbServiceCallback, U: UciHal> UwbServiceBuilder<C, U> {
         self
     }
 
+    /// Set the uci_logger field.
+    pub fn uci_logger(mut self, uci_logger: L) -> Self {
+        self.uci_logger = Some(uci_logger);
+        self
+    }
+
+    /// Set the uci_logger_mode field.
+    pub fn uci_logger_mode(mut self, uci_logger_mode: UciLoggerMode) -> Self {
+        self.uci_logger_mode = uci_logger_mode;
+        self
+    }
+
     /// Build the UwbService.
     pub fn build(mut self) -> Option<UwbService> {
         let runtime = self.runtime.take().or_else(default_runtime)?;
         let uci_hal = self.uci_hal.take()?;
-        let uci_manager = runtime.block_on(async move { UciManagerImpl::new(uci_hal) });
+        let uci_logger = self.uci_logger.take()?;
+        let uci_logger_mode = self.uci_logger_mode;
+        let uci_manager = runtime
+            .block_on(async move { UciManagerImpl::new(uci_hal, uci_logger, uci_logger_mode) });
         Some(UwbService::new(runtime, self.callback.take()?, uci_manager))
     }
 }
@@ -77,10 +116,12 @@ mod tests {
     use super::*;
     use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::uci::mock_uci_hal::MockUciHal;
+    use crate::uci::uci_logger::UciLoggerNull;
 
     #[test]
     fn test_build_fail() {
-        let result = UwbServiceBuilder::<MockUwbServiceCallback, MockUciHal>::new().build();
+        let result =
+            UwbServiceBuilder::<MockUwbServiceCallback, MockUciHal, UciLoggerNull>::new().build();
         assert!(result.is_none());
     }
 
@@ -89,6 +130,7 @@ mod tests {
         let result = UwbServiceBuilder::new()
             .callback(MockUwbServiceCallback::new())
             .uci_hal(MockUciHal::new())
+            .uci_logger(UciLoggerNull::default())
             .build();
         assert!(result.is_some());
     }
