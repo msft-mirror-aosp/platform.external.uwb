@@ -12,12 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+//! This module provides the types of the parameters or returned data of the public interfaces.
 
-pub(crate) mod session;
-pub(crate) mod utils;
+pub(super) mod utils;
 
-pub mod error;
-pub mod params;
-pub mod service;
-pub mod uci;
+pub mod app_config_params;
+pub mod ccc_app_config_params;
+pub mod ccc_started_app_config_params;
+pub mod fira_app_config_params;
+pub mod uci_packets;
+
+// Re-export params from all of the sub-modules.
+pub use app_config_params::*;
+pub use ccc_app_config_params::*;
+pub use ccc_started_app_config_params::*;
+pub use fira_app_config_params::*;
+pub use uci_packets::*;

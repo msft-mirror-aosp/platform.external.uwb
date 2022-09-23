@@ -17,13 +17,13 @@ use std::collections::BTreeMap;
 use log::{debug, error, warn};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::session::error::{Error, Result};
-use crate::session::params::AppConfigParams;
-use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
-use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
-use crate::uci::params::{
+use crate::error::{Error, Result};
+use crate::params::app_config_params::AppConfigParams;
+use crate::params::uci_packets::{
     Controlee, ReasonCode, SessionId, SessionState, SessionType, UpdateMulticastListAction,
 };
+use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
+use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
 
 const MAX_SESSION_COUNT: usize = 5;
@@ -71,7 +71,7 @@ impl SessionManager {
             .send_cmd(SessionCommand::InitSession { session_id, session_type, params })
             .await
             .map(|_| ());
-        if result.is_err() && result != Err(Error::DuplicatedSessionId(session_id)) {
+        if result.is_err() && result != Err(Error::DuplicatedSessionId) {
             let _ = self.deinit_session(session_id).await;
         }
         result
@@ -118,14 +118,24 @@ impl SessionManager {
         Ok(())
     }
 
+    pub async fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.send_cmd(SessionCommand::GetParams { session_id }).await? {
+            SessionResponse::AppConfigParams(params) => Ok(params),
+            _ => panic!("session_params() should reply AppConfigParams result"),
+        }
+    }
+
     // Send the |cmd| to the SessionManagerActor.
     async fn send_cmd(&self, cmd: SessionCommand) -> Result<SessionResponse> {
         let (result_sender, result_receiver) = oneshot::channel();
         self.cmd_sender.send((cmd, result_sender)).map_err(|cmd| {
             error!("Failed to send cmd: {:?}", cmd.0);
-            Error::TokioFailure
+            Error::Unknown
         })?;
-        result_receiver.await.unwrap_or(Err(Error::TokioFailure))
+        result_receiver.await.unwrap_or_else(|e| {
+            error!("Failed to receive the result for cmd: {:?}", e);
+            Err(Error::Unknown)
+        })
     }
 }
 
@@ -185,17 +195,22 @@ impl<T: UciManager> SessionManagerActor<T> {
         match cmd {
             SessionCommand::InitSession { session_id, session_type, params } => {
                 if self.active_sessions.contains_key(&session_id) {
-                    let _ = result_sender.send(Err(Error::DuplicatedSessionId(session_id)));
+                    warn!("Session {} already exists", session_id);
+                    let _ = result_sender.send(Err(Error::DuplicatedSessionId));
                     return;
                 }
                 if self.active_sessions.len() == MAX_SESSION_COUNT {
+                    warn!("The amount of active sessions already reached {}", MAX_SESSION_COUNT);
                     let _ = result_sender.send(Err(Error::MaxSessionsExceeded));
                     return;
                 }
 
                 if !params.is_type_matched(session_type) {
-                    error!("session_type {:?} doesn't match with the params", session_type);
-                    let _ = result_sender.send(Err(Error::InvalidArguments));
+                    warn!(
+                        "session_type {:?} doesn't match with the params {:?}",
+                        session_type, params
+                    );
+                    let _ = result_sender.send(Err(Error::BadParameters));
                     return;
                 }
 
@@ -210,7 +225,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::DeinitSession { session_id } => {
                 match self.active_sessions.remove(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(mut session) => {
                         session.deinitialize(result_sender);
@@ -220,7 +236,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::StartRanging { session_id } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.start_ranging(result_sender);
@@ -230,7 +247,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::StopRanging { session_id } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.stop_ranging(result_sender);
@@ -240,7 +258,8 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::Reconfigure { session_id, params } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.reconfigure(params, result_sender);
@@ -250,10 +269,22 @@ impl<T: UciManager> SessionManagerActor<T> {
             SessionCommand::UpdateControllerMulticastList { session_id, action, controlees } => {
                 match self.active_sessions.get_mut(&session_id) {
                     None => {
-                        let _ = result_sender.send(Err(Error::UnknownSessionId(session_id)));
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
                     }
                     Some(session) => {
                         session.update_controller_multicast_list(action, controlees, result_sender);
+                    }
+                }
+            }
+            SessionCommand::GetParams { session_id } => {
+                match self.active_sessions.get_mut(&session_id) {
+                    None => {
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                    }
+                    Some(session) => {
+                        session.params(result_sender);
                     }
                 }
             }
@@ -264,7 +295,7 @@ impl<T: UciManager> SessionManagerActor<T> {
         match notf {
             UciSessionNotification::Status { session_id, session_state, reason_code } => {
                 if session_state == SessionState::SessionStateDeinit {
-                    debug!("Session {:?} is deinitialized", session_id);
+                    debug!("Session {} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
                     let _ = self.session_notf_sender.send(SessionNotification::SessionState {
                         session_id,
@@ -285,7 +316,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                     None => {
                         warn!(
-                            "Received notification of the unknown Session {:?}: {:?}, {:?}",
+                            "Received notification of the unknown Session {}: {:?}, {:?}",
                             session_id, session_state, reason_code
                         );
                     }
@@ -343,19 +374,22 @@ enum SessionCommand {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
     },
+    GetParams {
+        session_id: SessionId,
+    },
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
     use super::*;
 
-    use crate::session::params::ccc_app_config_params::*;
-    use crate::session::params::fira_app_config_params::*;
-    use crate::uci::mock_uci_manager::MockUciManager;
-    use crate::uci::notification::{RangingMeasurements, UciNotification};
-    use crate::uci::params::{
+    use crate::params::ccc_app_config_params::*;
+    use crate::params::fira_app_config_params::*;
+    use crate::params::uci_packets::{
         RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement, StatusCode,
     };
+    use crate::uci::mock_uci_manager::MockUciManager;
+    use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
 
     pub(crate) fn generate_params() -> AppConfigParams {
@@ -411,6 +445,7 @@ pub(crate) mod test_utils {
                     aoa_destination_elevation: 11,
                     aoa_destination_elevation_fom: 12,
                     slot_index: 0,
+                    rssi: u8::MAX,
                 },
             ]),
         }
@@ -461,13 +496,14 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use crate::session::params::ccc_started_app_config_params::CccStartedAppConfigParams;
-    use crate::session::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
-    use crate::uci::notification::UciNotification;
-    use crate::uci::params::{
+    use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
+    use crate::params::uci_packets::{
         AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
         SetAppConfigResponse, StatusCode,
     };
+    use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
+    use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
+    use crate::uci::notification::UciNotification;
 
     #[tokio::test]
     async fn test_init_deinit_session() {
@@ -503,7 +539,7 @@ mod tests {
 
         // Deinit a session before initialized should fail.
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::BadParameters));
 
         // Initialize a normal session should be successful.
         let result = session_manager.init_session(session_id, session_type, params.clone()).await;
@@ -529,7 +565,7 @@ mod tests {
 
         // Initialize a session multiple times without deinitialize should fail.
         let result = session_manager.init_session(session_id, session_type, params).await;
-        assert_eq!(result, Err(Error::DuplicatedSessionId(session_id)));
+        assert_eq!(result, Err(Error::DuplicatedSessionId));
 
         // Deinitialize the session should be successful, and should receive the deinitialized
         // notification.
@@ -547,7 +583,7 @@ mod tests {
 
         // Deinit a session after deinitialized should fail.
         let result = session_manager.deinit_session(session_id).await;
-        assert_eq!(result, Err(Error::UnknownSessionId(session_id)));
+        assert_eq!(result, Err(Error::BadParameters));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
@@ -765,7 +801,7 @@ mod tests {
         // CCC session doesn't support update_controller_multicast_list.
         let result =
             session_manager.update_controller_multicast_list(session_id, action, controlees).await;
-        assert_eq!(result, Err(Error::InvalidArguments));
+        assert_eq!(result, Err(Error::BadParameters));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
@@ -872,6 +908,145 @@ mod tests {
 
         let session_notf = session_notf_receiver.recv().await.unwrap();
         assert_eq!(session_notf, SessionNotification::RangeData { session_id, range_data });
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_reconfigure_app_config() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+
+        let initial_params = generate_params();
+        let initial_tlvs = initial_params.generate_tlvs();
+
+        let non_default_key_rotation_val = KeyRotation::Enable;
+        let idle_params = FiraAppConfigParamsBuilder::from_params(&initial_params)
+            .unwrap()
+            .key_rotation(non_default_key_rotation_val)
+            .build()
+            .unwrap();
+        let idle_tlvs = idle_params
+            .generate_updated_tlvs(&initial_params, SessionState::SessionStateIdle)
+            .unwrap();
+
+        let non_default_block_stride_val = 2u8;
+        let active_params = FiraAppConfigParamsBuilder::from_params(&idle_params)
+            .unwrap()
+            .block_stride_length(non_default_block_stride_val)
+            .build()
+            .unwrap();
+        let active_tlvs = active_params
+            .generate_updated_tlvs(&idle_params, SessionState::SessionStateIdle)
+            .unwrap();
+
+        let (mut session_manager, mut mock_uci_manager, _) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(
+                    session_id,
+                    session_type,
+                    vec![session_status_notf(session_id, SessionState::SessionStateInit)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    initial_tlvs,
+                    vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    idle_tlvs,
+                    vec![],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+                uci_manager.expect_range_start(
+                    session_id,
+                    vec![session_status_notf(session_id, SessionState::SessionStateActive)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    active_tlvs,
+                    vec![],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+            })
+            .await;
+
+        // Reconfiguring without first initing a session should fail.
+        let result = session_manager.reconfigure(session_id, initial_params.clone()).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        let result =
+            session_manager.init_session(session_id, session_type, initial_params.clone()).await;
+        assert_eq!(result, Ok(()));
+
+        // Reconfiguring any parameters during idle state should succeed.
+        let result = session_manager.reconfigure(session_id, idle_params.clone()).await;
+        assert_eq!(result, Ok(()));
+
+        let result = session_manager.start_ranging(session_id).await;
+        assert_eq!(result, Ok(idle_params));
+
+        // Reconfiguring most parameters during active state should fail.
+        let result = session_manager.reconfigure(session_id, initial_params).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        // Only some parameters are allowed to be reconfigured during active state.
+        let result = session_manager.reconfigure(session_id, active_params).await;
+        assert_eq!(result, Ok(()));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_params() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+
+        let params = generate_params();
+        let tlvs = params.generate_tlvs();
+
+        let (mut session_manager, mut mock_uci_manager, _) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(
+                    session_id,
+                    session_type,
+                    vec![session_status_notf(session_id, SessionState::SessionStateInit)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    tlvs,
+                    vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+            })
+            .await;
+
+        // Getting session params without initing a session should fail
+        let result = session_manager.session_params(session_id).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
+        result.unwrap();
+
+        // Getting session params after they've been properly set should succeed
+        let result = session_manager.session_params(session_id).await;
+        assert_eq!(result, Ok(params));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }

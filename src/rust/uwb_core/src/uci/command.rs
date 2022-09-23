@@ -18,14 +18,16 @@ use bytes::Bytes;
 use log::error;
 use num_traits::FromPrimitive;
 
-use crate::uci::error::{Error, Result as UciResult};
-use crate::uci::params::{
+use crate::error::{Error, Result};
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
 
-#[derive(Debug, Clone)]
-pub(super) enum UciCommand {
+/// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum UciCommand {
     DeviceReset {
         reset_config: ResetConfig,
     },
@@ -83,7 +85,7 @@ pub(super) enum UciCommand {
 
 impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
     type Error = Error;
-    fn try_from(cmd: UciCommand) -> Result<Self, Self::Error> {
+    fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
             UciCommand::SessionInit { session_id, session_type } => {
                 uwb_uci_packets::SessionInitCmdBuilder { session_id, session_type }.build().into()
@@ -165,11 +167,17 @@ fn build_uci_vendor_cmd_packet(
     gid: u32,
     oid: u32,
     payload: Vec<u8>,
-) -> UciResult<uwb_uci_packets::UciCommandPacket> {
+) -> Result<uwb_uci_packets::UciCommandPacket> {
     use uwb_uci_packets::GroupId;
-    let group_id = GroupId::from_u32(gid).ok_or(Error::InvalidArgs)?;
+    let group_id = GroupId::from_u32(gid).ok_or_else(|| {
+        error!("Invalid GroupId: {}", gid);
+        Error::BadParameters
+    })?;
     let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
-    let opcode = oid.try_into().map_err(|_| Error::InvalidArgs)?;
+    let opcode = oid.try_into().map_err(|_| {
+        error!("Invalid opcod: {}", oid);
+        Error::BadParameters
+    })?;
     let packet = match group_id {
         GroupId::VendorReserved9 => {
             uwb_uci_packets::UciVendor_9_CommandBuilder { opcode, payload }.build().into()
@@ -188,7 +196,7 @@ fn build_uci_vendor_cmd_packet(
         }
         _ => {
             error!("Invalid vendor gid {:?}", gid);
-            return Err(Error::InvalidArgs);
+            return Err(Error::BadParameters);
         }
     };
     Ok(packet)

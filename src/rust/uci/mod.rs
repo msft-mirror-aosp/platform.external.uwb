@@ -48,6 +48,7 @@ pub type SyncUwbAdaptation = Arc<dyn UwbAdaptation + Send + Sync>;
 #[derive(Arbitrary, Clone, Debug, PartialEq, Eq)]
 pub enum JNICommand {
     // Blocking UCI commands
+    Enable,
     UciGetCapsInfo,
     UciGetDeviceInfo,
     UciSessionInit(u32, u8),
@@ -90,7 +91,6 @@ pub enum JNICommand {
     UciGetPowerStats,
 
     // Non blocking commands
-    Enable,
     Disable(bool),
 }
 
@@ -151,12 +151,17 @@ impl Retryer {
         self.failed.notify_one()
     }
 
-    fn send_with_retry(self, adaptation: SyncUwbAdaptation, cmd: UciCommandPacket) {
+    fn send_with_retry(
+        self,
+        adaptation: SyncUwbAdaptation,
+        cmd: UciCommandPacket,
+        chip_id: String,
+    ) {
         tokio::task::spawn(async move {
             let mut received_response = false;
             for retry in 0..MAX_RETRIES {
-                adaptation.send_uci_message(cmd.clone()).await.unwrap_or_else(|e| {
-                    error!("Sending UCI message failed: {:?}", e);
+                adaptation.send_uci_message(cmd.clone(), &chip_id).await.unwrap_or_else(|e| {
+                    error!("Sending UCI message to chip {} failed: {:?}", chip_id, e);
                 });
                 select! {
                     _ = tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)) => warn!("UWB chip did not respond within {}ms deadline. Retrying (#{})...", RETRY_DELAY_MS, retry + 1),
@@ -168,9 +173,9 @@ impl Retryer {
                 }
             }
             if !received_response {
-                error!("After {} retries, no response from UWB chip", MAX_RETRIES);
-                adaptation.core_initialization().await.unwrap_or_else(|e| {
-                    error!("Resetting chip due to no responses failed: {:?}", e);
+                error!("After {} retries, no response from UWB chip {}", MAX_RETRIES, chip_id);
+                adaptation.core_initialization(&chip_id).await.unwrap_or_else(|e| {
+                    error!("Resetting chip {} due to no responses failed: {:?}", chip_id, e);
                 });
                 self.failed();
             }
@@ -190,8 +195,8 @@ async fn option_future<R, T: Future<Output = R>>(mf: Option<T>) -> Option<R> {
 struct Driver<T: EventManager> {
     adaptation: SyncUwbAdaptation,
     event_manager: T,
-    cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
-    rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+    cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>, String)>,
+    rsp_receiver: mpsc::UnboundedReceiver<(HalCallback, String)>,
     response_channel: Option<(UciResponseHandle, Retryer)>,
     state: UwbState,
 }
@@ -200,8 +205,8 @@ struct Driver<T: EventManager> {
 async fn drive<T: EventManager + Send + Sync>(
     adaptation: SyncUwbAdaptation,
     event_manager: T,
-    cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
-    rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+    cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>, String)>,
+    rsp_receiver: mpsc::UnboundedReceiver<(HalCallback, String)>,
 ) -> Result<()> {
     Driver::new(adaptation, event_manager, cmd_receiver, rsp_receiver).await.drive().await
 }
@@ -213,8 +218,8 @@ impl<T: EventManager> Driver<T> {
     async fn new(
         adaptation: SyncUwbAdaptation,
         event_manager: T,
-        cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>)>,
-        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+        cmd_receiver: mpsc::UnboundedReceiver<(JNICommand, Option<UciResponseHandle>, String)>,
+        rsp_receiver: mpsc::UnboundedReceiver<(HalCallback, String)>,
     ) -> Self {
         Self {
             adaptation,
@@ -241,9 +246,28 @@ impl<T: EventManager> Driver<T> {
         &mut self,
         tx: oneshot::Sender<UciResponse>,
         cmd: JNICommand,
+        chip_id: String,
     ) -> Result<()> {
         log::debug!("Received blocking cmd {:?}", cmd);
         let command: UciCommandPacket = match cmd {
+            JNICommand::Enable => {
+                match (
+                    self.adaptation.hal_open(&chip_id).await,
+                    self.adaptation.core_initialization(&chip_id).await,
+                ) {
+                    (Ok(()), Ok(())) => {
+                        tx.send(UciResponse::EnableRsp(true))
+                            .unwrap_or_else(|e| error!("Error sending Enable response: {:?}", e));
+                        self.set_state(UwbState::W4HalOpen);
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        error!("Enable UWB failed with: {:?}", e);
+                        tx.send(UciResponse::EnableRsp(false))
+                            .unwrap_or_else(|e| error!("Error sending Enable response: {:?}", e));
+                    }
+                }
+                return Ok(());
+            }
             JNICommand::UciGetDeviceInfo => GetDeviceInfoCmdBuilder {}.build().into(),
             JNICommand::UciGetCapsInfo => GetCapsInfoCmdBuilder {}.build().into(),
             JNICommand::UciSessionInit(session_id, session_type) => {
@@ -307,36 +331,40 @@ impl<T: EventManager> Driver<T> {
 
         let retryer = Retryer::new();
         self.response_channel = Some((tx, retryer.clone()));
-        retryer.send_with_retry(self.adaptation.clone(), command);
+        retryer.send_with_retry(self.adaptation.clone(), command, chip_id);
         self.set_state(UwbState::W4UciResp);
         Ok(())
     }
 
-    async fn handle_non_blocking_jni_cmd(&mut self, cmd: JNICommand) -> Result<()> {
+    async fn handle_non_blocking_jni_cmd(
+        &mut self,
+        cmd: JNICommand,
+        chip_id: String,
+    ) -> Result<()> {
         log::debug!("Received non blocking cmd {:?}", cmd);
         match cmd {
-            JNICommand::Enable => {
-                self.adaptation.hal_open().await?;
-                self.adaptation.core_initialization().await?;
-                self.set_state(UwbState::W4HalOpen);
-            }
-            JNICommand::Disable(_graceful) => {
-                self.adaptation.hal_close().await?;
-                self.set_state(UwbState::W4HalClose);
-            }
-            _ => {
-                error!("Unexpected non blocking cmd received {:?}", cmd);
-                return Ok(());
-            }
+            JNICommand::Disable(_graceful) => match self.adaptation.hal_close(&chip_id).await {
+                Ok(()) => self.set_state(UwbState::W4HalClose),
+                Err(e) => {
+                    error!("Recevied HAL close failure: {:?}", e);
+                    self.set_state(UwbState::None); // TODO(b/239965873): state should be per-chip
+                    return Err(UwbErr::Exit);
+                }
+            },
+            _ => error!("Unexpected non blocking cmd received {:?}", cmd),
         }
         Ok(())
     }
 
-    async fn handle_hal_notification(&self, response: uci_hrcv::UciNotification) -> Result<()> {
+    async fn handle_hal_notification(
+        &self,
+        response: uci_hrcv::UciNotification,
+        chip_id: String,
+    ) -> Result<()> {
         log::debug!("Received hal notification {:?}", response);
         match response {
             uci_hrcv::UciNotification::DeviceStatusNtf(response) => {
-                self.event_manager.device_status_notification_received(response)?;
+                self.event_manager.device_status_notification_received(response, &chip_id)?;
             }
             uci_hrcv::UciNotification::GenericError(response) => {
                 if let (StatusCode::UciStatusCommandRetry, Some((_, retryer))) =
@@ -344,10 +372,10 @@ impl<T: EventManager> Driver<T> {
                 {
                     retryer.retry();
                 }
-                self.event_manager.core_generic_error_notification_received(response)?;
+                self.event_manager.core_generic_error_notification_received(response, &chip_id)?;
             }
             uci_hrcv::UciNotification::SessionStatusNtf(response) => {
-                self.invoke_hal_session_init_if_necessary(&response).await;
+                self.invoke_hal_session_init_if_necessary(&response, chip_id).await;
                 self.event_manager.session_status_notification_received(response)?;
             }
             uci_hrcv::UciNotification::ShortMacTwoWayRangeDataNtf(response) => {
@@ -360,8 +388,9 @@ impl<T: EventManager> Driver<T> {
                 self.event_manager
                     .session_update_controller_multicast_list_notification_received(response)?;
             }
+            uci_hrcv::UciNotification::AndroidRangeDiagnosticsNtf(_response) => {}
             uci_hrcv::UciNotification::RawVendorNtf(response) => {
-                self.event_manager.vendor_uci_notification_received(response)?;
+                self.event_manager.vendor_uci_notification_received(response, &chip_id)?;
             }
         }
         Ok(())
@@ -378,17 +407,17 @@ impl<T: EventManager> Driver<T> {
             }
             // Note: If a blocking command is awaiting a response, any non-blocking commands are not
             // dequeued until the blocking cmd's response is received.
-            Some((cmd, tx)) = self.cmd_receiver.recv(), if self.can_process_cmd() => {
+            Some((cmd, tx, chip_id)) = self.cmd_receiver.recv(), if self.can_process_cmd() => {
                 match tx {
                     Some(tx) => { // Blocking JNI commands processing.
-                        self.handle_blocking_jni_cmd(tx, cmd).await?;
+                        self.handle_blocking_jni_cmd(tx, cmd, chip_id).await?;
                     },
                     None => { // Non Blocking JNI commands processing.
-                        self.handle_non_blocking_jni_cmd(cmd).await?;
+                        self.handle_non_blocking_jni_cmd(cmd, chip_id).await?;
                     }
                 }
             }
-            Some(rsp) = self.rsp_receiver.recv() => {
+            Some((rsp, chip_id)) = self.rsp_receiver.recv() => {
                 match rsp {
                     HalCallback::Event{event, event_status} => {
                         log::info!("Received HAL event: {:?} with status: {:?}", event, event_status);
@@ -403,7 +432,7 @@ impl<T: EventManager> Driver<T> {
                             UwbEvent::ERROR => {
                                 // Send device status notification with error state.
                                 let device_status_ntf = DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateError}.build();
-                                self.event_manager.device_status_notification_received(device_status_ntf)?;
+                                self.event_manager.device_status_notification_received(device_status_ntf, &chip_id)?;
                                 self.set_state(UwbState::None);
                             }
                             _ => ()
@@ -422,7 +451,7 @@ impl<T: EventManager> Driver<T> {
                         }
                     },
                     HalCallback::UciNtf(response) => {
-                        self.handle_hal_notification(response).await?;
+                        self.handle_hal_notification(response, chip_id).await?;
                     }
                 }
             }
@@ -431,7 +460,11 @@ impl<T: EventManager> Driver<T> {
     }
 
     // Triggers the session init HAL API, if a new session is initialized.
-    async fn invoke_hal_session_init_if_necessary(&self, response: &SessionStatusNtfPacket) {
+    async fn invoke_hal_session_init_if_necessary(
+        &self,
+        response: &SessionStatusNtfPacket,
+        chip_id: String,
+    ) {
         if let SessionState::SessionStateInit = response.get_session_state() {
             info!(
                 "Session {:?} initialized, invoking session init HAL API",
@@ -439,7 +472,7 @@ impl<T: EventManager> Driver<T> {
             );
             self.adaptation
                 // HAL API accepts signed int, so cast received session_id as i32.
-                .session_initialization(response.get_session_id() as i32)
+                .session_initialization(response.get_session_id() as i32, &chip_id)
                 .await
                 .unwrap_or_else(|e| error!("Error invoking session init HAL API : {:?}", e));
         }
@@ -456,8 +489,8 @@ impl<T: EventManager> Driver<T> {
 }
 
 pub trait Dispatcher {
-    fn send_jni_command(&self, cmd: JNICommand) -> Result<()>;
-    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse>;
+    fn send_jni_command(&self, cmd: JNICommand, chip_id: String) -> Result<()>;
+    fn block_on_jni_command(&self, cmd: JNICommand, chip_id: String) -> Result<UciResponse>;
     fn wait_for_exit(&mut self) -> Result<()>;
     fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket>;
     fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>);
@@ -465,18 +498,23 @@ pub trait Dispatcher {
 
 // Controller for sending tasks for the native thread to handle.
 pub struct DispatcherImpl {
-    cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>)>,
+    cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>, String)>,
     join_handle: task::JoinHandle<Result<()>>,
     runtime: Runtime,
     device_info: Option<GetDeviceInfoRspPacket>,
 }
 
 impl DispatcherImpl {
-    pub fn new<T: 'static + EventManager + Send + Sync>(event_manager: T) -> Result<Self> {
-        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+    pub fn new<T: 'static + EventManager + Send + Sync>(
+        event_manager: T,
+        chip_ids: Vec<String>,
+    ) -> Result<Self> {
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<(HalCallback, String)>();
         // TODO when simplifying constructors, avoid spare runtime
         let adaptation: SyncUwbAdaptation = Arc::new(
-            Builder::new_current_thread().build()?.block_on(UwbAdaptationImpl::new(rsp_sender))?,
+            Builder::new_current_thread()
+                .build()?
+                .block_on(UwbAdaptationImpl::new(rsp_sender, &chip_ids))?,
         );
 
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
@@ -485,7 +523,7 @@ impl DispatcherImpl {
     pub fn new_for_testing<T: 'static + EventManager + Send + Sync>(
         event_manager: T,
         adaptation: SyncUwbAdaptation,
-        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+        rsp_receiver: mpsc::UnboundedReceiver<(HalCallback, String)>,
     ) -> Result<Self> {
         Self::new_with_args(event_manager, adaptation, rsp_receiver)
     }
@@ -493,11 +531,11 @@ impl DispatcherImpl {
     fn new_with_args<T: 'static + EventManager + Send + Sync>(
         event_manager: T,
         adaptation: SyncUwbAdaptation,
-        rsp_receiver: mpsc::UnboundedReceiver<HalCallback>,
+        rsp_receiver: mpsc::UnboundedReceiver<(HalCallback, String)>,
     ) -> Result<Self> {
         info!("initializing dispatcher");
         let (cmd_sender, cmd_receiver) =
-            mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>)>();
+            mpsc::unbounded_channel::<(JNICommand, Option<UciResponseHandle>, String)>();
 
         // We create a new thread here both to avoid reusing the Java service thread and because
         // binder threads will call into this.
@@ -506,6 +544,7 @@ impl DispatcherImpl {
             .thread_name("uwb-uci-handler")
             .enable_all()
             .build()?;
+
         let join_handle =
             runtime.spawn(drive(adaptation, event_manager, cmd_receiver, rsp_receiver));
         Ok(DispatcherImpl { cmd_sender, join_handle, runtime, device_info: None })
@@ -513,16 +552,16 @@ impl DispatcherImpl {
 }
 
 impl Dispatcher for DispatcherImpl {
-    fn send_jni_command(&self, cmd: JNICommand) -> Result<()> {
-        self.cmd_sender.send((cmd, None))?;
+    fn send_jni_command(&self, cmd: JNICommand, chip_id: String) -> Result<()> {
+        self.cmd_sender.send((cmd, None, chip_id))?;
         Ok(())
     }
 
     // TODO: Consider implementing these separate for different commands so we can have more
     // specific return types.
-    fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse> {
+    fn block_on_jni_command(&self, cmd: JNICommand, chip_id: String) -> Result<UciResponse> {
         let (tx, rx) = oneshot::channel();
-        self.cmd_sender.send((cmd, Some(tx)))?;
+        self.cmd_sender.send((cmd, Some(tx), chip_id))?;
         let ret = self.runtime.block_on(rx)?;
         log::trace!("{:?}", ret);
         Ok(ret)
@@ -565,13 +604,13 @@ mod tests {
 
     fn setup_dispatcher_and_return_hal_cb_sender(
         config_fn: fn(&mut Arc<MockUwbAdaptation>, &mut MockEventManager),
-    ) -> (DispatcherImpl, mpsc::UnboundedSender<HalCallback>) {
+    ) -> (DispatcherImpl, mpsc::UnboundedSender<(HalCallback, String)>) {
         // TODO: Remove this once we call it somewhere real.
         logger::init(
             logger::Config::default().with_tag_on_device("uwb").with_min_level(log::Level::Debug),
         );
 
-        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<HalCallback>();
+        let (rsp_sender, rsp_receiver) = mpsc::unbounded_channel::<(HalCallback, String)>();
         let mut mock_adaptation = Arc::new(MockUwbAdaptation::new(rsp_sender.clone()));
         let mut mock_event_manager = MockEventManager::new();
 
@@ -611,7 +650,7 @@ mod tests {
                 mock_adaptation.expect_core_initialization(Ok(()));
             });
 
-        dispatcher.send_jni_command(JNICommand::Enable).unwrap();
+        dispatcher.block_on_jni_command(JNICommand::Enable, String::from("chip_id")).unwrap();
     }
 
     #[test]
@@ -622,10 +661,14 @@ mod tests {
                 mock_adaptation.expect_core_initialization(Ok(()));
                 mock_event_manager.expect_device_status_notification_received(Ok(()));
             });
+        let chip_id = String::from("chip_id");
 
-        dispatcher.send_jni_command(JNICommand::Enable).unwrap();
+        dispatcher.block_on_jni_command(JNICommand::Enable, chip_id.clone()).unwrap();
         hal_sender
-            .send(HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED })
+            .send((
+                HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED },
+                chip_id,
+            ))
             .unwrap();
     }
 
@@ -635,10 +678,14 @@ mod tests {
             setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
                 mock_adaptation.expect_hal_close(Ok(()));
             });
+        let chip_id = String::from("chip_id");
 
-        dispatcher.send_jni_command(JNICommand::Disable(true)).unwrap();
+        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id.clone()).unwrap();
         hal_sender
-            .send(HalCallback::Event { event: UwbEvent::CLOSE_CPLT, event_status: UwbStatus::OK })
+            .send((
+                HalCallback::Event { event: UwbEvent::CLOSE_CPLT, event_status: UwbStatus::OK },
+                chip_id,
+            ))
             .unwrap();
         dispatcher.wait_for_exit().unwrap();
     }
@@ -656,7 +703,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetDeviceInfo, String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -676,7 +725,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetDeviceInfo, String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -693,7 +744,7 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciGetDeviceInfo)
+            .block_on_jni_command(JNICommand::UciGetDeviceInfo, String::from("chip_id"))
             .expect_err("This method should fail.");
     }
 
@@ -712,7 +763,9 @@ mod tests {
                 mock_event_manager.expect_device_status_notification_received(Ok(()));
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetDeviceInfo).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetDeviceInfo, String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -731,7 +784,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetCapsInfo).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetCapsInfo, String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -753,10 +808,10 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciSessionInit(
-                1,
-                SessionType::FiraRangingSession.to_u8().unwrap(),
-            ))
+            .block_on_jni_command(
+                JNICommand::UciSessionInit(1, SessionType::FiraRangingSession.to_u8().unwrap()),
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -774,7 +829,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciSessionDeinit(1)).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciSessionDeinit(1), String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -793,7 +850,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciSessionGetCount).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciSessionGetCount, String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -810,7 +869,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciStartRange(5)).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciStartRange(5), String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -827,7 +888,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciStopRange(5)).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciStopRange(5), String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -848,7 +911,9 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetSessionState(5)).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetSessionState(5), String::from("chip_id"))
+            .unwrap();
     }
 
     #[test]
@@ -874,13 +939,16 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciSessionUpdateMulticastList {
-                session_id: 5,
-                action: UpdateMulticastListAction::AddControlee.to_u8().unwrap(),
-                no_of_controlee: 0,
-                address_list: Vec::new(),
-                sub_session_id_list: Vec::new(),
-            })
+            .block_on_jni_command(
+                JNICommand::UciSessionUpdateMulticastList {
+                    session_id: 5,
+                    action: UpdateMulticastListAction::AddControlee.to_u8().unwrap(),
+                    no_of_controlee: 0,
+                    address_list: Vec::new(),
+                    sub_session_id_list: Vec::new(),
+                },
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -900,7 +968,10 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciSetCountryCode { code: vec![45, 34] })
+            .block_on_jni_command(
+                JNICommand::UciSetCountryCode { code: vec![45, 34] },
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -923,12 +994,15 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciSetAppConfig {
-                session_id: 5,
-                no_of_params: 0,
-                app_config_param_len: 0,
-                app_configs: Vec::new(),
-            })
+            .block_on_jni_command(
+                JNICommand::UciSetAppConfig {
+                    session_id: 5,
+                    no_of_params: 0,
+                    app_config_param_len: 0,
+                    app_configs: Vec::new(),
+                },
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -952,12 +1026,15 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciGetAppConfig {
-                session_id: 5,
-                no_of_params: 0,
-                app_config_param_len: 0,
-                app_configs: Vec::new(),
-            })
+            .block_on_jni_command(
+                JNICommand::UciGetAppConfig {
+                    session_id: 5,
+                    no_of_params: 0,
+                    app_config_param_len: 0,
+                    app_configs: Vec::new(),
+                },
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -976,11 +1053,10 @@ mod tests {
             });
 
         dispatcher
-            .block_on_jni_command(JNICommand::UciRawVendorCmd {
-                gid: 9,
-                oid: 5,
-                payload: Vec::new(),
-            })
+            .block_on_jni_command(
+                JNICommand::UciRawVendorCmd { gid: 9, oid: 5, payload: Vec::new() },
+                String::from("chip_id"),
+            )
             .unwrap();
     }
 
@@ -998,7 +1074,12 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciDeviceReset { reset_config: 0 }).unwrap();
+        dispatcher
+            .block_on_jni_command(
+                JNICommand::UciDeviceReset { reset_config: 0 },
+                String::from("chip_id"),
+            )
+            .unwrap();
     }
 
     #[test]
@@ -1024,6 +1105,8 @@ mod tests {
                 );
             });
 
-        dispatcher.block_on_jni_command(JNICommand::UciGetPowerStats).unwrap();
+        dispatcher
+            .block_on_jni_command(JNICommand::UciGetPowerStats, String::from("chip_id"))
+            .unwrap();
     }
 }
