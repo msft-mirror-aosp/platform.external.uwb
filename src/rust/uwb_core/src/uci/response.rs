@@ -26,6 +26,7 @@ use crate::uci::error::status_code_to_result;
 
 #[derive(Debug)]
 pub(super) enum UciResponse {
+    SetLoggerMode,
     SetNotification,
     OpenHal,
     CloseHal,
@@ -38,7 +39,7 @@ pub(super) enum UciResponse {
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
-    SessionGetCount(Result<usize>),
+    SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
     RangeStart(Result<()>),
@@ -52,8 +53,7 @@ pub(super) enum UciResponse {
 impl UciResponse {
     pub fn need_retry(&self) -> bool {
         match self {
-            Self::SetNotification | Self::OpenHal | Self::CloseHal => false,
-
+            Self::SetNotification | Self::OpenHal | Self::CloseHal | Self::SetLoggerMode => false,
             Self::DeviceReset(result) => Self::matches_result_retry(result),
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetCapsInfo(result) => Self::matches_result_retry(result),
@@ -156,7 +156,7 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
             SessionResponseChild::SessionGetCountRsp(evt) => Ok(UciResponse::SessionGetCount(
-                status_code_to_result(evt.get_status()).map(|_| evt.get_session_count() as usize),
+                status_code_to_result(evt.get_status()).map(|_| evt.get_session_count()),
             )),
             SessionResponseChild::SessionGetStateRsp(evt) => Ok(UciResponse::SessionGetState(
                 status_code_to_result(evt.get_status()).map(|_| evt.get_session_state()),

@@ -15,6 +15,7 @@ rust_defaults {
         "libanyhow",
         "libbinder_ndk_sys",
         "libbinder_rs",
+        "libbinder_tokio_rs",
         "libbytes",
         "libjni",
         "liblazy_static",
@@ -24,7 +25,6 @@ rust_defaults {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
-        "libbinder_tokio_rs",
     ],
     target: {
         android: {
@@ -86,7 +86,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -98,6 +98,7 @@ rust_defaults {
         "rust/uwb_uci_packets/src/lib.rs",
         ":UwbGeneratedPackets_rust",
     ],
+    edition: "2021",
     proc_macros: ["libnum_derive"],
     rustlibs:[
         "libbytes",
@@ -134,7 +135,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -169,6 +170,7 @@ genrule {
 rust_defaults {
     name: "libuwb_core_defaults",
     srcs: ["rust/uwb_core/src/lib.rs"],
+    edition: "2021",
     lints: "android",
     clippy_lints: "android",
     rustlibs: [
@@ -181,6 +183,7 @@ rust_defaults {
     ],
     proc_macros: [
         "libasync_trait",
+        "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
@@ -190,6 +193,9 @@ rust_library {
     name: "libuwb_core",
     defaults: ["libuwb_core_defaults"],
     crate_name: "uwb_core",
+    apex_available: [
+        "com.android.uwb",
+    ],
 }
 
 rust_test {
@@ -244,6 +250,45 @@ rust_fuzz {
         fuzz_on_haiku_device: true,
         fuzz_on_haiku_host: true,
     },
+}
+
+rust_library {
+    name: "libuci_hal_android",
+    crate_name: "uci_hal_android",
+    lints: "android",
+    clippy_lints: "android",
+    rustlibs: [
+        "android.hardware.uwb-V1-rust",
+        "libanyhow",
+        "libbinder_ndk_sys",
+        "libbinder_rs",
+        "libbinder_tokio_rs",
+        "libbytes",
+        "libjni",
+        "liblog_rust",
+        "libthiserror",
+        "libtokio",
+        "libuwb_core",
+        "libuwb_uci_packets",
+    ],
+    target: {
+        android: {
+            rustlibs: [
+                "librustutils",
+            ],
+        },
+    },
+    proc_macros: [
+        "libasync_trait",
+    ],
+    apex_available: [
+        "com.android.uwb",
+    ],
+    min_sdk_version: "Tiramisu",
+    host_supported: true,
+    srcs: [
+        "rust/uci_hal_android/lib.rs",
+    ],
 }
 
 // Generate the artifacts zip for uwb_core library and its dependencies.

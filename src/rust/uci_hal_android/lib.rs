@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This module provides the public interface of the UWB core library.
+//! This library provides adaptation to UWB core from Android UCI HAL library.
 
-pub mod uwb_service;
-pub mod uwb_service_builder;
-
-#[cfg(test)]
-mod mock_uwb_service_callback;
-
-// Re-export the public elements.
-pub use uwb_service::{UwbService, UwbServiceCallback};
-pub use uwb_service_builder::UwbServiceBuilder;
+pub mod error;
+pub mod uci_hal_android;
