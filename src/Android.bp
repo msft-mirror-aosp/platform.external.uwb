@@ -75,6 +75,7 @@ rust_test {
                 "liblog",
                 "libutils",
             ],
+            test_config_template: "uwb_host_rust_test_config_template.xml",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -124,6 +125,7 @@ rust_test {
             test_suites: [
                 "general-tests",
             ],
+            test_config_template: "uwb_host_rust_test_config_template.xml",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
