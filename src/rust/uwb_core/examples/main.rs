@@ -20,7 +20,8 @@ use tokio::sync::mpsc;
 
 use uwb_core::error::{Error as UwbError, Result as UwbResult};
 use uwb_core::params::uci_packets::{DeviceState, ReasonCode, SessionId, SessionState};
-use uwb_core::service::{UwbServiceBuilder, UwbServiceCallback};
+use uwb_core::service::{UwbServiceBuilder, UwbServiceCallback, UwbServiceCallbackSendBuilder};
+use uwb_core::uci::uci_logger::UciLoggerNull;
 use uwb_core::uci::{SessionRangeData, UciHal, UciHalPacket};
 
 /// A placeholder implementation for UciHal.
@@ -75,11 +76,13 @@ impl UwbServiceCallback for UwbServiceCallbackImpl {
 
 fn main() {
     env_logger::init();
-
+    // Initialize callback object
+    let callback = UwbServiceCallbackImpl {};
     // Initialize the UWB service.
     let mut service = UwbServiceBuilder::new()
-        .callback(UwbServiceCallbackImpl {})
+        .callback_builder(UwbServiceCallbackSendBuilder::new(callback))
         .uci_hal(UciHalImpl {})
+        .uci_logger(UciLoggerNull::default())
         .build()
         .unwrap();
 
