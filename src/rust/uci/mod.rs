@@ -674,19 +674,13 @@ mod tests {
 
     #[test]
     fn test_deinitialize() {
-        let (mut dispatcher, hal_sender) =
+        let (mut dispatcher, _hal_sender) =
             setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
                 mock_adaptation.expect_hal_close(Ok(()));
             });
         let chip_id = String::from("chip_id");
 
-        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id.clone()).unwrap();
-        hal_sender
-            .send((
-                HalCallback::Event { event: UwbEvent::CLOSE_CPLT, event_status: UwbStatus::OK },
-                chip_id,
-            ))
-            .unwrap();
+        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id).unwrap();
         dispatcher.wait_for_exit().unwrap();
     }
 
