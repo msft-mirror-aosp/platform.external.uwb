@@ -174,7 +174,9 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
             }
             SessionResponseChild::SessionGetAppConfigRsp(evt) => {
                 Ok(UciResponse::SessionGetAppConfig(
-                    status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
+                    status_code_to_result(evt.get_status()).map(|_| {
+                        evt.get_tlvs().clone().into_iter().map(|tlv| tlv.into()).collect()
+                    }),
                 ))
             }
             _ => Err(Error::Unknown),

@@ -124,9 +124,12 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             .build()
             .into(),
             UciCommand::SessionSetAppConfig { session_id, config_tlvs } => {
-                uwb_uci_packets::SessionSetAppConfigCmdBuilder { session_id, tlvs: config_tlvs }
-                    .build()
-                    .into()
+                uwb_uci_packets::SessionSetAppConfigCmdBuilder {
+                    session_id,
+                    tlvs: config_tlvs.into_iter().map(|tlv| tlv.into_inner()).collect(),
+                }
+                .build()
+                .into()
             }
             UciCommand::SessionGetAppConfig { session_id, app_cfg } => {
                 uwb_uci_packets::SessionGetAppConfigCmdBuilder {

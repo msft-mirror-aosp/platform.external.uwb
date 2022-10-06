@@ -672,7 +672,7 @@ mod tests {
         ]);
         let received_tlvs = received_config_map
             .iter()
-            .map(|(key, value)| AppConfigTlv { cfg_id: *key, v: value.clone() })
+            .map(|(key, value)| AppConfigTlv::new(*key, value.clone()))
             .collect();
         let started_params =
             CccStartedAppConfigParams::from_config_map(received_config_map).unwrap();

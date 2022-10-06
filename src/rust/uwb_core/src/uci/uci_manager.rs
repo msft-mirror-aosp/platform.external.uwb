@@ -1059,8 +1059,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_set_app_config_ok() {
         let session_id = 0x123;
-        let config_tlv =
-            AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let config_tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
         let config_tlv_clone = config_tlv.clone();
 
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
@@ -1093,7 +1092,7 @@ mod tests {
     async fn test_session_get_app_config_ok() {
         let session_id = 0x123;
         let config_id = AppConfigTlvType::DeviceType;
-        let tlv = AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
         let tlv_clone = tlv.clone();
 
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
@@ -1101,7 +1100,7 @@ mod tests {
                 let cmd = UciCommand::SessionGetAppConfig { session_id, app_cfg: vec![config_id] };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
                     status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone],
+                    tlvs: vec![tlv_clone.into_inner()],
                 });
 
                 hal.expected_send_command(cmd, resp, Ok(()));
