@@ -23,6 +23,10 @@ use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
+use uwb_uci_packets::{
+    build_session_update_controller_multicast_list_cmd_v1,
+    build_session_update_controller_multicast_list_cmd_v2, ControleesV2,
+};
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
 #[allow(missing_docs)]
@@ -62,6 +66,11 @@ pub enum UciCommand {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
+    },
+    SessionUpdateControllerMulticastListV2 {
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
     },
     RangeStart {
         session_id: SessionId,
@@ -107,14 +116,19 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 uwb_uci_packets::SessionGetStateCmdBuilder { session_id }.build().into()
             }
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
-                uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
-                    session_id,
-                    action,
-                    controlees,
-                }
-                .build()
+                build_session_update_controller_multicast_list_cmd_v1(
+                    session_id, action, controlees,
+                )
                 .into()
             }
+            UciCommand::SessionUpdateControllerMulticastListV2 {
+                session_id,
+                action,
+                controlees,
+            } => build_session_update_controller_multicast_list_cmd_v2(
+                session_id, action, controlees,
+            )
+            .into(),
             UciCommand::CoreSetConfig { config_tlvs } => {
                 uwb_uci_packets::SetConfigCmdBuilder { tlvs: config_tlvs }.build().into()
             }
