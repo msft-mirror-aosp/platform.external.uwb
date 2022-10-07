@@ -448,6 +448,7 @@ pub(crate) mod test_utils {
                     rssi: u8::MAX,
                 },
             ]),
+            rcr_indicator: 0,
         }
     }
 
