@@ -655,7 +655,7 @@ mod tests {
 
     #[test]
     fn test_hal_error_event() {
-        let (dispatcher, hal_sender) =
+        let (mut dispatcher, hal_sender) =
             setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, mock_event_manager| {
                 mock_adaptation.expect_hal_open(Ok(()));
                 mock_adaptation.expect_core_initialization(Ok(()));
@@ -667,26 +667,27 @@ mod tests {
         hal_sender
             .send((
                 HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED },
-                chip_id,
+                chip_id.clone(),
             ))
             .unwrap();
-    }
-
-    #[test]
-    fn test_deinitialize() {
-        let (mut dispatcher, hal_sender) =
-            setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
-                mock_adaptation.expect_hal_close(Ok(()));
-            });
-        let chip_id = String::from("chip_id");
-
-        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id.clone()).unwrap();
         hal_sender
             .send((
                 HalCallback::Event { event: UwbEvent::CLOSE_CPLT, event_status: UwbStatus::OK },
                 chip_id,
             ))
             .unwrap();
+        dispatcher.wait_for_exit().unwrap();
+    }
+
+    #[test]
+    fn test_deinitialize() {
+        let (mut dispatcher, _hal_sender) =
+            setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
+                mock_adaptation.expect_hal_close(Ok(()));
+            });
+        let chip_id = String::from("chip_id");
+
+        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id).unwrap();
         dispatcher.wait_for_exit().unwrap();
     }
 
