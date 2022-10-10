@@ -15,8 +15,9 @@
 //! This module defines the UwbService and its related components.
 
 use log::{debug, error, warn};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task;
 
 use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
@@ -26,10 +27,17 @@ use crate::params::uci_packets::{
 };
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
+use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
 
+/// Callback builder
+pub trait UwbServiceCallbackBuilder<C: UwbServiceCallback>: 'static + Send {
+    /// Builds UwbServiceCallback. The build operation Consumes Builder.
+    fn build(self) -> Option<C>;
+}
+
 /// The callback of the UwbService which is used to send the notification to UwbService's caller.
-pub trait UwbServiceCallback: 'static + Send {
+pub trait UwbServiceCallback: 'static {
     /// Notify the UWB service has been reset due to internal error. All the sessions are closed.
     /// `success` indicates the reset is successful or not.
     fn on_service_reset(&mut self, success: bool);
@@ -62,17 +70,61 @@ pub struct UwbService {
 
 impl UwbService {
     /// Create a new UwbService instance.
-    pub(super) fn new<C: UwbServiceCallback, U: UciManager>(
+    pub(super) fn new<C, B, U>(
         runtime: Runtime,
-        callback: C,
+        callback_builder: B,
         uci_manager: U,
-    ) -> Self {
+    ) -> Option<Self>
+    where
+        C: UwbServiceCallback,
+        B: UwbServiceCallbackBuilder<C>,
+        U: UciManager,
+    {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = runtime
-            .block_on(async move { UwbServiceActor::new(cmd_receiver, callback, uci_manager) });
-        runtime.spawn(async move { actor.run().await });
+        let (service_status_sender, mut service_status_receiver) =
+            mpsc::unbounded_channel::<bool>();
+        std::thread::spawn(move || {
+            let actor_runtime = match Builder::new_current_thread().enable_all().build() {
+                Ok(ar) => ar,
+                Err(err) => {
+                    error!("Failed to build Tokio Runtime! {:?}", err);
+                    // unwrap safe since receiver is in scope
+                    service_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
 
-        Self { runtime, cmd_sender }
+            let callback = match callback_builder.build() {
+                Some(cb) => {
+                    // unwrap safe since receiver is in scope
+                    service_status_sender.send(true).unwrap();
+                    cb
+                }
+                None => {
+                    error!("Unable to build callback");
+                    service_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
+
+            let mut actor = UwbServiceActor::new(cmd_receiver, callback, uci_manager);
+            let local = task::LocalSet::new();
+            local.spawn_local(async move {
+                task::spawn_local(async move { actor.run().await }).await.unwrap();
+            });
+            actor_runtime.block_on(local);
+        });
+
+        match service_status_receiver.blocking_recv() {
+            Some(true) => Some(Self { runtime, cmd_sender }),
+            _ => None,
+        }
+    }
+
+    /// Set UCI log mode.
+    pub fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
+        self.block_on_cmd(Command::SetLoggerMode { logger_mode })?;
+        Ok(())
     }
 
     /// Enable the UWB service.
@@ -166,6 +218,14 @@ impl UwbService {
         }
     }
 
+    /// Get app config params for the given session id
+    pub fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.block_on_cmd(Command::GetParams { session_id })? {
+            Response::AppConfigParams(params) => Ok(params),
+            _ => panic!("session_params() should return AppConfigParams"),
+        }
+    }
+
     /// Send the |cmd| to UwbServiceActor and wait until receiving the response.
     fn block_on_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -255,6 +315,10 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
 
     async fn handle_cmd(&mut self, cmd: Command) -> Result<Response> {
         match cmd {
+            Command::SetLoggerMode { logger_mode } => {
+                self.uci_manager.set_logger_mode(logger_mode).await?;
+                Ok(Response::Null)
+            }
             Command::Enable => {
                 self.enable_service().await?;
                 Ok(Response::Null)
@@ -330,6 +394,15 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
             Command::SendVendorCmd { gid, oid, payload } => {
                 let msg = self.uci_manager.raw_vendor_cmd(gid, oid, payload).await?;
                 Ok(Response::RawVendorMessage(msg))
+            }
+            Command::GetParams { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    let params = session_manager.session_params(session_id).await?;
+                    Ok(Response::AppConfigParams(params))
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::BadParameters)
+                }
             }
         }
     }
@@ -411,6 +484,9 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
 
 #[derive(Debug)]
 enum Command {
+    SetLoggerMode {
+        logger_mode: UciLoggerMode,
+    },
     Enable,
     Disable,
     InitSession {
@@ -445,6 +521,9 @@ enum Command {
         oid: u32,
         payload: Vec<u8>,
     },
+    GetParams {
+        session_id: SessionId,
+    },
 }
 
 #[derive(Debug)]
@@ -462,6 +541,7 @@ mod tests {
     use crate::params::uci_packets::{SessionState, SetAppConfigResponse, StatusCode};
     use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::service::uwb_service_builder::default_runtime;
+    use crate::service::uwb_service_callback_builder::UwbServiceCallbackSendBuilder;
     use crate::session::session_manager::test_utils::{
         generate_params, range_data_notf, session_range_data, session_status_notf,
     };
@@ -470,7 +550,9 @@ mod tests {
 
     fn setup_uwb_service(uci_manager: MockUciManager) -> (UwbService, MockUwbServiceCallback) {
         let callback = MockUwbServiceCallback::new();
-        let service = UwbService::new(default_runtime().unwrap(), callback.clone(), uci_manager);
+        let callback_builder = UwbServiceCallbackSendBuilder::new(callback.clone());
+        let service =
+            UwbService::new(default_runtime().unwrap(), callback_builder, uci_manager).unwrap();
         (service, callback)
     }
 

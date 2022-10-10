@@ -201,7 +201,8 @@ pub fn parse_diagnostics_ntf(
         let mut cir_vec = Vec::new();
         for tlv in &report.frame_report_tlvs {
             match FrameReportTlvPacketPacket::parse(
-                &[vec![tlv.t as u8, tlv.v.len() as u8], tlv.v.clone()].concat(),
+                &[vec![tlv.t as u8, tlv.v.len() as u8, (tlv.v.len() >> 8) as u8], tlv.v.clone()]
+                    .concat(),
             ) {
                 Ok(pkt) => match pkt.specialize() {
                     FrameReportTlvPacketChild::Rssi(rssi) => {
@@ -263,8 +264,8 @@ mod tests {
         let mut frame_reports = Vec::new();
         let tlvs = vec![
             FrameReportTlv { t: rssi.get_t(), v: rssi.get_rssi().to_vec() },
-            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[2..].to_vec() },
-            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[2..].to_vec() },
+            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[3..].to_vec() },
+            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[3..].to_vec() },
         ];
         let frame_report =
             FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
