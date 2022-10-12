@@ -86,6 +86,9 @@ pub struct SessionRangeData {
 
     /// The ranging measurement data.
     pub ranging_measurements: RangingMeasurements,
+
+    /// Indication that a RCR was sent/received in the current ranging round.
+    pub rcr_indicator: u8,
 }
 
 /// The ranging measurements.
@@ -217,6 +220,7 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
             current_ranging_interval_ms: evt.get_current_ranging_interval(),
             ranging_measurement_type: evt.get_ranging_measurement_type(),
             ranging_measurements,
+            rcr_indicator: evt.get_rcr_indicator(),
         }))
     }
 }
@@ -381,7 +385,7 @@ mod tests {
             uwb_uci_packets::ExtendedMacTwoWayRangeDataNtfBuilder {
                 sequence_number: 0x10,
                 session_id: 0x11,
-                rcr_indicator: 0x12, //Not used
+                rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 two_way_ranging_measurements: vec![extended_measurement.clone()],
             }
@@ -400,6 +404,7 @@ mod tests {
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::Extended(vec![extended_measurement]),
+                rcr_indicator: 0x12,
             }))
         );
     }
@@ -425,7 +430,7 @@ mod tests {
         let short_two_way_range_data_ntf = uwb_uci_packets::ShortMacTwoWayRangeDataNtfBuilder {
             sequence_number: 0x10,
             session_id: 0x11,
-            rcr_indicator: 0x12, //Not used
+            rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             two_way_ranging_measurements: vec![short_measurement.clone()],
         }
@@ -444,6 +449,7 @@ mod tests {
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::Short(vec![short_measurement]),
+                rcr_indicator: 0x12,
             }))
         );
     }
