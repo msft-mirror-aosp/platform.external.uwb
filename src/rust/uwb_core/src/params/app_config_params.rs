@@ -51,7 +51,7 @@ impl AppConfigParams {
     }
 
     fn config_map_to_tlvs(config_map: AppConfigTlvMap) -> Vec<AppConfigTlv> {
-        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
+        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv::new(cfg_id, v)).collect()
     }
 
     pub(super) fn generate_config_map(&self) -> AppConfigTlvMap {
