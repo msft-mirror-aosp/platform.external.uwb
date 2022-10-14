@@ -48,7 +48,7 @@ pub trait UciLogger: 'static + Send + Sync {
 fn filter_tlv(mut tlv: AppConfigTlv) -> AppConfigTlv {
     if tlv.cfg_id == AppConfigTlvType::VendorId || tlv.cfg_id == AppConfigTlvType::StaticStsIv {
         tlv.v = vec![0; tlv.v.len()];
-    };
+    }
     tlv
 }
 
@@ -172,9 +172,9 @@ mod tests {
             session_id: 0x1,
             config_tlvs: vec![
                 // Filtered to 0-filled of same length
-                AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0, 1, 2] },
+                AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0, 1, 2] }.into(),
                 // Invariant after filter
-                AppConfigTlv { cfg_id: AppConfigTlvType::AoaResultReq, v: vec![0, 1, 2, 3] },
+                AppConfigTlv { cfg_id: AppConfigTlvType::AoaResultReq, v: vec![0, 1, 2, 3] }.into(),
             ],
         };
         let (log_sender, mut log_receiver) = mpsc::unbounded_channel::<UciLogEvent>();
