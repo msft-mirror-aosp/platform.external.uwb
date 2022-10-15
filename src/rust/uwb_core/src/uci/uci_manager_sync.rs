@@ -34,6 +34,7 @@ use crate::uci::notification::{CoreNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
+use uwb_uci_packets::ControleesV2;
 
 /// The NotificationManager trait is needed to process UciNotification relayed from UciManagerSync.
 ///
@@ -275,6 +276,19 @@ impl UciManagerSync {
         self.runtime.block_on(
             self.uci_manager_impl
                 .session_update_controller_multicast_list(session_id, action, controlees),
+        )
+    }
+
+    /// Send UCI command for updating multicast list for multicast session (Provisioned STS).
+    pub fn session_update_controller_multicast_list_v2(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    ) -> Result<()> {
+        self.runtime.block_on(
+            self.uci_manager_impl
+                .session_update_controller_multicast_list_v2(session_id, action, controlees),
         )
     }
 
