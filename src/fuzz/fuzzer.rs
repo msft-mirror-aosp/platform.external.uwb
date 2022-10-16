@@ -18,9 +18,9 @@ use uwb_uci_packets::{
     DeviceResetRspBuilder, DeviceState, DeviceStatusNtfBuilder,
     ExtendedAddressTwoWayRangingMeasurement, ExtendedMacTwoWayRangeDataNtfBuilder,
     GenericErrorBuilder, GetCapsInfoCmdBuilder, GetCapsInfoRspBuilder, GetDeviceInfoCmdBuilder,
-    GetDeviceInfoRspBuilder, MulticastUpdateStatusCode, Packet, PowerStats, RangeStartCmdBuilder,
-    RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder, ReasonCode,
-    SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
+    GetDeviceInfoRspBuilder, MessageControl, MulticastUpdateStatusCode, Packet, PowerStats,
+    RangeStartCmdBuilder, RangeStartRspBuilder, RangeStopCmdBuilder, RangeStopRspBuilder,
+    ReasonCode, SessionDeinitCmdBuilder, SessionDeinitRspBuilder, SessionGetAppConfigCmdBuilder,
     SessionGetAppConfigRspBuilder, SessionGetCountCmdBuilder, SessionGetCountRspBuilder,
     SessionGetStateCmdBuilder, SessionGetStateRspBuilder, SessionInitCmdBuilder,
     SessionInitRspBuilder, SessionSetAppConfigRspBuilder, SessionState, SessionStatusNtfBuilder,
@@ -384,6 +384,8 @@ fn generate_fake_cmd_rsp(
             no_of_controlee,
             address_list,
             sub_session_id_list,
+            message_control,
+            sub_session_key_list,
         } => Ok((
             uci_hmsgs::build_multicast_list_update_cmd(
                 *session_id,
@@ -391,6 +393,13 @@ fn generate_fake_cmd_rsp(
                 *no_of_controlee,
                 address_list,
                 sub_session_id_list,
+                match *message_control {
+                    -1 => None,
+                    _ => Some(
+                        MessageControl::from_i32(*message_control).ok_or(UwbErr::InvalidArgs)?,
+                    ),
+                },
+                sub_session_key_list,
             )?
             .build()
             .into(),
