@@ -14,8 +14,9 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use log::error;
+use log::{debug, error};
 use num_traits::ToPrimitive;
+use uwb_uci_packets::parse_diagnostics_ntf;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
@@ -230,7 +231,14 @@ impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
     fn try_from(
         evt: uwb_uci_packets::AndroidNotificationPacket,
     ) -> std::result::Result<Self, Self::Error> {
-        error!("Unknown AndroidNotificationPacket: {:?}", evt);
+        use uwb_uci_packets::AndroidNotificationChild;
+
+        // (b/241336806): Currently we don't process the diagnostic packet, just log it only.
+        if let AndroidNotificationChild::AndroidRangeDiagnosticsNtf(ntf) = evt.specialize() {
+            debug!("Received diagnostic packet: {:?}", parse_diagnostics_ntf(ntf));
+        } else {
+            error!("Received unknown AndroidNotificationPacket: {:?}", evt);
+        }
         Err(Error::Unknown)
     }
 }
