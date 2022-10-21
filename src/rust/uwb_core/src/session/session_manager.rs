@@ -449,6 +449,7 @@ pub(crate) mod test_utils {
                 },
             ]),
             rcr_indicator: 0,
+            raw_ranging_data: vec![0x12, 0x34],
         }
     }
 
