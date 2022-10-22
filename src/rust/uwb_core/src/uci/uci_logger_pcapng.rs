@@ -14,29 +14,29 @@
 
 //! Implements UciLoggerPcapng, a UciLogger with PCAPNG format log.
 
-use log::error;
-use tokio::sync::mpsc;
+use log::warn;
 use uwb_uci_packets::UciPacketPacket;
 
 use crate::uci::pcapng_block::{BlockBuilder, BlockOption, EnhancedPacketBlockBuilder};
+use crate::uci::pcapng_uci_logger_factory::LogWriter;
 use crate::uci::uci_logger::UciLogger;
-
 /// A UCI logger that saves UCI packets and HAL events as PCAPNG file.
+///
+/// UciLoggerPcapng is built by PcapngUciLoggerFactory.
 pub struct UciLoggerPcapng {
-    log_sender: mpsc::UnboundedSender<Vec<u8>>,
+    log_writer: LogWriter,
     interface_id: u32, // Unique to each UWB chip per log session.
 }
 
 impl UciLoggerPcapng {
     /// Constructor.
-    pub fn new(interface_id: u32) -> Self {
-        // TODO(ningyuan): Proper implementation
-        Self { log_sender: mpsc::unbounded_channel::<Vec<u8>>().0, interface_id }
+    pub(crate) fn new(log_writer: LogWriter, interface_id: u32) -> Self {
+        Self { log_writer, interface_id }
     }
 
     fn send_block_bytes(&mut self, bytes: Vec<u8>) {
-        if let Err(e) = self.log_sender.send(bytes) {
-            error!("UCI log: Shared file missing! {:?}", e);
+        if self.log_writer.send_bytes(bytes).is_none() {
+            warn!("UCI log: Logging to LogWritter failed.")
         }
     }
 }
