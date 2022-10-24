@@ -13,7 +13,6 @@ rust_defaults {
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
-        "libbinder_ndk_sys",
         "libbinder_rs",
         "libbytes",
         "libjni",
