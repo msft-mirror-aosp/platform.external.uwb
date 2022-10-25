@@ -17,6 +17,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time::{sleep, Sleep};
 
 /// Pinned Sleep instance. It can be used in tokio::select! macro.
@@ -59,6 +60,14 @@ macro_rules! getter_field {
     };
 }
 pub(crate) use getter_field;
+
+/// Clean shutdown a mpsc receiver.
+///
+/// Call this function before dropping the receiver if the sender is not dropped yet.
+pub fn clean_mpsc_receiver<T>(receiver: &mut UnboundedReceiver<T>) {
+    receiver.close();
+    while receiver.try_recv().is_ok() {}
+}
 
 #[cfg(test)]
 pub fn init_test_logging() {
