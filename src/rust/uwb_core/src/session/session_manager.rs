@@ -25,6 +25,7 @@ use crate::params::uci_packets::{
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
+use crate::utils::clean_mpsc_receiver;
 
 const MAX_SESSION_COUNT: usize = 5;
 
@@ -346,6 +347,13 @@ impl<T: UciManager> SessionManagerActor<T> {
                 }
             }
         }
+    }
+}
+
+impl<T: UciManager> Drop for SessionManagerActor<T> {
+    fn drop(&mut self) {
+        // mpsc receiver is about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.uci_notf_receiver);
     }
 }
 
