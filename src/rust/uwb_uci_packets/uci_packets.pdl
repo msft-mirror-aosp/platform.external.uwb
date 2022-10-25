@@ -268,6 +268,9 @@ enum MulticastUpdateStatusCode : 8 {
     STATUS_ERROR_MULTICAST_LIST_FULL = 0x01,
     STATUS_ERROR_KEY_FETCH_FAIL = 0x02,
     STATUS_ERROR_SUB_SESSION_ID_NOT_FOUND = 0x03,
+    STATUS_ERROR_SUB_SESSION_KEY_NOT_FOUND = 0x05,
+    STATUS_ERROR_SUB_SESSION_KEY_NOT_APPLICABLE = 0x06,
+    STATUS_ERROR_SESSION_KEY_NOT_FOUND = 0x07,
 }
 
 enum MacAddressIndicator : 8 {
@@ -632,9 +635,35 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
+enum MessageControl: 8 {
+    SUB_SESSION_KEY_NOT_CONFIGURED = 0x0,
+    SHORT_SUB_SESSION_KEY_CONFIGURED = 0x8,
+    LONG_SUB_SESSION_KEY_CONFIGURED = 0x9,
+}
+
 struct Controlee {
     short_address: 16,
     subsession_id: 32,
+}
+
+struct Controlee_V2_0_0_Byte_Version {
+    short_address: 16,
+    subsession_id: 32,
+    message_control: MessageControl,
+}
+
+struct Controlee_V2_0_16_Byte_Version {
+    short_address: 16,
+    subsession_id: 32,
+    message_control: MessageControl,
+    subsession_key: 8[16],
+}
+
+struct Controlee_V2_0_32_Byte_Version {
+    short_address: 16,
+    subsession_id: 32,
+    message_control: MessageControl,
+    subsession_key: 8[32],
 }
 
 enum UpdateMulticastListAction: 8 {
@@ -645,12 +674,27 @@ enum UpdateMulticastListAction: 8 {
 packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_id: 32,
     action: UpdateMulticastListAction,
+    _payload_,
+}
+
+struct SessionUpdateControllerMulticastListCmdPayload {
     _count_(controlees): 8,
     controlees: Controlee[],
 }
 
-test SessionUpdateControllerMulticastListCmd {
-    "\x21\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x01\x00",
+struct SessionUpdateControllerMulticastListCmd_2_0_0_Byte_Payload {
+    _count_(controlees): 8,
+    controlees: Controlee_V2_0_0_Byte_Version[],
+}
+
+struct SessionUpdateControllerMulticastListCmd_2_0_16_Byte_Payload {
+    _count_(controlees): 8,
+    controlees: Controlee_V2_0_16_Byte_Version[],
+}
+
+struct SessionUpdateControllerMulticastListCmd_2_0_32_Byte_Payload {
+    _count_(controlees): 8,
+    controlees: Controlee_V2_0_32_Byte_Version[],
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
@@ -841,13 +885,13 @@ test AndroidSetCountryCodeRsp {
 
 struct FrameReportTlv {
     t: FrameReportTlvType,
-    _size_(v): 8,
+    _size_(v): 16,
     v: 8[],
 }
 
 packet FrameReportTlvPacket {
     t: FrameReportTlvType,
-    _size_(_body_): 8,
+    _size_(_body_): 16,
     _body_,
 }
 
@@ -868,7 +912,7 @@ packet Aoa : FrameReportTlvPacket (t = AOA) {
 }
 
 test Aoa {
-    "\x01\x08\x00\x01\x00\x01\x00\x01\x01\x01",
+    "\x01\x08\x00\x00\x01\x00\x01\x00\x01\x01\x01",
 }
 
 struct CirValue {
@@ -890,7 +934,7 @@ packet Cir : FrameReportTlvPacket (t = CIR) {
 }
 
 test Cir {
-    "\x02\x15\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04",
+    "\x02\x15\x00\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04",
 }
 
 struct FrameReport {
@@ -909,8 +953,8 @@ packet AndroidRangeDiagnosticsNtf : AndroidNotification (opcode = 0x2) { //FIRA_
 }
 
 test AndroidRangeDiagnosticsNtf {
-    "\x6c\x02\x00\x10\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x01\x00\x01\x00",
-    "\x6c\x02\x00\x31\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x03\x01\x08\x01\x02\x01\x02\x01\x02\x01\x01\x02\x15\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04\x00\x01\x00",
+    "\x6c\x02\x00\x11\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x01\x00\x01\x00\x00",
+    "\x6c\x02\x00\x34\x00\x00\x00\x01\x01\x01\x01\x02\x02\x02\x02\x01\x00\x01\x02\x03\x01\x08\x00\x01\x02\x01\x02\x01\x02\x01\x01\x02\x15\x00\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04\x00\x01\x00\x00",
 }
 
 packet UciVendor_9_Command : UciCommand (group_id = VENDOR_RESERVED_9) {

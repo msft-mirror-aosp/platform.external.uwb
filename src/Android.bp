@@ -86,7 +86,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -135,7 +135,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -203,6 +203,7 @@ rust_test {
     defaults: ["libuwb_core_defaults"],
     rustlibs: [
         "libenv_logger",
+        "libtempfile",
     ],
     test_suites: [
       "general-tests",
