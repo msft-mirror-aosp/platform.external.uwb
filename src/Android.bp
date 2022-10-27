@@ -294,7 +294,6 @@ rust_library {
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
-        "libbinder_ndk_sys",
         "libbinder_rs",
         "libbinder_tokio_rs",
         "libbytes",
