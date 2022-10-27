@@ -18,10 +18,9 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use log::{debug, error};
-use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 
 use crate::uci::pcapng_block::{
@@ -81,8 +80,8 @@ pub struct PcapngUciLoggerFactoryBuilder {
     log_path: PathBuf,
     /// Range for the rotating index of log files.
     rotate_range: usize,
-    /// Tokio Runtime for driving Log.
-    runtime: Option<Runtime>,
+    /// Tokio Runtime Handle for driving Log.
+    runtime_handle: Option<Handle>,
 }
 impl Default for PcapngUciLoggerFactoryBuilder {
     fn default() -> Self {
@@ -92,7 +91,7 @@ impl Default for PcapngUciLoggerFactoryBuilder {
             filename_prefix: DEFAULT_FILE_PREFIX.to_owned(),
             log_path: PathBuf::from(DEFAULT_LOG_DIR),
             rotate_range: 8,
-            runtime: None,
+            runtime_handle: None,
         }
     }
 }
@@ -104,8 +103,8 @@ impl PcapngUciLoggerFactoryBuilder {
     }
 
     /// Tokio Runtime for driving Log.
-    pub fn runtime(mut self, runtime: Runtime) -> Self {
-        self.runtime = Some(runtime);
+    pub fn runtime_handle(mut self, runtime_handle: Handle) -> Self {
+        self.runtime_handle = Some(runtime_handle);
         self
     }
 
@@ -147,11 +146,7 @@ impl PcapngUciLoggerFactoryBuilder {
             self.buffer_size,
             self.rotate_range,
         );
-        let runtime = match self.runtime {
-            Some(r) => r,
-            None => RuntimeBuilder::new_multi_thread().enable_all().build().ok()?,
-        };
-        let log_writer = LogWriter::new(file_factory, self.file_size, runtime)?;
+        let log_writer = LogWriter::new(file_factory, self.file_size, self.runtime_handle?)?;
         let manager = PcapngUciLoggerFactory { log_writer, chip_interface_id_map: Vec::new() };
         Some(manager)
     }
@@ -240,15 +235,17 @@ impl LogWriterActor {
 /// Handle to LogWriterActor.
 #[derive(Clone)]
 pub(crate) struct LogWriter {
-    _runtime: Arc<Runtime>,
     log_sender: Option<mpsc::UnboundedSender<PcapngLoggerMessage>>,
 }
 
 impl LogWriter {
+    /// Constructs LogWriter and its actor.
+    ///
+    /// runtime_handle must be a Handle to a multithread runtime that outlives LogWriterActor
     fn new(
         mut file_factory: FileFactory,
         file_size_limit: usize,
-        runtime: Runtime,
+        runtime_handle: Handle,
     ) -> Option<Self> {
         let chip_interface_id_map = Vec::new();
         let current_file =
@@ -261,8 +258,8 @@ impl LogWriter {
             file_size_limit,
             log_receiver,
         };
-        runtime.spawn(async move { log_writer_actor.run().await });
-        Some(LogWriter { _runtime: Arc::new(runtime), log_sender: Some(log_sender) })
+        runtime_handle.spawn(async move { log_writer_actor.run().await });
+        Some(LogWriter { log_sender: Some(log_sender) })
     }
 
     pub fn send_bytes(&mut self, bytes: Vec<u8>) -> Option<()> {
@@ -451,6 +448,7 @@ mod tests {
     use std::{fs, thread, time};
 
     use tempfile::tempdir;
+    use tokio::runtime::Builder;
     use uwb_uci_packets::UciVendor_A_NotificationBuilder;
 
     use crate::uci::uci_logger::UciLogger;
@@ -486,10 +484,12 @@ mod tests {
     fn test_single_file_write() {
         let dir = tempdir().unwrap();
         {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
                 .filename_prefix("log")
                 .log_path(&dir)
+                .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager.build_logger("logger 0").unwrap();
@@ -521,11 +521,13 @@ mod tests {
     fn test_file_switch_epb_unfit_case() {
         let dir = tempdir().unwrap();
         {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_140 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
                 .filename_prefix("log")
                 .log_path(&dir)
                 .file_size(140)
+                .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_140.build_logger("logger 0").unwrap();
@@ -573,11 +575,13 @@ mod tests {
     fn test_file_switch_idb_unfit_case() {
         let dir = tempdir().unwrap();
         {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_144 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
                 .filename_prefix("log")
                 .log_path(&dir)
                 .file_size(144)
+                .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_144.build_logger("logger 0").unwrap();
@@ -617,11 +621,13 @@ mod tests {
     fn test_log_fail_safe() {
         let dir = tempdir().unwrap();
         {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_96 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
                 .filename_prefix("log")
                 .log_path(&dir)
                 .file_size(96) // Fails logging, as metadata takes 100
+                .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_96.build_logger("logger 0").unwrap();
