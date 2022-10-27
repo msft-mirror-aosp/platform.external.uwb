@@ -18,7 +18,7 @@
 //! of UciNotifications is different in UciManager and UciManagerSync as the sync version has its
 //! behavior aligned with the Android JNI UCI, and routes the UciNotifications to NotificationManager.
 
-use log::{error, info};
+use log::{debug, error};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use tokio::sync::mpsc;
 use tokio::task;
@@ -32,7 +32,9 @@ use crate::params::{
 };
 use crate::uci::notification::{CoreNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
+use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
+use uwb_uci_packets::ControleesV2;
 
 /// The NotificationManager trait is needed to process UciNotification relayed from UciManagerSync.
 ///
@@ -96,7 +98,8 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 });
                 }
                 else =>{
-                    info!("NotificationDriver dropping.");
+                    debug!("NotificationDriver dropping.");
+                    break;
                 }
             }
         }
@@ -114,13 +117,17 @@ pub struct UciManagerSync {
 impl UciManagerSync {
     /// UciHal and NotificationManagerBuilder required at construction as they are required before
     /// open_hal is called. runtime is taken with ownership for blocking on async steps only.
-    pub fn new<T: UciHal, U: NotificationManager, V: NotificationManagerBuilder<U>>(
-        hal: T,
-        notification_manager_builder: V,
-    ) -> Result<Self> {
+    pub fn new<T, U, V, W>(hal: T, notification_manager_builder: V, logger: W) -> Result<Self>
+    where
+        T: UciHal,
+        U: NotificationManager,
+        V: NotificationManagerBuilder<U>,
+        W: UciLogger,
+    {
         let uci_manager_runtime = RuntimeBuilder::new_multi_thread().enable_all().build().unwrap();
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
-        let mut uci_manager_impl = uci_manager_runtime.block_on(async { UciManagerImpl::new(hal) });
+        let mut uci_manager_impl = uci_manager_runtime
+            .block_on(async { UciManagerImpl::new(hal, logger, UciLoggerMode::Disabled) });
         let (core_notification_sender, core_notification_receiver) =
             mpsc::unbounded_channel::<CoreNotification>();
         let (session_notification_sender, session_notification_receiver) =
@@ -175,6 +182,10 @@ impl UciManagerSync {
         }
     }
 
+    /// Set UCI logger mode
+    pub fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
+        self.runtime.block_on(self.uci_manager_impl.set_logger_mode(logger_mode))
+    }
     /// Start UCI HAL and blocking until UCI commands can be sent.
     pub fn open_hal(&mut self) -> Result<()> {
         self.runtime.block_on(self.uci_manager_impl.open_hal())
@@ -268,6 +279,19 @@ impl UciManagerSync {
         )
     }
 
+    /// Send UCI command for updating multicast list for multicast session (Provisioned STS).
+    pub fn session_update_controller_multicast_list_v2(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    ) -> Result<()> {
+        self.runtime.block_on(
+            self.uci_manager_impl
+                .session_update_controller_multicast_list_v2(session_id, action, controlees),
+        )
+    }
+
     /// Send UCI command for starting ranging of the session.
     pub fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         self.runtime.block_on(self.uci_manager_impl.range_start(session_id))
@@ -317,6 +341,7 @@ mod tests {
     use crate::error::Error;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::uci_hal::UciHalPacket;
+    use crate::uci::uci_logger::UciLoggerNull;
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
@@ -379,6 +404,7 @@ mod tests {
         let mut uci_manager_sync = UciManagerSync::new(
             hal,
             MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
+            UciLoggerNull::default(),
         )
         .unwrap();
         assert!(uci_manager_sync.open_hal().is_ok());
