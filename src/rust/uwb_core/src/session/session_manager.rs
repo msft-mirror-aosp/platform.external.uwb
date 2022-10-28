@@ -25,6 +25,7 @@ use crate::params::uci_packets::{
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
+use crate::utils::clean_mpsc_receiver;
 
 const MAX_SESSION_COUNT: usize = 5;
 
@@ -349,6 +350,13 @@ impl<T: UciManager> SessionManagerActor<T> {
     }
 }
 
+impl<T: UciManager> Drop for SessionManagerActor<T> {
+    fn drop(&mut self) {
+        // mpsc receiver is about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.uci_notf_receiver);
+    }
+}
+
 #[derive(Debug)]
 enum SessionCommand {
     InitSession {
@@ -448,6 +456,8 @@ pub(crate) mod test_utils {
                     rssi: u8::MAX,
                 },
             ]),
+            rcr_indicator: 0,
+            raw_ranging_data: vec![0x12, 0x34],
         }
     }
 
@@ -671,7 +681,7 @@ mod tests {
         ]);
         let received_tlvs = received_config_map
             .iter()
-            .map(|(key, value)| AppConfigTlv { cfg_id: *key, v: value.clone() })
+            .map(|(key, value)| AppConfigTlv::new(*key, value.clone()))
             .collect();
         let started_params =
             CccStartedAppConfigParams::from_config_map(received_config_map).unwrap();
