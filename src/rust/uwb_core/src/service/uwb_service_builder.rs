@@ -111,7 +111,7 @@ where
         let runtime = self.runtime.take().or_else(default_runtime)?;
         let uci_hal = self.uci_hal.take()?;
         let mut uci_logger_factory = self.uci_logger_factory.take()?;
-        let uci_logger = uci_logger_factory.build_logger("dafault")?;
+        let uci_logger = uci_logger_factory.build_logger("default")?;
         let uci_logger_mode = self.uci_logger_mode;
         let uci_manager = runtime
             .block_on(async move { UciManagerImpl::new(uci_hal, uci_logger, uci_logger_mode) });
