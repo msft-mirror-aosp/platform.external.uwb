@@ -29,6 +29,7 @@ use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
+use crate::utils::clean_mpsc_receiver;
 
 /// Callback builder
 pub trait UwbServiceCallbackBuilder<C: UwbServiceCallback>: 'static + Send {
@@ -479,6 +480,15 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
             error!("Failed to reset the service.");
         }
         self.callback.on_service_reset(result.is_ok());
+    }
+}
+
+impl<C: UwbServiceCallback, U: UciManager> Drop for UwbServiceActor<C, U> {
+    fn drop(&mut self) {
+        // mpsc receivers are about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.core_notf_receiver);
+        clean_mpsc_receiver(&mut self.session_notf_receiver);
+        clean_mpsc_receiver(&mut self.vendor_notf_receiver);
     }
 }
 

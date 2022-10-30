@@ -34,7 +34,7 @@ use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
-use crate::utils::PinSleep;
+use crate::utils::{clean_mpsc_receiver, PinSleep};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -732,6 +732,13 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     }
     fn is_waiting_device_status(&self) -> bool {
         self.open_hal_result_sender.is_some()
+    }
+}
+
+impl<T: UciHal, U: UciLogger> Drop for UciManagerActor<T, U> {
+    fn drop(&mut self) {
+        // mpsc receiver is about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.packet_receiver);
     }
 }
 
