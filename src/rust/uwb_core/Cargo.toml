@@ -1,7 +1,7 @@
 [package]
 name = "uwb_core"
 version = "0.0.1"
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 async-trait = "0.1.32"
@@ -16,3 +16,4 @@ uwb_uci_packets = { path = "../uwb_uci_packets" }  # provided by ebuild
 
 [dev-dependencies]
 env_logger = "0.9.0"
+tempfile = "3"
