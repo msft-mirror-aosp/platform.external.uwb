@@ -16,6 +16,7 @@
 
 mod command;
 mod message;
+mod pcapng_block;
 mod response;
 mod timeout_uci_hal;
 
@@ -23,8 +24,11 @@ pub(crate) mod error;
 pub(crate) mod notification;
 pub(crate) mod uci_manager;
 
+pub mod pcapng_uci_logger_factory;
 pub mod uci_hal;
 pub mod uci_logger;
+pub mod uci_logger_factory;
+pub mod uci_logger_pcapng;
 pub mod uci_manager_sync;
 
 #[cfg(test)]
