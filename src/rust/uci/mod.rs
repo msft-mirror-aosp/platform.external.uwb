@@ -27,6 +27,7 @@ use android_hardware_uwb::aidl::android::hardware::uwb::{
 };
 use arbitrary::Arbitrary;
 use log::{debug, error, info, warn};
+use num_traits::FromPrimitive;
 use std::future::Future;
 use std::option::Option;
 use std::sync::Arc;
@@ -35,9 +36,10 @@ use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
 use uwb_uci_packets::{
     AndroidGetPowerStatsCmdBuilder, DeviceState, DeviceStatusNtfBuilder, GetCapsInfoCmdBuilder,
-    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, RangeStartCmdBuilder, RangeStopCmdBuilder,
-    SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder, SessionGetCountCmdBuilder,
-    SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket, StatusCode, UciCommandPacket,
+    GetDeviceInfoCmdBuilder, GetDeviceInfoRspPacket, MessageControl, RangeStartCmdBuilder,
+    RangeStopCmdBuilder, SessionDeinitCmdBuilder, SessionGetAppConfigCmdBuilder,
+    SessionGetCountCmdBuilder, SessionGetStateCmdBuilder, SessionState, SessionStatusNtfPacket,
+    StatusCode, UciCommandPacket,
 };
 
 pub type Result<T> = std::result::Result<T, UwbErr>;
@@ -63,6 +65,8 @@ pub enum JNICommand {
         no_of_controlee: u8,
         address_list: Vec<i16>,
         sub_session_id_list: Vec<i32>,
+        message_control: i32,
+        sub_session_key_list: Vec<Vec<u8>>,
     },
     UciSetCountryCode {
         code: Vec<u8>,
@@ -293,12 +297,21 @@ impl<T: EventManager> Driver<T> {
                 no_of_controlee,
                 ref address_list,
                 ref sub_session_id_list,
+                message_control,
+                ref sub_session_key_list,
             } => uci_hmsgs::build_multicast_list_update_cmd(
                 session_id,
                 action,
                 no_of_controlee,
                 address_list,
                 sub_session_id_list,
+                match message_control {
+                    -1 => None,
+                    _ => {
+                        Some(MessageControl::from_i32(message_control).ok_or(UwbErr::InvalidArgs)?)
+                    }
+                },
+                sub_session_key_list,
             )?
             .build()
             .into(),
@@ -599,6 +612,7 @@ mod tests {
     use android_hardware_uwb::aidl::android::hardware::uwb::{
         UwbEvent::UwbEvent, UwbStatus::UwbStatus,
     };
+    use bytes::Bytes;
     use num_traits::ToPrimitive;
     use uwb_uci_packets::*;
 
@@ -655,7 +669,7 @@ mod tests {
 
     #[test]
     fn test_hal_error_event() {
-        let (dispatcher, hal_sender) =
+        let (mut dispatcher, hal_sender) =
             setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, mock_event_manager| {
                 mock_adaptation.expect_hal_open(Ok(()));
                 mock_adaptation.expect_core_initialization(Ok(()));
@@ -667,26 +681,27 @@ mod tests {
         hal_sender
             .send((
                 HalCallback::Event { event: UwbEvent::ERROR, event_status: UwbStatus::FAILED },
-                chip_id,
+                chip_id.clone(),
             ))
             .unwrap();
-    }
-
-    #[test]
-    fn test_deinitialize() {
-        let (mut dispatcher, hal_sender) =
-            setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
-                mock_adaptation.expect_hal_close(Ok(()));
-            });
-        let chip_id = String::from("chip_id");
-
-        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id.clone()).unwrap();
         hal_sender
             .send((
                 HalCallback::Event { event: UwbEvent::CLOSE_CPLT, event_status: UwbStatus::OK },
                 chip_id,
             ))
             .unwrap();
+        dispatcher.wait_for_exit().unwrap();
+    }
+
+    #[test]
+    fn test_deinitialize() {
+        let (mut dispatcher, _hal_sender) =
+            setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
+                mock_adaptation.expect_hal_close(Ok(()));
+            });
+        let chip_id = String::from("chip_id");
+
+        dispatcher.send_jni_command(JNICommand::Disable(true), chip_id).unwrap();
         dispatcher.wait_for_exit().unwrap();
     }
 
@@ -923,7 +938,7 @@ mod tests {
                 let cmd = SessionUpdateControllerMulticastListCmdBuilder {
                     session_id: 5,
                     action: UpdateMulticastListAction::AddControlee,
-                    controlees: Vec::new(),
+                    payload: Some(Bytes::from(vec![0])),
                 }
                 .build();
                 let rsp = SessionUpdateControllerMulticastListRspBuilder {
@@ -946,6 +961,8 @@ mod tests {
                     no_of_controlee: 0,
                     address_list: Vec::new(),
                     sub_session_id_list: Vec::new(),
+                    message_control: 8,
+                    sub_session_key_list: Vec::new(),
                 },
                 String::from("chip_id"),
             )
