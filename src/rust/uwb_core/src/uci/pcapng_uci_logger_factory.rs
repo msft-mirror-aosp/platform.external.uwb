@@ -395,14 +395,11 @@ impl BufferedFile {
 
     /// Clears buffer.
     fn flush_buffer(&mut self) -> Option<()> {
-        match self.file.write(&self.buffer) {
-            Ok(write_size) => {
-                self.written_size += write_size;
-                self.buffer.clear();
-                Some(())
-            }
-            Err(_) => None,
-        }
+        self.file.write_all(&self.buffer).ok()?;
+        self.written_size += self.buffer.len();
+        self.buffer.clear();
+
+        self.file.flush().ok()
     }
 }
 
