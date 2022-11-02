@@ -21,6 +21,7 @@ use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_logger_factory::UciLoggerFactory;
 use crate::uci::uci_manager::UciManagerImpl;
+use crate::utils::consuming_builder_field;
 
 /// Create the default runtime for UwbService.
 pub fn default_runtime() -> Option<Runtime> {
@@ -76,37 +77,12 @@ where
         Default::default()
     }
 
-    /// Set the handle of the working runtime.
-    ///
-    /// Note that the caller should guarantee that the working runtime outlives the UwbService.
-    pub fn runtime_handle(mut self, runtime_handle: Handle) -> Self {
-        self.runtime_handle = Some(runtime_handle);
-        self
-    }
-
-    /// Set the callback field.
-    pub fn callback_builder(mut self, callback_builder: B) -> Self {
-        self.callback_builder = Some(callback_builder);
-        self
-    }
-
-    /// Set the uci_hal field.
-    pub fn uci_hal(mut self, uci_hal: U) -> Self {
-        self.uci_hal = Some(uci_hal);
-        self
-    }
-
-    /// Set the uci_logger_factory field.
-    pub fn uci_logger_factory(mut self, uci_logger_factory: L) -> Self {
-        self.uci_logger_factory = Some(uci_logger_factory);
-        self
-    }
-
-    /// Set the uci_logger_mode field.
-    pub fn uci_logger_mode(mut self, uci_logger_mode: UciLoggerMode) -> Self {
-        self.uci_logger_mode = uci_logger_mode;
-        self
-    }
+    // Setter methods of each field.
+    consuming_builder_field!(runtime_handle, Handle, Some);
+    consuming_builder_field!(callback_builder, B, Some);
+    consuming_builder_field!(uci_hal, U, Some);
+    consuming_builder_field!(uci_logger_factory, L, Some);
+    consuming_builder_field!(uci_logger_mode, UciLoggerMode);
 
     /// Build the UwbService.
     pub fn build(mut self) -> Option<UwbService> {
