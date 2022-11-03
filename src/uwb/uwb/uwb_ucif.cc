@@ -1285,9 +1285,6 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
   } else {
     UCI_TRACE_E("%s: Measurement type(%d) not matched", __func__, sRange_data.ranging_measure_type);
   }
-  uwb_response.sRange_data = sRange_data;
-
-  (*uwb_cb.p_resp_cback)(UWB_RANGE_DATA_REVT, &uwb_response);
 
   UCI_TRACE_I("%s: ranging_measures_length = %d range_data_ntf_len = %d", __func__,ranging_measures_length,range_data_ntf_len);
   if (ranging_measures_length >= VENDOR_SPEC_INFO_LEN) {
@@ -1297,15 +1294,16 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         if (vendor_specific_length > MAX_VENDOR_INFO_LENGTH) {
             UCI_TRACE_E("%s: Invalid Range_data vendor_specific_length = %x",
                            __func__, vendor_specific_length);
-            return;
+        } else{
+          STREAM_TO_ARRAY(sRange_data.vendor_specific_ntf.data, p, vendor_specific_length);
+          sRange_data.vendor_specific_ntf.len = vendor_specific_length;
         }
-
-        uint8_t *range_data_with_vendor_info =  range_data_ntf_buffer;
-        uwb_response.sVendor_specific_ntf.len = range_data_ntf_len;
-        STREAM_TO_ARRAY(uwb_response.sVendor_specific_ntf.data, range_data_with_vendor_info, range_data_ntf_len);
-        (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &uwb_response);
      }
   }
+
+  uwb_response.sRange_data = sRange_data;
+
+  (*uwb_cb.p_resp_cback)(UWB_RANGE_DATA_REVT, &uwb_response);
 }
 
 /*******************************************************************************
