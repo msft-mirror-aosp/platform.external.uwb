@@ -194,6 +194,12 @@ void uci_proc_session_management_ntf(uint8_t op_code, uint8_t* p_buf,
     case UCI_MSG_SESSION_UPDATE_CONTROLLER_MULTICAST_LIST:
       uwb_ucif_proc_multicast_list_update_ntf(p_buf, len);
       break;
+    case UCI_MSG_DATA_CREDIT_NTF:
+      uwb_ucif_proc_data_credit_ntf(p_buf, len);
+      break;
+    case UCI_MSG_DATA_TRANSFER_STATUS_NTF:
+      uwb_ucif_proc_data_transfer_status_ntf(p_buf, len);
+      break;
     default:
       UCI_TRACE_E("%s: unknown opcode:0x%x", __func__, op_code);
       break;
