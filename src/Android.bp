@@ -86,7 +86,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -98,6 +98,7 @@ rust_defaults {
         "rust/uwb_uci_packets/src/lib.rs",
         ":UwbGeneratedPackets_rust",
     ],
+    edition: "2021",
     proc_macros: ["libnum_derive"],
     rustlibs:[
         "libbytes",
@@ -134,7 +135,7 @@ rust_test {
             suffix: "32",
         },
         lib64: {
-            suffix: "",
+            suffix: "64",
         },
     },
     auto_gen_config: true,
@@ -169,6 +170,7 @@ genrule {
 rust_defaults {
     name: "libuwb_core_defaults",
     srcs: ["rust/uwb_core/src/lib.rs"],
+    edition: "2021",
     lints: "android",
     clippy_lints: "android",
     rustlibs: [
@@ -181,6 +183,7 @@ rust_defaults {
     ],
     proc_macros: [
         "libasync_trait",
+        "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,
@@ -200,6 +203,7 @@ rust_test {
     defaults: ["libuwb_core_defaults"],
     rustlibs: [
         "libenv_logger",
+        "libtempfile",
     ],
     test_suites: [
       "general-tests",
@@ -279,7 +283,7 @@ rust_library {
         "libasync_trait",
     ],
     apex_available: [
-        "com.android.ucihal",
+        "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
     host_supported: true,

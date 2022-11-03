@@ -15,8 +15,9 @@
 //! This module defines the UwbService and its related components.
 
 use log::{debug, error, warn};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Handle};
 use tokio::sync::{mpsc, oneshot};
+use tokio::task;
 
 use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
@@ -26,10 +27,18 @@ use crate::params::uci_packets::{
 };
 use crate::session::session_manager::{SessionManager, SessionNotification};
 use crate::uci::notification::{CoreNotification, SessionRangeData};
+use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
+use crate::utils::clean_mpsc_receiver;
+
+/// Callback builder
+pub trait UwbServiceCallbackBuilder<C: UwbServiceCallback>: 'static + Send {
+    /// Builds UwbServiceCallback. The build operation Consumes Builder.
+    fn build(self) -> Option<C>;
+}
 
 /// The callback of the UwbService which is used to send the notification to UwbService's caller.
-pub trait UwbServiceCallback: 'static + Send {
+pub trait UwbServiceCallback: 'static {
     /// Notify the UWB service has been reset due to internal error. All the sessions are closed.
     /// `success` indicates the reset is successful or not.
     fn on_service_reset(&mut self, success: bool);
@@ -56,23 +65,71 @@ pub trait UwbServiceCallback: 'static + Send {
 /// client, and delegates the requests to other components. It should provide the
 /// backward-compatible interface for the client of the library.
 pub struct UwbService {
-    runtime: Runtime,
+    /// The handle of the working runtime. All the commands are executed inside the runtime.
+    ///
+    /// Note that the caller should guarantee that the working runtime outlives the UwbService.
+    runtime_handle: Handle,
+    /// Used to send the command to UwbServiceActor.
     cmd_sender: mpsc::UnboundedSender<(Command, ResponseSender)>,
 }
 
 impl UwbService {
     /// Create a new UwbService instance.
-    pub(super) fn new<C: UwbServiceCallback, U: UciManager>(
-        runtime: Runtime,
-        callback: C,
+    pub(super) fn new<C, B, U>(
+        runtime_handle: Handle,
+        callback_builder: B,
         uci_manager: U,
-    ) -> Self {
+    ) -> Option<Self>
+    where
+        C: UwbServiceCallback,
+        B: UwbServiceCallbackBuilder<C>,
+        U: UciManager,
+    {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = runtime
-            .block_on(async move { UwbServiceActor::new(cmd_receiver, callback, uci_manager) });
-        runtime.spawn(async move { actor.run().await });
+        let (service_status_sender, mut service_status_receiver) =
+            mpsc::unbounded_channel::<bool>();
+        std::thread::spawn(move || {
+            let actor_runtime = match Builder::new_current_thread().enable_all().build() {
+                Ok(ar) => ar,
+                Err(err) => {
+                    error!("Failed to build Tokio Runtime! {:?}", err);
+                    // unwrap safe since receiver is in scope
+                    service_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
 
-        Self { runtime, cmd_sender }
+            let callback = match callback_builder.build() {
+                Some(cb) => {
+                    // unwrap safe since receiver is in scope
+                    service_status_sender.send(true).unwrap();
+                    cb
+                }
+                None => {
+                    error!("Unable to build callback");
+                    service_status_sender.send(false).unwrap();
+                    return;
+                }
+            };
+
+            let mut actor = UwbServiceActor::new(cmd_receiver, callback, uci_manager);
+            let local = task::LocalSet::new();
+            local.spawn_local(async move {
+                task::spawn_local(async move { actor.run().await }).await.unwrap();
+            });
+            actor_runtime.block_on(local);
+        });
+
+        match service_status_receiver.blocking_recv() {
+            Some(true) => Some(Self { runtime_handle, cmd_sender }),
+            _ => None,
+        }
+    }
+
+    /// Set UCI log mode.
+    pub fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
+        self.block_on_cmd(Command::SetLoggerMode { logger_mode })?;
+        Ok(())
     }
 
     /// Enable the UWB service.
@@ -166,6 +223,14 @@ impl UwbService {
         }
     }
 
+    /// Get app config params for the given session id
+    pub fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.block_on_cmd(Command::GetParams { session_id })? {
+            Response::AppConfigParams(params) => Ok(params),
+            _ => panic!("session_params() should return AppConfigParams"),
+        }
+    }
+
     /// Send the |cmd| to UwbServiceActor and wait until receiving the response.
     fn block_on_cmd(&self, cmd: Command) -> Result<Response> {
         let (result_sender, result_receiver) = oneshot::channel();
@@ -174,7 +239,7 @@ impl UwbService {
             Error::Unknown
         })?;
 
-        self.runtime.block_on(async move {
+        self.runtime_handle.block_on(async move {
             result_receiver.await.unwrap_or_else(|e| {
                 error!("Failed to receive the result for cmd: {:?}", e);
                 Err(Error::Unknown)
@@ -185,7 +250,7 @@ impl UwbService {
     /// Run an future task on the runtime. This method is only exposed for the testing.
     #[cfg(test)]
     fn block_on_for_testing<F: std::future::Future>(&self, future: F) -> F::Output {
-        self.runtime.block_on(future)
+        self.runtime_handle.block_on(future)
     }
 }
 
@@ -255,6 +320,10 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
 
     async fn handle_cmd(&mut self, cmd: Command) -> Result<Response> {
         match cmd {
+            Command::SetLoggerMode { logger_mode } => {
+                self.uci_manager.set_logger_mode(logger_mode).await?;
+                Ok(Response::Null)
+            }
             Command::Enable => {
                 self.enable_service().await?;
                 Ok(Response::Null)
@@ -330,6 +399,15 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
             Command::SendVendorCmd { gid, oid, payload } => {
                 let msg = self.uci_manager.raw_vendor_cmd(gid, oid, payload).await?;
                 Ok(Response::RawVendorMessage(msg))
+            }
+            Command::GetParams { session_id } => {
+                if let Some(session_manager) = self.session_manager.as_mut() {
+                    let params = session_manager.session_params(session_id).await?;
+                    Ok(Response::AppConfigParams(params))
+                } else {
+                    error!("The service is not enabled yet");
+                    Err(Error::BadParameters)
+                }
             }
         }
     }
@@ -409,8 +487,20 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
     }
 }
 
+impl<C: UwbServiceCallback, U: UciManager> Drop for UwbServiceActor<C, U> {
+    fn drop(&mut self) {
+        // mpsc receivers are about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.core_notf_receiver);
+        clean_mpsc_receiver(&mut self.session_notf_receiver);
+        clean_mpsc_receiver(&mut self.vendor_notf_receiver);
+    }
+}
+
 #[derive(Debug)]
 enum Command {
+    SetLoggerMode {
+        logger_mode: UciLoggerMode,
+    },
     Enable,
     Disable,
     InitSession {
@@ -445,6 +535,9 @@ enum Command {
         oid: u32,
         payload: Vec<u8>,
     },
+    GetParams {
+        session_id: SessionId,
+    },
 }
 
 #[derive(Debug)]
@@ -459,19 +552,28 @@ type ResponseSender = oneshot::Sender<Result<Response>>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use tokio::runtime::Runtime;
+
     use crate::params::uci_packets::{SessionState, SetAppConfigResponse, StatusCode};
     use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::service::uwb_service_builder::default_runtime;
+    use crate::service::uwb_service_callback_builder::UwbServiceCallbackSendBuilder;
     use crate::session::session_manager::test_utils::{
         generate_params, range_data_notf, session_range_data, session_status_notf,
     };
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
 
-    fn setup_uwb_service(uci_manager: MockUciManager) -> (UwbService, MockUwbServiceCallback) {
+    fn setup_uwb_service(
+        uci_manager: MockUciManager,
+    ) -> (UwbService, MockUwbServiceCallback, Runtime) {
+        let runtime = default_runtime().unwrap();
         let callback = MockUwbServiceCallback::new();
-        let service = UwbService::new(default_runtime().unwrap(), callback.clone(), uci_manager);
-        (service, callback)
+        let callback_builder = UwbServiceCallbackSendBuilder::new(callback.clone());
+        let service =
+            UwbService::new(runtime.handle().to_owned(), callback_builder, uci_manager).unwrap();
+        (service, callback, runtime)
     }
 
     #[test]
@@ -479,7 +581,7 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         uci_manager.expect_close_hal(false, Ok(()));
-        let (mut service, _) = setup_uwb_service(uci_manager);
+        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.enable();
         assert!(result.is_ok());
@@ -528,7 +630,7 @@ mod tests {
             Ok(()),
         );
 
-        let (mut service, mut callback) = setup_uwb_service(uci_manager.clone());
+        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
         service.enable().unwrap();
 
         // Initialize a normal session.
@@ -590,7 +692,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
-        let (mut service, _) = setup_uwb_service(uci_manager);
+        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.init_session(session_id, session_type, params.clone());
         assert!(result.is_err());
@@ -611,7 +713,7 @@ mod tests {
         let country_code = CountryCode::new(b"US").unwrap();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
-        let (mut service, _) = setup_uwb_service(uci_manager);
+        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.android_set_country_code(country_code);
         assert!(result.is_ok());
@@ -628,7 +730,7 @@ mod tests {
         };
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
-        let (mut service, _) = setup_uwb_service(uci_manager);
+        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.android_get_power_stats().unwrap();
         assert_eq!(result, stats);
@@ -648,7 +750,7 @@ mod tests {
             cmd_payload.clone(),
             Ok(RawVendorMessage { gid, oid, payload: resp_payload.clone() }),
         );
-        let (mut service, _) = setup_uwb_service(uci_manager);
+        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.send_vendor_cmd(gid, oid, cmd_payload).unwrap();
         assert_eq!(result, RawVendorMessage { gid, oid, payload: resp_payload });
@@ -665,7 +767,7 @@ mod tests {
             vec![UciNotification::Vendor(RawVendorMessage { gid, oid, payload: payload.clone() })],
             Ok(()),
         );
-        let (mut service, mut callback) = setup_uwb_service(uci_manager);
+        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager);
 
         callback.expect_on_vendor_notification_received(gid, oid, payload);
         service.enable().unwrap();
@@ -681,7 +783,7 @@ mod tests {
             vec![UciNotification::Core(CoreNotification::DeviceStatus(state))],
             Ok(()),
         );
-        let (mut service, mut callback) = setup_uwb_service(uci_manager);
+        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager);
         callback.expect_on_uci_device_status_changed(state);
         service.enable().unwrap();
         assert!(service.block_on_for_testing(callback.wait_expected_calls_done()));
@@ -695,7 +797,7 @@ mod tests {
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
         uci_manager.expect_open_hal(vec![], Ok(()));
-        let (mut service, mut callback) = setup_uwb_service(uci_manager.clone());
+        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
         let result = service.enable();
@@ -718,7 +820,7 @@ mod tests {
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
         uci_manager.expect_open_hal(vec![], Ok(()));
-        let (mut service, mut callback) = setup_uwb_service(uci_manager.clone());
+        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
         let result = service.enable();

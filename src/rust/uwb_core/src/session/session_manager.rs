@@ -25,6 +25,7 @@ use crate::params::uci_packets::{
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
+use crate::utils::clean_mpsc_receiver;
 
 const MAX_SESSION_COUNT: usize = 5;
 
@@ -116,6 +117,13 @@ impl SessionManager {
         })
         .await?;
         Ok(())
+    }
+
+    pub async fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+        match self.send_cmd(SessionCommand::GetParams { session_id }).await? {
+            SessionResponse::AppConfigParams(params) => Ok(params),
+            _ => panic!("session_params() should reply AppConfigParams result"),
+        }
     }
 
     // Send the |cmd| to the SessionManagerActor.
@@ -270,6 +278,17 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
+            SessionCommand::GetParams { session_id } => {
+                match self.active_sessions.get_mut(&session_id) {
+                    None => {
+                        warn!("Session {} doesn't exist", session_id);
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                    }
+                    Some(session) => {
+                        session.params(result_sender);
+                    }
+                }
+            }
         }
     }
 
@@ -331,6 +350,13 @@ impl<T: UciManager> SessionManagerActor<T> {
     }
 }
 
+impl<T: UciManager> Drop for SessionManagerActor<T> {
+    fn drop(&mut self) {
+        // mpsc receiver is about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.uci_notf_receiver);
+    }
+}
+
 #[derive(Debug)]
 enum SessionCommand {
     InitSession {
@@ -355,6 +381,9 @@ enum SessionCommand {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
+    },
+    GetParams {
+        session_id: SessionId,
     },
 }
 
@@ -427,6 +456,8 @@ pub(crate) mod test_utils {
                     rssi: u8::MAX,
                 },
             ]),
+            rcr_indicator: 0,
+            raw_ranging_data: vec![0x12, 0x34],
         }
     }
 
@@ -650,7 +681,7 @@ mod tests {
         ]);
         let received_tlvs = received_config_map
             .iter()
-            .map(|(key, value)| AppConfigTlv { cfg_id: *key, v: value.clone() })
+            .map(|(key, value)| AppConfigTlv::new(*key, value.clone()))
             .collect();
         let started_params =
             CccStartedAppConfigParams::from_config_map(received_config_map).unwrap();
@@ -984,6 +1015,48 @@ mod tests {
         // Only some parameters are allowed to be reconfigured during active state.
         let result = session_manager.reconfigure(session_id, active_params).await;
         assert_eq!(result, Ok(()));
+
+        assert!(mock_uci_manager.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_params() {
+        let session_id = 0x123;
+        let session_type = SessionType::FiraRangingSession;
+
+        let params = generate_params();
+        let tlvs = params.generate_tlvs();
+
+        let (mut session_manager, mut mock_uci_manager, _) =
+            setup_session_manager(move |uci_manager| {
+                uci_manager.expect_session_init(
+                    session_id,
+                    session_type,
+                    vec![session_status_notf(session_id, SessionState::SessionStateInit)],
+                    Ok(()),
+                );
+                uci_manager.expect_session_set_app_config(
+                    session_id,
+                    tlvs,
+                    vec![session_status_notf(session_id, SessionState::SessionStateIdle)],
+                    Ok(SetAppConfigResponse {
+                        status: StatusCode::UciStatusOk,
+                        config_status: vec![],
+                    }),
+                );
+            })
+            .await;
+
+        // Getting session params without initing a session should fail
+        let result = session_manager.session_params(session_id).await;
+        assert_eq!(result, Err(Error::BadParameters));
+
+        let result = session_manager.init_session(session_id, session_type, params.clone()).await;
+        result.unwrap();
+
+        // Getting session params after they've been properly set should succeed
+        let result = session_manager.session_params(session_id).await;
+        assert_eq!(result, Ok(params));
 
         assert!(mock_uci_manager.wait_expected_calls_done().await);
     }
