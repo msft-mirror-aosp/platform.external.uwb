@@ -15,15 +15,18 @@
  */
 
 use crate::uci::UwbErr;
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use log::error;
 use num_traits::FromPrimitive;
 use uwb_uci_packets::{
-    AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee, DeviceResetCmdBuilder, GroupId,
-    ResetConfig, SessionInitCmdBuilder, SessionSetAppConfigCmdBuilder, SessionType,
-    SessionUpdateControllerMulticastListCmdBuilder, UciCommandPacket, UciVendor_9_CommandBuilder,
-    UciVendor_A_CommandBuilder, UciVendor_B_CommandBuilder, UciVendor_E_CommandBuilder,
-    UciVendor_F_CommandBuilder, UpdateMulticastListAction,
+    write_controlee, write_controlee_2_0_0byte, write_controlee_2_0_16byte,
+    write_controlee_2_0_32byte, AndroidSetCountryCodeCmdBuilder, AppConfigTlv, Controlee,
+    Controlee_V2_0_0_Byte_Version, Controlee_V2_0_16_Byte_Version, Controlee_V2_0_32_Byte_Version,
+    DeviceResetCmdBuilder, GroupId, MessageControl, ResetConfig, SessionInitCmdBuilder,
+    SessionSetAppConfigCmdBuilder, SessionType, SessionUpdateControllerMulticastListCmdBuilder,
+    UciCommandPacket, UciVendor_9_CommandBuilder, UciVendor_A_CommandBuilder,
+    UciVendor_B_CommandBuilder, UciVendor_E_CommandBuilder, UciVendor_F_CommandBuilder,
+    UpdateMulticastListAction,
 };
 
 pub fn build_session_init_cmd(
@@ -46,23 +49,71 @@ pub fn build_multicast_list_update_cmd(
     no_of_controlee: u8,
     address_list: &[i16],
     sub_session_id_list: &[i32],
+    message_control: Option<MessageControl>,
+    sub_session_key_list: &[Vec<u8>],
 ) -> Result<SessionUpdateControllerMulticastListCmdBuilder, UwbErr> {
     if usize::from(no_of_controlee) != address_list.len()
         || usize::from(no_of_controlee) != sub_session_id_list.len()
     {
         return Err(UwbErr::InvalidArgs);
     }
-    let mut controlees = Vec::new();
-    for i in 0..no_of_controlee {
-        controlees.push(Controlee {
-            short_address: address_list[i as usize] as u16,
-            subsession_id: sub_session_id_list[i as usize] as u32,
-        });
+    let mut controlees_buf = BytesMut::new();
+    controlees_buf.put_u8(no_of_controlee);
+    match message_control {
+        None => {
+            for i in 0..no_of_controlee {
+                controlees_buf.extend_from_slice(&write_controlee(&Controlee {
+                    short_address: address_list[i as usize] as u16,
+                    subsession_id: sub_session_id_list[i as usize] as u32,
+                }));
+            }
+        }
+        Some(MessageControl::SubSessionKeyNotConfigured) => {
+            for i in 0..no_of_controlee {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_0byte(
+                    &Controlee_V2_0_0_Byte_Version {
+                        short_address: address_list[i as usize] as u16,
+                        subsession_id: sub_session_id_list[i as usize] as u32,
+                        message_control: MessageControl::SubSessionKeyNotConfigured,
+                    },
+                ));
+            }
+        }
+        Some(MessageControl::ShortSubSessionKeyConfigured) => {
+            for i in 0..no_of_controlee {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_16byte(
+                    &Controlee_V2_0_16_Byte_Version {
+                        short_address: address_list[i as usize] as u16,
+                        subsession_id: sub_session_id_list[i as usize] as u32,
+                        message_control: MessageControl::ShortSubSessionKeyConfigured,
+                        subsession_key: sub_session_key_list[i as usize]
+                            .clone()
+                            .try_into()
+                            .map_err(|_| UwbErr::InvalidArgs)?,
+                    },
+                ));
+            }
+        }
+        Some(MessageControl::LongSubSessionKeyConfigured) => {
+            for i in 0..no_of_controlee {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_32byte(
+                    &Controlee_V2_0_32_Byte_Version {
+                        short_address: address_list[i as usize] as u16,
+                        subsession_id: sub_session_id_list[i as usize] as u32,
+                        message_control: MessageControl::LongSubSessionKeyConfigured,
+                        subsession_key: sub_session_key_list[i as usize]
+                            .clone()
+                            .try_into()
+                            .map_err(|_| UwbErr::InvalidArgs)?,
+                    },
+                ));
+            }
+        }
     }
     Ok(SessionUpdateControllerMulticastListCmdBuilder {
         session_id,
         action: UpdateMulticastListAction::from_u8(action).ok_or(UwbErr::InvalidArgs)?,
-        controlees,
+        payload: Some(controlees_buf.freeze()),
     })
 }
 
