@@ -14,8 +14,10 @@
 
 //! Builders for PCAPNG blocks.
 
-use std::{convert::TryInto, time::Instant};
+use std::convert::TryInto;
+use std::time::SystemTime;
 
+use log::debug;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::cast::ToPrimitive;
 
@@ -197,7 +199,14 @@ pub struct EnhancedPacketBlockBuilder {
 
 impl Default for EnhancedPacketBlockBuilder {
     fn default() -> Self {
-        let timestamp = Instant::now().elapsed().as_micros() as u64;
+        let timestamp = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+            // as_micros return u128. However, u64 will not overflow until year 586524.
+            Ok(duration) => duration.as_micros() as u64,
+            Err(e) => {
+                debug!("UCI log: system time is before Unix Epoch: {:?}", e);
+                0u64
+            }
+        };
         Self {
             interface_id: 0,
             timestamp,

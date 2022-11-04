@@ -14,13 +14,14 @@
 
 //! This module defines the UwbServiceBuilder, the builder of the UwbService.
 
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
 use crate::service::uwb_service::{UwbService, UwbServiceCallback, UwbServiceCallbackBuilder};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_logger_factory::UciLoggerFactory;
 use crate::uci::uci_manager::UciManagerImpl;
+use crate::utils::consuming_builder_field;
 
 /// Create the default runtime for UwbService.
 pub fn default_runtime() -> Option<Runtime> {
@@ -36,7 +37,7 @@ where
     U: UciHal,
     L: UciLoggerFactory,
 {
-    runtime: Option<Runtime>,
+    runtime_handle: Option<Handle>,
     callback_builder: Option<B>,
     uci_hal: Option<U>,
     uci_logger_factory: Option<L>,
@@ -54,7 +55,7 @@ where
 {
     fn default() -> Self {
         Self {
-            runtime: None,
+            runtime_handle: None,
             callback_builder: None,
             uci_hal: None,
             uci_logger_factory: None,
@@ -76,46 +77,23 @@ where
         Default::default()
     }
 
-    /// Set the runtime field.
-    pub fn runtime(mut self, runtime: Runtime) -> Self {
-        self.runtime = Some(runtime);
-        self
-    }
-
-    /// Set the callback field.
-    pub fn callback_builder(mut self, callback_builder: B) -> Self {
-        self.callback_builder = Some(callback_builder);
-        self
-    }
-
-    /// Set the uci_hal field.
-    pub fn uci_hal(mut self, uci_hal: U) -> Self {
-        self.uci_hal = Some(uci_hal);
-        self
-    }
-
-    /// Set the uci_logger_factory field.
-    pub fn uci_logger_factory(mut self, uci_logger_factory: L) -> Self {
-        self.uci_logger_factory = Some(uci_logger_factory);
-        self
-    }
-
-    /// Set the uci_logger_mode field.
-    pub fn uci_logger_mode(mut self, uci_logger_mode: UciLoggerMode) -> Self {
-        self.uci_logger_mode = uci_logger_mode;
-        self
-    }
+    // Setter methods of each field.
+    consuming_builder_field!(runtime_handle, Handle, Some);
+    consuming_builder_field!(callback_builder, B, Some);
+    consuming_builder_field!(uci_hal, U, Some);
+    consuming_builder_field!(uci_logger_factory, L, Some);
+    consuming_builder_field!(uci_logger_mode, UciLoggerMode);
 
     /// Build the UwbService.
     pub fn build(mut self) -> Option<UwbService> {
-        let runtime = self.runtime.take().or_else(default_runtime)?;
+        let runtime_handle = self.runtime_handle.take()?;
         let uci_hal = self.uci_hal.take()?;
         let mut uci_logger_factory = self.uci_logger_factory.take()?;
         let uci_logger = uci_logger_factory.build_logger("default")?;
         let uci_logger_mode = self.uci_logger_mode;
-        let uci_manager = runtime
+        let uci_manager = runtime_handle
             .block_on(async move { UciManagerImpl::new(uci_hal, uci_logger, uci_logger_mode) });
-        UwbService::new(runtime, self.callback_builder.take()?, uci_manager)
+        UwbService::new(runtime_handle, self.callback_builder.take()?, uci_manager)
     }
 }
 
@@ -141,8 +119,10 @@ mod tests {
 
     #[test]
     fn test_build_ok() {
+        let runtime = default_runtime().unwrap();
         let callback = MockUwbServiceCallback::new();
         let result = UwbServiceBuilder::new()
+            .runtime_handle(runtime.handle().to_owned())
             .callback_builder(UwbServiceCallbackSendBuilder::new(callback))
             .uci_hal(MockUciHal::new())
             .uci_logger_factory(UciLoggerFactoryNull::default())
