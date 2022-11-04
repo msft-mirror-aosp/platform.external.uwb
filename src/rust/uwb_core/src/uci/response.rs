@@ -26,6 +26,7 @@ use crate::uci::error::status_code_to_result;
 
 #[derive(Debug)]
 pub(super) enum UciResponse {
+    SetLoggerMode,
     SetNotification,
     OpenHal,
     CloseHal,
@@ -52,8 +53,7 @@ pub(super) enum UciResponse {
 impl UciResponse {
     pub fn need_retry(&self) -> bool {
         match self {
-            Self::SetNotification | Self::OpenHal | Self::CloseHal => false,
-
+            Self::SetNotification | Self::OpenHal | Self::CloseHal | Self::SetLoggerMode => false,
             Self::DeviceReset(result) => Self::matches_result_retry(result),
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetCapsInfo(result) => Self::matches_result_retry(result),
@@ -174,7 +174,9 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
             }
             SessionResponseChild::SessionGetAppConfigRsp(evt) => {
                 Ok(UciResponse::SessionGetAppConfig(
-                    status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
+                    status_code_to_result(evt.get_status()).map(|_| {
+                        evt.get_tlvs().clone().into_iter().map(|tlv| tlv.into()).collect()
+                    }),
                 ))
             }
             _ => Err(Error::Unknown),

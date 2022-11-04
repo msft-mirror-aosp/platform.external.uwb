@@ -20,9 +20,9 @@ use std::iter::FromIterator;
 
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
-    AppConfigStatus, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlee,
-    ControleeStatus, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
-    ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
+    AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
+    Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
+    DeviceState, ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
     RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
@@ -31,6 +31,62 @@ pub use uwb_uci_packets::{
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
 pub type SubSessionId = u32;
+
+/// Wrap the original AppConfigTlv type to redact the PII fields when logging.
+#[derive(Clone, PartialEq)]
+pub struct AppConfigTlv {
+    tlv: RawAppConfigTlv,
+}
+
+impl std::fmt::Debug for AppConfigTlv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        static REDACTED_STR: &str = "redacted";
+
+        let mut ds = f.debug_struct("AppConfigTlv");
+        ds.field("cfg_id", &self.tlv.cfg_id);
+        if self.tlv.cfg_id == AppConfigTlvType::VendorId
+            || self.tlv.cfg_id == AppConfigTlvType::StaticStsIv
+        {
+            ds.field("v", &REDACTED_STR);
+        } else {
+            ds.field("v", &self.tlv.v);
+        }
+        ds.finish()
+    }
+}
+
+impl AppConfigTlv {
+    /// Create a wrapper of uwb_uci_packets::AppConfigTlv.
+    ///
+    /// The argument is the same as the uwb_uci_packets::AppConfigTlv's struct.
+    pub fn new(cfg_id: AppConfigTlvType, v: Vec<u8>) -> Self {
+        Self { tlv: RawAppConfigTlv { cfg_id, v } }
+    }
+
+    /// Consumes the outter wrapper type, returning the wrapped uwb_uci_packets::AppConfigTlv.
+    pub fn into_inner(self) -> RawAppConfigTlv {
+        self.tlv
+    }
+}
+
+impl From<RawAppConfigTlv> for AppConfigTlv {
+    fn from(tlv: RawAppConfigTlv) -> Self {
+        Self { tlv }
+    }
+}
+
+impl std::ops::Deref for AppConfigTlv {
+    type Target = RawAppConfigTlv;
+    fn deref(&self) -> &Self::Target {
+        &self.tlv
+    }
+}
+
+impl std::ops::DerefMut for AppConfigTlv {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.tlv
+    }
+}
 
 /// Compare if two AppConfigTlv array are equal. Convert the array to HashMap before comparing
 /// because the order of TLV elements doesn't matter.
@@ -121,4 +177,26 @@ pub struct RawVendorMessage {
     pub oid: u32,
     /// The payload of the message.
     pub payload: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_redacted_app_config_tlv() {
+        // The value of VendorId and StaticStsIv should be redacted.
+        let tlv = AppConfigTlv::new(AppConfigTlvType::VendorId, vec![12, 34]);
+        let format_str = format!("{tlv:?}");
+        assert!(format_str.contains("v: \"redacted\""));
+
+        let tlv = AppConfigTlv::new(AppConfigTlvType::StaticStsIv, vec![12, 34]);
+        let format_str = format!("{tlv:?}");
+        assert!(format_str.contains("v: \"redacted\""));
+
+        // The value of DeviceType should be printed normally.
+        let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![12, 34]);
+        let format_str = format!("{tlv:?}");
+        assert_eq!(format_str, "AppConfigTlv { cfg_id: DeviceType, v: [12, 34] }");
+    }
 }

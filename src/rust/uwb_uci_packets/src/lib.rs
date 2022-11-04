@@ -19,8 +19,10 @@
 #![allow(unused)]
 #![allow(missing_docs)]
 
-use log::error;
 use std::cmp;
+
+use log::error;
+use zeroize::Zeroize;
 
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
 
@@ -201,7 +203,8 @@ pub fn parse_diagnostics_ntf(
         let mut cir_vec = Vec::new();
         for tlv in &report.frame_report_tlvs {
             match FrameReportTlvPacketPacket::parse(
-                &[vec![tlv.t as u8, tlv.v.len() as u8], tlv.v.clone()].concat(),
+                &[vec![tlv.t as u8, tlv.v.len() as u8, (tlv.v.len() >> 8) as u8], tlv.v.clone()]
+                    .concat(),
             ) {
                 Ok(pkt) => match pkt.specialize() {
                     FrameReportTlvPacketChild::Rssi(rssi) => {
@@ -237,6 +240,119 @@ pub fn parse_diagnostics_ntf(
     })
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ControleesV2 {
+    NoSessionKey(Vec<Controlee_V2_0_0_Byte_Version>),
+    ShortSessionKey(Vec<Controlee_V2_0_16_Byte_Version>),
+    LongSessionKey(Vec<Controlee_V2_0_32_Byte_Version>),
+}
+
+// TODO(ziyiw): Replace these functions after making uwb_uci_packets::Controlee::write_to() public.
+pub fn write_controlee(controlee: &Controlee) -> BytesMut {
+    let mut buffer = BytesMut::new();
+    let short_address = controlee.short_address;
+    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    let subsession_id = controlee.subsession_id;
+    buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
+    buffer
+}
+
+pub fn write_controlee_2_0_0byte(controlee: &Controlee_V2_0_0_Byte_Version) -> BytesMut {
+    let mut buffer = BytesMut::new();
+    let short_address = controlee.short_address;
+    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    let subsession_id = controlee.subsession_id;
+    buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
+    let message_control = controlee.message_control.to_u8().unwrap();
+    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
+    buffer
+}
+
+pub fn write_controlee_2_0_16byte(controlee: &Controlee_V2_0_16_Byte_Version) -> BytesMut {
+    let mut buffer = BytesMut::new();
+    let short_address = controlee.short_address;
+    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    let subsession_id = controlee.subsession_id;
+    buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
+    let message_control = controlee.message_control.to_u8().unwrap();
+    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
+    buffer.extend_from_slice(&controlee.subsession_key);
+    buffer
+}
+
+pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) -> BytesMut {
+    let mut buffer = BytesMut::new();
+    let short_address = controlee.short_address;
+    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    let subsession_id = controlee.subsession_id;
+    buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
+    let message_control = controlee.message_control.to_u8().unwrap();
+    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
+    buffer.extend_from_slice(&controlee.subsession_key);
+    buffer
+}
+
+/// Generate the V1 SessionUpdateControllerMulticastListCmd packet.
+/// Workaround for handling the non-compatible command.
+pub fn build_session_update_controller_multicast_list_cmd_v1(
+    session_id: u32,
+    action: UpdateMulticastListAction,
+    controlees: Vec<Controlee>,
+) -> SessionUpdateControllerMulticastListCmdPacket {
+    let mut controlees_buf = BytesMut::new();
+    for controlee in controlees {
+        controlees_buf.extend_from_slice(&write_controlee(&controlee));
+    }
+    SessionUpdateControllerMulticastListCmdBuilder {
+        session_id,
+        action,
+        payload: Some(controlees_buf.freeze()),
+    }
+    .build()
+}
+
+/// Generate the V2 SessionUpdateControllerMulticastListCmd packet.
+/// Workaround for handling the non-compatible command.
+pub fn build_session_update_controller_multicast_list_cmd_v2(
+    session_id: u32,
+    action: UpdateMulticastListAction,
+    controlees: ControleesV2,
+) -> SessionUpdateControllerMulticastListCmdPacket {
+    let mut controlees_buf = BytesMut::new();
+    match controlees {
+        ControleesV2::NoSessionKey(controlee_v2) => {
+            for controlee in controlee_v2 {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_0byte(&controlee));
+            }
+        }
+        ControleesV2::ShortSessionKey(controlee_v2) => {
+            for controlee in controlee_v2 {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_16byte(&controlee));
+            }
+        }
+        ControleesV2::LongSessionKey(controlee_v2) => {
+            for controlee in controlee_v2 {
+                controlees_buf.extend_from_slice(&write_controlee_2_0_32byte(&controlee));
+            }
+        }
+    }
+    SessionUpdateControllerMulticastListCmdBuilder {
+        session_id,
+        action,
+        payload: Some(controlees_buf.freeze()),
+    }
+    .build()
+}
+
+impl Drop for AppConfigTlv {
+    fn drop(&mut self) {
+        if self.cfg_id == AppConfigTlvType::VendorId || self.cfg_id == AppConfigTlvType::StaticStsIv
+        {
+            self.v.zeroize();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,8 +379,8 @@ mod tests {
         let mut frame_reports = Vec::new();
         let tlvs = vec![
             FrameReportTlv { t: rssi.get_t(), v: rssi.get_rssi().to_vec() },
-            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[2..].to_vec() },
-            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[2..].to_vec() },
+            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[3..].to_vec() },
+            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[3..].to_vec() },
         ];
         let frame_report =
             FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
@@ -278,5 +394,13 @@ mod tests {
         assert_eq!(aoa_1, parsed_frame_report.aoa[0]);
         assert_eq!(aoa_2, parsed_frame_report.aoa[1]);
         assert_eq!(cir_vec, parsed_frame_report.cir);
+    }
+
+    #[test]
+    fn test_write_controlee() {
+        let controlee: Controlee = Controlee { short_address: 2, subsession_id: 3 };
+        let bytes = write_controlee(&controlee);
+        let parsed_controlee = Controlee::parse(&bytes).unwrap();
+        assert_eq!(controlee, parsed_controlee);
     }
 }
