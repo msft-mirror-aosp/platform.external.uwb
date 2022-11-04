@@ -29,7 +29,9 @@ use crate::params::uci_packets::{
     SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
+use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
+use uwb_uci_packets::ControleesV2;
 
 #[derive(Clone)]
 pub(crate) struct MockUciManager {
@@ -200,6 +202,25 @@ impl MockUciManager {
         );
     }
 
+    pub fn expect_session_update_controller_multicast_list_v2(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_action: UpdateMulticastListAction,
+        expected_controlees: ControleesV2,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionUpdateControllerMulticastListV2 {
+                expected_session_id,
+                expected_action,
+                expected_controlees,
+                notfs,
+                out,
+            },
+        );
+    }
+
     pub fn expect_range_start(
         &mut self,
         expected_session_id: SessionId,
@@ -286,6 +307,9 @@ impl MockUciManager {
 
 #[async_trait]
 impl UciManager for MockUciManager {
+    async fn set_logger_mode(&mut self, _logger_mode: UciLoggerMode) -> Result<()> {
+        Ok(())
+    }
     async fn set_core_notification_sender(
         &mut self,
         core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
@@ -580,6 +604,36 @@ impl UciManager for MockUciManager {
         }
     }
 
+    async fn session_update_controller_multicast_list_v2(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionUpdateControllerMulticastListV2 {
+                expected_session_id,
+                expected_action,
+                expected_controlees,
+                notfs,
+                out,
+            }) if expected_session_id == session_id
+                && expected_action == action
+                && expected_controlees == controlees =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
@@ -752,6 +806,13 @@ enum ExpectedCall {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
         expected_controlees: Vec<Controlee>,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    },
+    SessionUpdateControllerMulticastListV2 {
+        expected_session_id: SessionId,
+        expected_action: UpdateMulticastListAction,
+        expected_controlees: ControleesV2,
         notfs: Vec<UciNotification>,
         out: Result<()>,
     },

@@ -467,9 +467,11 @@ impl EventManagerImpl {
         num_two_way_measurements: i32,
     ) -> Result<JObject<'a>> {
         let ranging_data_class = self.find_class(env, UWB_RANGING_DATA_CLASS)?;
+        let raw_ntf: Vec<u8> = data.clone().to_vec();
+        let raw_ntf_jbytearray = env.byte_array_from_slice(raw_ntf.as_ref())?;
         env.new_object(
             ranging_data_class,
-            "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;)V",
+            "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;[B)V",
             &[
                 JValue::Long(data.get_sequence_number().to_i64().ok_or_else(|| {
                     error!("Failed converting seq num to i64");
@@ -497,6 +499,7 @@ impl EventManagerImpl {
                 })?),
                 JValue::Int(num_two_way_measurements),
                 JValue::Object(JObject::from(two_way_measurements_java)),
+                JValue::Object(JObject::from(raw_ntf_jbytearray)),
             ],
         )
     }

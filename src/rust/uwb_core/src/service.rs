@@ -16,10 +16,12 @@
 
 pub mod uwb_service;
 pub mod uwb_service_builder;
+pub mod uwb_service_callback_builder;
 
 #[cfg(test)]
 mod mock_uwb_service_callback;
 
 // Re-export the public elements.
-pub use uwb_service::{UwbService, UwbServiceCallback};
-pub use uwb_service_builder::UwbServiceBuilder;
+pub use uwb_service::{UwbService, UwbServiceCallback, UwbServiceCallbackBuilder};
+pub use uwb_service_builder::{default_runtime, UwbServiceBuilder};
+pub use uwb_service_callback_builder::UwbServiceCallbackSendBuilder;

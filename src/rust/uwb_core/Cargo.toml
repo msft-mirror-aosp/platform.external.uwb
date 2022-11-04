@@ -16,3 +16,4 @@ uwb_uci_packets = { path = "../uwb_uci_packets" }  # provided by ebuild
 
 [dev-dependencies]
 env_logger = "0.9.0"
+tempfile = "3"

@@ -14,8 +14,9 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use log::error;
+use log::{debug, error};
 use num_traits::ToPrimitive;
+use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
@@ -86,6 +87,13 @@ pub struct SessionRangeData {
 
     /// The ranging measurement data.
     pub ranging_measurements: RangingMeasurements,
+
+    /// Indication that a RCR was sent/received in the current ranging round.
+    pub rcr_indicator: u8,
+
+    /// The raw data of the notification message.
+    /// (b/243555651): It's not at FiRa specification, only used by vendor's extension.
+    pub raw_ranging_data: Vec<u8>,
 }
 
 /// The ranging measurements.
@@ -198,6 +206,7 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
     fn try_from(
         evt: uwb_uci_packets::RangeDataNtfPacket,
     ) -> std::result::Result<Self, Self::Error> {
+        let raw_ranging_data = evt.clone().to_vec();
         use uwb_uci_packets::RangeDataNtfChild;
         let ranging_measurements = match evt.specialize() {
             RangeDataNtfChild::ShortMacTwoWayRangeDataNtf(evt) => {
@@ -217,6 +226,8 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
             current_ranging_interval_ms: evt.get_current_ranging_interval(),
             ranging_measurement_type: evt.get_ranging_measurement_type(),
             ranging_measurements,
+            rcr_indicator: evt.get_rcr_indicator(),
+            raw_ranging_data,
         }))
     }
 }
@@ -226,7 +237,14 @@ impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
     fn try_from(
         evt: uwb_uci_packets::AndroidNotificationPacket,
     ) -> std::result::Result<Self, Self::Error> {
-        error!("Unknown AndroidNotificationPacket: {:?}", evt);
+        use uwb_uci_packets::AndroidNotificationChild;
+
+        // (b/241336806): Currently we don't process the diagnostic packet, just log it only.
+        if let AndroidNotificationChild::AndroidRangeDiagnosticsNtf(ntf) = evt.specialize() {
+            debug!("Received diagnostic packet: {:?}", parse_diagnostics_ntf(ntf));
+        } else {
+            error!("Received unknown AndroidNotificationPacket: {:?}", evt);
+        }
         Err(Error::Unknown)
     }
 }
@@ -381,11 +399,12 @@ mod tests {
             uwb_uci_packets::ExtendedMacTwoWayRangeDataNtfBuilder {
                 sequence_number: 0x10,
                 session_id: 0x11,
-                rcr_indicator: 0x12, //Not used
+                rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 two_way_ranging_measurements: vec![extended_measurement.clone()],
             }
             .build();
+        let raw_ranging_data = extended_two_way_range_data_ntf.clone().to_vec();
         let range_notification =
             uwb_uci_packets::RangingNotificationPacket::try_from(extended_two_way_range_data_ntf)
                 .unwrap();
@@ -400,6 +419,8 @@ mod tests {
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::Extended(vec![extended_measurement]),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
             }))
         );
     }
@@ -425,11 +446,12 @@ mod tests {
         let short_two_way_range_data_ntf = uwb_uci_packets::ShortMacTwoWayRangeDataNtfBuilder {
             sequence_number: 0x10,
             session_id: 0x11,
-            rcr_indicator: 0x12, //Not used
+            rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             two_way_ranging_measurements: vec![short_measurement.clone()],
         }
         .build();
+        let raw_ranging_data = short_two_way_range_data_ntf.clone().to_vec();
         let range_notification =
             uwb_uci_packets::RangingNotificationPacket::try_from(short_two_way_range_data_ntf)
                 .unwrap();
@@ -444,6 +466,8 @@ mod tests {
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::Short(vec![short_measurement]),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
             }))
         );
     }
