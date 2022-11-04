@@ -40,6 +40,7 @@ impl Future for PinSleep {
 /// Generate the setter method for the field of the struct for the builder pattern.
 macro_rules! builder_field {
     ($field:ident, $ty:ty, $wrap:expr) => {
+        /// Set the $field field.
         pub fn $field(&mut self, value: $ty) -> &mut Self {
             self.$field = $wrap(value);
             self
@@ -50,6 +51,21 @@ macro_rules! builder_field {
     };
 }
 pub(crate) use builder_field;
+
+/// Generate the setter method for the field of the struct for the consuming builder pattern.
+macro_rules! consuming_builder_field {
+    ($field:ident, $ty:ty, $wrap:expr) => {
+        /// Set the $field field.
+        pub fn $field(mut self, value: $ty) -> Self {
+            self.$field = $wrap(value);
+            self
+        }
+    };
+    ($field:ident, $ty:ty) => {
+        consuming_builder_field!($field, $ty, ::std::convert::identity);
+    };
+}
+pub(crate) use consuming_builder_field;
 
 /// Generate the getter method for the field of the struct.
 macro_rules! getter_field {
