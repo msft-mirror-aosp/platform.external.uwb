@@ -21,7 +21,7 @@ use uwb_uci_packets::{
     UciPacketPacket, UciResponseChild, UciResponsePacket,
 };
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::uci::UciCommand;
 
 /// UCI Log mode.
@@ -33,6 +33,19 @@ pub enum UciLoggerMode {
     Unfiltered,
     /// Logs uci packets, with PII filtered.
     Filtered,
+}
+
+impl TryFrom<String> for UciLoggerMode {
+    type Error = Error;
+    /// Parse log mode from string.
+    fn try_from(log_mode_string: String) -> Result<UciLoggerMode> {
+        match log_mode_string.as_str() {
+            "disabled" => Ok(UciLoggerMode::Disabled),
+            "unfiltered" => Ok(UciLoggerMode::Unfiltered),
+            "filtered" => Ok(UciLoggerMode::Filtered),
+            _ => Err(Error::BadParameters),
+        }
+    }
 }
 
 /// Trait definition for the thread-safe uci logger
