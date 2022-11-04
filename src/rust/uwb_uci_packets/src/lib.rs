@@ -19,8 +19,10 @@
 #![allow(unused)]
 #![allow(missing_docs)]
 
-use log::error;
 use std::cmp;
+
+use log::error;
+use zeroize::Zeroize;
 
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
 
@@ -340,6 +342,15 @@ pub fn build_session_update_controller_multicast_list_cmd_v2(
         payload: Some(controlees_buf.freeze()),
     }
     .build()
+}
+
+impl Drop for AppConfigTlv {
+    fn drop(&mut self) {
+        if self.cfg_id == AppConfigTlvType::VendorId || self.cfg_id == AppConfigTlvType::StaticStsIv
+        {
+            self.v.zeroize();
+        }
+    }
 }
 
 #[cfg(test)]
