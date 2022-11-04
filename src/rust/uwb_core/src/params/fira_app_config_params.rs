@@ -75,7 +75,7 @@ const DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS: u8 = 0;
 
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FiraAppConfigParams {
     // FiRa standard config.
     device_type: DeviceType,
@@ -127,6 +127,66 @@ pub struct FiraAppConfigParams {
     number_of_range_measurements: u8,
     number_of_aoa_azimuth_measurements: u8,
     number_of_aoa_elevation_measurements: u8,
+}
+
+/// Explicitly implement Debug trait to prevent logging PII data.
+impl std::fmt::Debug for FiraAppConfigParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        static REDACTED_STR: &str = "redacted";
+
+        f.debug_struct("FiraAppConfigParams")
+            .field("device_type", &self.device_type)
+            .field("ranging_round_usage", &self.ranging_round_usage)
+            .field("sts_config", &self.sts_config)
+            .field("multi_node_mode", &self.multi_node_mode)
+            .field("channel_number", &self.channel_number)
+            .field("device_mac_address", &self.device_mac_address)
+            .field("dst_mac_address", &self.dst_mac_address)
+            .field("slot_duration_rstu", &self.slot_duration_rstu)
+            .field("ranging_interval_ms", &self.ranging_interval_ms)
+            .field("mac_fcs_type", &self.mac_fcs_type)
+            .field("ranging_round_control", &self.ranging_round_control)
+            .field("aoa_result_request", &self.aoa_result_request)
+            .field("range_data_ntf_config", &self.range_data_ntf_config)
+            .field("range_data_ntf_proximity_near_cm", &self.range_data_ntf_proximity_near_cm)
+            .field("range_data_ntf_proximity_far_cm", &self.range_data_ntf_proximity_far_cm)
+            .field("device_role", &self.device_role)
+            .field("rframe_config", &self.rframe_config)
+            .field("preamble_code_index", &self.preamble_code_index)
+            .field("sfd_id", &self.sfd_id)
+            .field("psdu_data_rate", &self.psdu_data_rate)
+            .field("preamble_duration", &self.preamble_duration)
+            .field("ranging_time_struct", &self.ranging_time_struct)
+            .field("slots_per_rr", &self.slots_per_rr)
+            .field("tx_adaptive_payload_power", &self.tx_adaptive_payload_power)
+            .field("responder_slot_index", &self.responder_slot_index)
+            .field("prf_mode", &self.prf_mode)
+            .field("scheduled_mode", &self.scheduled_mode)
+            .field("key_rotation", &self.key_rotation)
+            .field("key_rotation_rate", &self.key_rotation_rate)
+            .field("session_priority", &self.session_priority)
+            .field("mac_address_mode", &self.mac_address_mode)
+            .field("vendor_id", &REDACTED_STR) // vendor_id field is PII.
+            .field("static_sts_iv", &REDACTED_STR) // static_sts_iv field is PII.
+            .field("number_of_sts_segments", &self.number_of_sts_segments)
+            .field("max_rr_retry", &self.max_rr_retry)
+            .field("uwb_initiation_time_ms", &self.uwb_initiation_time_ms)
+            .field("hopping_mode", &self.hopping_mode)
+            .field("block_stride_length", &self.block_stride_length)
+            .field("result_report_config", &self.result_report_config)
+            .field("in_band_termination_attempt_count", &self.in_band_termination_attempt_count)
+            .field("sub_session_id", &self.sub_session_id)
+            .field("bprf_phr_data_rate", &self.bprf_phr_data_rate)
+            .field("max_number_of_measurements", &self.max_number_of_measurements)
+            .field("sts_length", &self.sts_length)
+            .field("number_of_range_measurements", &self.number_of_range_measurements)
+            .field("number_of_aoa_azimuth_measurements", &self.number_of_aoa_azimuth_measurements)
+            .field(
+                "number_of_aoa_elevation_measurements",
+                &self.number_of_aoa_elevation_measurements,
+            )
+            .finish()
+    }
 }
 
 #[allow(missing_docs)]
@@ -1286,5 +1346,23 @@ mod tests {
         assert!(updated_params
             .generate_updated_config_map(&params, SessionState::SessionStateActive)
             .is_none());
+    }
+
+    #[test]
+    fn test_redacted_pii_fields() {
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56]);
+        let params = builder.build().unwrap();
+
+        let format_str = format!("{params:?}");
+        assert!(format_str.contains("vendor_id: \"redacted\""));
+        assert!(format_str.contains("static_sts_iv: \"redacted\""));
     }
 }
