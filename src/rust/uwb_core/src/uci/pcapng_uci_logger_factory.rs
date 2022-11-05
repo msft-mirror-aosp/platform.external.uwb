@@ -28,6 +28,7 @@ use crate::uci::pcapng_block::{
 };
 use crate::uci::uci_logger_factory::UciLoggerFactory;
 use crate::uci::uci_logger_pcapng::UciLoggerPcapng;
+use crate::utils::consuming_builder_field;
 
 const DEFAULT_LOG_DIR: &str = "/var/log/uwb";
 const DEFAULT_FILE_PREFIX: &str = "uwb_uci";
@@ -102,41 +103,13 @@ impl PcapngUciLoggerFactoryBuilder {
         PcapngUciLoggerFactoryBuilder::default()
     }
 
-    /// Tokio Runtime for driving Log.
-    pub fn runtime_handle(mut self, runtime_handle: Handle) -> Self {
-        self.runtime_handle = Some(runtime_handle);
-        self
-    }
-
-    /// Filename prefix for log file.
-    pub fn filename_prefix<T: AsRef<str>>(mut self, filename_prefix: T) -> Self {
-        self.filename_prefix = filename_prefix.as_ref().to_owned();
-        self
-    }
-
-    /// Range for the rotating index of log files.
-    pub fn rotate_range(mut self, rotate_range: usize) -> Self {
-        self.rotate_range = rotate_range;
-        self
-    }
-
-    /// Directory for log file.
-    pub fn log_path<T: AsRef<Path>>(mut self, log_path: T) -> Self {
-        self.log_path = log_path.as_ref().to_owned();
-        self
-    }
-
-    /// Buffer size.
-    pub fn buffer_size(mut self, buffer_size: usize) -> Self {
-        self.buffer_size = buffer_size;
-        self
-    }
-
-    /// Max file size:
-    pub fn file_size(mut self, file_size: usize) -> Self {
-        self.file_size = file_size;
-        self
-    }
+    // Setter methods of each field.
+    consuming_builder_field!(runtime_handle, Handle, Some);
+    consuming_builder_field!(filename_prefix, String);
+    consuming_builder_field!(rotate_range, usize);
+    consuming_builder_field!(log_path, PathBuf);
+    consuming_builder_field!(buffer_size, usize);
+    consuming_builder_field!(file_size, usize);
 
     /// Builds PcapngUciLoggerFactory
     pub fn build(self) -> Option<PcapngUciLoggerFactory> {
@@ -422,14 +395,11 @@ impl BufferedFile {
 
     /// Clears buffer.
     fn flush_buffer(&mut self) -> Option<()> {
-        match self.file.write(&self.buffer) {
-            Ok(write_size) => {
-                self.written_size += write_size;
-                self.buffer.clear();
-                Some(())
-            }
-            Err(_) => None,
-        }
+        self.file.write_all(&self.buffer).ok()?;
+        self.written_size += self.buffer.len();
+        self.buffer.clear();
+
+        self.file.flush().ok()
     }
 }
 
@@ -487,8 +457,8 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
@@ -524,8 +494,8 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_140 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(140)
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
@@ -578,8 +548,8 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_144 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(144)
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
@@ -624,8 +594,8 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_96 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(96) // Fails logging, as metadata takes 100
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
