@@ -23,8 +23,8 @@ use crate::uci::command::UciCommand;
 //use crate::uci::error::{Error, Result};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
-    DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
+    AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, ControleesV2, CoreSetConfigResponse,
+    CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
     RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
@@ -34,7 +34,7 @@ use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
-use crate::utils::PinSleep;
+use crate::utils::{clean_mpsc_receiver, PinSleep};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -100,6 +100,12 @@ pub(crate) trait UciManager: 'static + Send + Clone {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
+    ) -> Result<()>;
+    async fn session_update_controller_multicast_list_v2(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
     ) -> Result<()>;
     async fn range_start(&mut self, session_id: SessionId) -> Result<()>;
     async fn range_stop(&mut self, session_id: SessionId) -> Result<()>;
@@ -331,6 +337,30 @@ impl UciManager for UciManagerImpl {
         }
         let cmd =
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn session_update_controller_multicast_list_v2(
+        &mut self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    ) -> Result<()> {
+        let controlees_len = match controlees {
+            ControleesV2::NoSessionKey(ref controlee_vec) => controlee_vec.len(),
+            ControleesV2::ShortSessionKey(ref controlee_vec) => controlee_vec.len(),
+            ControleesV2::LongSessionKey(ref controlee_vec) => controlee_vec.len(),
+        };
+        if !(1..=8).contains(&controlees_len) {
+            warn!("Number of controlees should be between 1 to 8");
+            return Err(Error::BadParameters);
+        }
+        let cmd =
+            UciCommand::SessionUpdateControllerMulticastListV2 { session_id, action, controlees };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
@@ -705,6 +735,13 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     }
 }
 
+impl<T: UciHal, U: UciLogger> Drop for UciManagerActor<T, U> {
+    fn drop(&mut self) {
+        // mpsc receiver is about to be dropped. Clean shutdown the mpsc message.
+        clean_mpsc_receiver(&mut self.packet_receiver);
+    }
+}
+
 struct Retryer {
     cmd: UciCommand,
     result_sender: oneshot::Sender<Result<UciResponse>>,
@@ -741,7 +778,10 @@ mod tests {
     use super::*;
 
     use bytes::Bytes;
-    use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
+    use uwb_uci_packets::{
+        Controlee_V2_0_0_Byte_Version, MessageControl, SessionGetCountCmdBuilder,
+        SessionGetCountRspBuilder,
+    };
 
     use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
@@ -1059,8 +1099,7 @@ mod tests {
     #[tokio::test]
     async fn test_session_set_app_config_ok() {
         let session_id = 0x123;
-        let config_tlv =
-            AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let config_tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
         let config_tlv_clone = config_tlv.clone();
 
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
@@ -1093,7 +1132,7 @@ mod tests {
     async fn test_session_get_app_config_ok() {
         let session_id = 0x123;
         let config_id = AppConfigTlvType::DeviceType;
-        let tlv = AppConfigTlv { cfg_id: AppConfigTlvType::DeviceType, v: vec![0x12, 0x34, 0x56] };
+        let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
         let tlv_clone = tlv.clone();
 
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
@@ -1101,7 +1140,7 @@ mod tests {
                 let cmd = UciCommand::SessionGetAppConfig { session_id, app_cfg: vec![config_id] };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
                     status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone],
+                    tlvs: vec![tlv_clone.into_inner()],
                 });
 
                 hal.expected_send_command(cmd, resp, Ok(()));
@@ -1195,6 +1234,48 @@ mod tests {
 
         let result = uci_manager
             .session_update_controller_multicast_list(session_id, action, vec![controlee])
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_v2_ok() {
+        let session_id = 0x123;
+        let action = UpdateMulticastListAction::AddControlee;
+        let controlee = Controlee_V2_0_0_Byte_Version {
+            short_address: 0x4567,
+            subsession_id: 0x90ab,
+            message_control: MessageControl::SubSessionKeyNotConfigured,
+        };
+        let controlee_clone = controlee.clone();
+
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let cmd = UciCommand::SessionUpdateControllerMulticastListV2 {
+                    session_id,
+                    action,
+                    controlees: ControleesV2::NoSessionKey(vec![controlee_clone]),
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_update_controller_multicast_list_v2(
+                session_id,
+                action,
+                ControleesV2::NoSessionKey(vec![controlee]),
+            )
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);

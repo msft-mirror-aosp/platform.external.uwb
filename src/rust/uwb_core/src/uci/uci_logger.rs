@@ -21,7 +21,7 @@ use uwb_uci_packets::{
     UciPacketPacket, UciResponseChild, UciResponsePacket,
 };
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::uci::UciCommand;
 
 /// UCI Log mode.
@@ -33,6 +33,19 @@ pub enum UciLoggerMode {
     Unfiltered,
     /// Logs uci packets, with PII filtered.
     Filtered,
+}
+
+impl TryFrom<String> for UciLoggerMode {
+    type Error = Error;
+    /// Parse log mode from string.
+    fn try_from(log_mode_string: String) -> Result<UciLoggerMode> {
+        match log_mode_string.as_str() {
+            "disabled" => Ok(UciLoggerMode::Disabled),
+            "unfiltered" => Ok(UciLoggerMode::Unfiltered),
+            "filtered" => Ok(UciLoggerMode::Filtered),
+            _ => Err(Error::BadParameters),
+        }
+    }
 }
 
 /// Trait definition for the thread-safe uci logger
@@ -48,7 +61,7 @@ pub trait UciLogger: 'static + Send + Sync {
 fn filter_tlv(mut tlv: AppConfigTlv) -> AppConfigTlv {
     if tlv.cfg_id == AppConfigTlvType::VendorId || tlv.cfg_id == AppConfigTlvType::StaticStsIv {
         tlv.v = vec![0; tlv.v.len()];
-    };
+    }
     tlv
 }
 
@@ -172,9 +185,9 @@ mod tests {
             session_id: 0x1,
             config_tlvs: vec![
                 // Filtered to 0-filled of same length
-                AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0, 1, 2] },
+                AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0, 1, 2] }.into(),
                 // Invariant after filter
-                AppConfigTlv { cfg_id: AppConfigTlvType::AoaResultReq, v: vec![0, 1, 2, 3] },
+                AppConfigTlv { cfg_id: AppConfigTlvType::AoaResultReq, v: vec![0, 1, 2, 3] }.into(),
             ],
         };
         let (log_sender, mut log_receiver) = mpsc::unbounded_channel::<UciLogEvent>();
