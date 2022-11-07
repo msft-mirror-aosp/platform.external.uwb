@@ -136,7 +136,7 @@ struct LogWriterActor {
     /// Maps chip id to interface id. The content follows the content of the component in
     /// PcapngUciLoggerFactory with the same name.
     chip_interface_id_map: Vec<String>,
-    current_file: BufferedFile,
+    current_file: Option<BufferedFile>,
     file_factory: FileFactory,
     file_size_limit: usize,
     log_receiver: mpsc::UnboundedReceiver<PcapngLoggerMessage>,
@@ -145,14 +145,23 @@ struct LogWriterActor {
 impl LogWriterActor {
     /// write data to file.
     fn write_once(&mut self, data: Vec<u8>) -> Option<()> {
-        if data.len() + self.current_file.file_size() > self.file_size_limit {
-            self.current_file = self
-                .file_factory
-                .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?;
+        // Create new file if the file is not created, or does not fit incoming data:
+        if self.current_file.is_none()
+            || data.len() + self.current_file.as_ref().unwrap().file_size() > self.file_size_limit
+        {
+            self.current_file = Some(
+                self.file_factory
+                    .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?,
+            );
         }
-        self.current_file.buffered_write(data)
+        self.current_file.as_mut().unwrap().buffered_write(data)
     }
 
+    /// Handle single new chip: stores chip in chip_interface_id_map and:
+    ///
+    /// a. Nothing extra if current_file is not created yet.
+    /// b. If current file exists:
+    ///    Insert IDB in current file if it fits, otherwise switch to new file.
     fn handle_new_chip(&mut self, chip_id: String, interface_id: u32) -> Option<()> {
         if self.chip_interface_id_map.contains(&chip_id)
             || self.chip_interface_id_map.len() as u32 != interface_id
@@ -164,17 +173,20 @@ impl LogWriterActor {
             return None;
         }
         self.chip_interface_id_map.push(chip_id.clone());
-        // Handle single new chip:
-        // Insert IDB in current file if it fits, otherwise switch to new file.
-        let idb_data = into_interface_description_block(chip_id)?;
-        if idb_data.len() + self.current_file.file_size() <= self.file_size_limit {
-            self.current_file.buffered_write(idb_data)
-        } else {
-            self.current_file = self
-                .file_factory
-                .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?;
-            Some(())
+
+        if let Some(current_file) = &mut self.current_file {
+            let idb_data = into_interface_description_block(chip_id)?;
+            if idb_data.len() + current_file.file_size() <= self.file_size_limit {
+                current_file.buffered_write(idb_data)?;
+            } else {
+                self.current_file =
+                    Some(self.file_factory.build_file_with_metadata(
+                        &self.chip_interface_id_map,
+                        self.file_size_limit,
+                    )?);
+            }
         }
+        Some(())
     }
 
     async fn run(&mut self) {
@@ -189,10 +201,17 @@ impl LogWriterActor {
                 }
                 Some(PcapngLoggerMessage::ByteStream(data)) => {
                     if self.write_once(data).is_none() {
-                        error!(
-                            "UCI log: failed writting packet to log file {:?}",
-                            self.current_file.file
-                        );
+                        match &self.current_file {
+                            Some(current_file) => {
+                                error!(
+                                    "UCI log: failed writting packet to log file {:?}",
+                                    current_file.file
+                                );
+                            }
+                            None => {
+                                error!("UCI log: failed writting packet to log file: no log file.");
+                            }
+                        }
                         break;
                     }
                 }
@@ -216,17 +235,15 @@ impl LogWriter {
     ///
     /// runtime_handle must be a Handle to a multithread runtime that outlives LogWriterActor
     fn new(
-        mut file_factory: FileFactory,
+        file_factory: FileFactory,
         file_size_limit: usize,
         runtime_handle: Handle,
     ) -> Option<Self> {
         let chip_interface_id_map = Vec::new();
-        let current_file =
-            file_factory.build_file_with_metadata(&chip_interface_id_map, file_size_limit)?;
         let (log_sender, log_receiver) = mpsc::unbounded_channel();
         let mut log_writer_actor = LogWriterActor {
             chip_interface_id_map,
-            current_file,
+            current_file: None,
             file_factory,
             file_size_limit,
             log_receiver,
@@ -448,6 +465,28 @@ mod tests {
             block_info.push((block_type, block_length));
         }
         Some(block_info)
+    }
+
+    #[test]
+    fn test_no_file_write() {
+        let dir = tempdir().unwrap();
+        {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+            let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
+                .buffer_size(1024)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
+                .runtime_handle(runtime.handle().to_owned())
+                .build()
+                .unwrap();
+            let _logger_0 = file_manager.build_logger("logger 0").unwrap();
+            let _logger_1 = file_manager.build_logger("logger 1").unwrap();
+            // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
+            thread::sleep(time::Duration::from_millis(10));
+        }
+        // Expect no log file created as no packet is received.
+        let log_path = dir.as_ref().to_owned().join("log.pcapng");
+        assert!(fs::read(&log_path).is_err());
     }
 
     #[test]
