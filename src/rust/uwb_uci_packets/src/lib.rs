@@ -19,10 +19,8 @@
 #![allow(unused)]
 #![allow(missing_docs)]
 
-use std::cmp;
-
 use log::error;
-use zeroize::Zeroize;
+use std::cmp;
 
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
 
@@ -293,16 +291,13 @@ pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) ->
 }
 
 /// Generate the V1 SessionUpdateControllerMulticastListCmd packet.
-///
 /// Workaround for handling the non-compatible command.
-/// Size check omitted and UCI spec compliancy is up to the caller of the method.
 pub fn build_session_update_controller_multicast_list_cmd_v1(
     session_id: u32,
     action: UpdateMulticastListAction,
     controlees: Vec<Controlee>,
 ) -> SessionUpdateControllerMulticastListCmdPacket {
     let mut controlees_buf = BytesMut::new();
-    controlees_buf.extend_from_slice(&(controlees.len() as u8).to_le_bytes());
     for controlee in controlees {
         controlees_buf.extend_from_slice(&write_controlee(&controlee));
     }
@@ -315,9 +310,7 @@ pub fn build_session_update_controller_multicast_list_cmd_v1(
 }
 
 /// Generate the V2 SessionUpdateControllerMulticastListCmd packet.
-///
 /// Workaround for handling the non-compatible command.
-/// Size check omitted and UCI spec compliancy is up to the caller of the method.
 pub fn build_session_update_controller_multicast_list_cmd_v2(
     session_id: u32,
     action: UpdateMulticastListAction,
@@ -326,19 +319,16 @@ pub fn build_session_update_controller_multicast_list_cmd_v2(
     let mut controlees_buf = BytesMut::new();
     match controlees {
         ControleesV2::NoSessionKey(controlee_v2) => {
-            controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
             for controlee in controlee_v2 {
                 controlees_buf.extend_from_slice(&write_controlee_2_0_0byte(&controlee));
             }
         }
         ControleesV2::ShortSessionKey(controlee_v2) => {
-            controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
             for controlee in controlee_v2 {
                 controlees_buf.extend_from_slice(&write_controlee_2_0_16byte(&controlee));
             }
         }
         ControleesV2::LongSessionKey(controlee_v2) => {
-            controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
             for controlee in controlee_v2 {
                 controlees_buf.extend_from_slice(&write_controlee_2_0_32byte(&controlee));
             }
@@ -350,15 +340,6 @@ pub fn build_session_update_controller_multicast_list_cmd_v2(
         payload: Some(controlees_buf.freeze()),
     }
     .build()
-}
-
-impl Drop for AppConfigTlv {
-    fn drop(&mut self) {
-        if self.cfg_id == AppConfigTlvType::VendorId || self.cfg_id == AppConfigTlvType::StaticStsIv
-        {
-            self.v.zeroize();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -410,27 +391,5 @@ mod tests {
         let bytes = write_controlee(&controlee);
         let parsed_controlee = Controlee::parse(&bytes).unwrap();
         assert_eq!(controlee, parsed_controlee);
-    }
-
-    #[test]
-    fn test_build_multicast_update_v1_packet() {
-        let controlee = Controlee { short_address: 0x1234, subsession_id: 0x1324_3546 };
-        let packet: UciPacketPacket = build_session_update_controller_multicast_list_cmd_v1(
-            0x1425_3647,
-            UpdateMulticastListAction::AddControlee,
-            vec![controlee; 1],
-        )
-        .into();
-        let packet_fragments: Vec<UciPacketHalPacket> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
-        assert_eq!(
-            uci_packet,
-            vec![
-                0x21, 0x07, 0x00, 0x0c, // 2(packet info), RFU, payload length(12)
-                0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
-                0x00, 0x01, 0x34, 0x12, // action, # controlee, 2(short address (LE))
-                0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
-            ]
-        );
     }
 }

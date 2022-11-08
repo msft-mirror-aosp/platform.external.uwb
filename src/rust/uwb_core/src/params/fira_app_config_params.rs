@@ -18,8 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use log::warn;
+
 use num_derive::{FromPrimitive, ToPrimitive};
-use zeroize::Zeroize;
 
 use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
 use crate::params::uci_packets::{AppConfigTlvType, SessionState, SubSessionId};
@@ -186,14 +186,6 @@ impl std::fmt::Debug for FiraAppConfigParams {
                 &self.number_of_aoa_elevation_measurements,
             )
             .finish()
-    }
-}
-
-impl Drop for FiraAppConfigParams {
-    fn drop(&mut self) {
-        self.vendor_id.zeroize();
-        self.static_sts_iv.zeroize();
-        self.sub_session_id.zeroize();
     }
 }
 

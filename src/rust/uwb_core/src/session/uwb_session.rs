@@ -218,7 +218,7 @@ impl<T: UciManager> UwbSessionActor<T> {
                         })?;
                     let config_map = HashMap::from_iter(tlvs.into_iter().map(|tlv| {
                         let tlv = tlv.into_inner();
-                        (tlv.cfg_id, tlv.v.clone())
+                        (tlv.cfg_id, tlv.v)
                     }));
                     let params = CccStartedAppConfigParams::from_config_map(config_map)
                         .ok_or_else(|| {
