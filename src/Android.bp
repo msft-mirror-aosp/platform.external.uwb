@@ -104,6 +104,7 @@ rust_defaults {
         "liblog_rust",
         "libnum_traits",
         "libthiserror",
+        "libzeroize",
     ],
     host_supported: true,
 }
@@ -179,6 +180,7 @@ rust_defaults {
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
+        "libzeroize",
     ],
     proc_macros: [
         "libasync_trait",
