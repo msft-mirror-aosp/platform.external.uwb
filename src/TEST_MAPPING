@@ -10,6 +10,9 @@
     },
     {
       "name": "libuwb_uci_packet_tests"
+    },
+    {
+      "name": "libuwb_core_tests"
     }
   ]
 }
