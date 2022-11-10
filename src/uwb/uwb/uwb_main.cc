@@ -194,6 +194,10 @@ void uwb_main_handle_hal_evt(tUWB_HAL_EVT_MSG* p_msg) {
       }
       break;
 
+    case HAL_UWB_INIT_CPLT_EVT: /* only for failure case */
+      uwb_set_state(UWB_STATE_NONE);
+      break;
+
     case HAL_UWB_ERROR_EVT:
       switch (p_msg->status) {
         case HAL_UWB_STATUS_ERR_TRANSPORT:
@@ -328,6 +332,10 @@ static void uwb_main_hal_cback(uint8_t event, tUWB_STATUS status) {
           uwb_main_post_hal_evt(event, status);
         }
       }
+      break;
+
+    case HAL_UWB_INIT_CPLT_EVT:
+     UCI_TRACE_D("uwb_main_hal_cback HAL Init complete %x", event);
       break;
 
     case HAL_UWB_CLOSE_CPLT_EVT:
