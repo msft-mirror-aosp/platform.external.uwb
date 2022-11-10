@@ -1057,6 +1057,7 @@ void uwb_ucif_get_range_count_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
   tUWB_RESPONSE evt_data;
   tUWB_RESPONSE_EVT evt = 0;
   tUWB_GET_RANGE_COUNT_REVT get_count;
+  get_count.count = 0x00;
   uint8_t* p = p_buf;
 
   if (len == 0) {
