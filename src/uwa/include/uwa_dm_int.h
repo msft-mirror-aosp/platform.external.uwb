@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -67,6 +67,8 @@ enum {
   UWA_DM_API_TEST_STOP_SESSION_EVT,
   /* UWB Data packet events */
   UWA_DM_API_SEND_DATA_FRAME_EVT,
+  UWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_EVT,
+  UWA_DM_API_UPDATE_ACTIVE_RNG_INDEX_EVT,
   UWA_DM_MAX_EVT
 };
 
@@ -193,6 +195,15 @@ typedef struct {
   uint32_t subsession_id_list[MAX_NUM_CONTROLLEES];
 } tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST;
 
+/* data type for UWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_EVT */
+typedef struct {
+  UWB_HDR hdr;
+  uint32_t session_id;
+  uint8_t rr_rdm_count;
+  uint8_t length;
+  uint8_t* p_data;
+} tUWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST;
+
 /* data type for UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
 typedef struct {
   UWB_HDR hdr;
@@ -219,6 +230,16 @@ typedef struct {
   uint16_t data_len;
   uint8_t* p_data;
 } tUWA_DM_API_SEND_DATA_FRAME;
+
+/* data type for UWA_DM_API_UPDATE_ACTIVE_RNG_INDEX_EVT */
+typedef struct {
+  UWB_HDR hdr;
+  uint8_t dlTdoaRole;
+  uint32_t session_id;
+  uint8_t number_of_rng_index;
+  uint8_t length;
+  uint8_t* p_rng_index;
+} tUWA_DM_API_UPDATE_ACTIVE_RNG_INDEX;
 
 /* data type for UWA_DM_API_TEST_SET_CONFIG_EVT */
 typedef struct {
@@ -301,6 +322,10 @@ typedef union {
       sUwb_loopback; /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT  */
   tUWA_DM_API_SESSION_UPDATE_MULTICAST_LIST
       sMulticast_list; /* UWA_DM_API_SESSION_UPDATE_MULTICAST_LIST_EVT */
+  tUWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST
+      sConfigure_dt_anchor_rr_rdm_list; /* UWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_EVT */
+  tUWA_DM_API_UPDATE_ACTIVE_RNG_INDEX
+      update_rng_index; /* UWA_DM_API_UPDATE_ACTIVE_RNG_INDEX_EVT */
   tUWA_DM_API_SET_COUNTRY_CODE
       sCountryCode; /* UWA_DM_API_SET_COUNTRY_CODE_EVT */
   tUWA_DM_API_SEND_BLINK_DATA
@@ -356,6 +381,8 @@ bool uwa_dm_act_multicast_list_update(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_set_country_code(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_send_blink_data(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_send_data_frame(tUWA_DM_MSG* p_data);
+bool uwa_dm_act_configure_dt_anchor_rr_rdm(tUWA_DM_MSG* p_data);
+bool uwa_dm_act_update_active_range_round_index(tUWA_DM_MSG* p_data);
 
 /* Action function prototypes for all RF test functionality */
 bool uwa_dm_act_test_set_config(tUWA_DM_MSG* p_data);

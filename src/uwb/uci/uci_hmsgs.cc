@@ -549,6 +549,41 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
 
 /*******************************************************************************
 **
+** Function         uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd
+**
+** Description      compose and send SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_CMD command
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd(uint32_t session_id, uint8_t rr_rdm_count, uint8_t length, uint8_t* data) {
+  UWB_HDR* p;
+  uint8_t* pp;
+  uint16_t total_size = 0;
+
+  total_size = sizeof(session_id) + sizeof(rr_rdm_count) + length;
+  if ((p = UCI_GET_CMD_BUF(total_size)) == NULL) return (UCI_STATUS_FAILED);
+  p->event = BT_EVT_TO_UWB_UCI;
+  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + total_size);
+
+  p->offset = UCI_MSG_OFFSET_SIZE;
+  p->layer_specific = 0;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_SESSION_MANAGE);
+  UCI_MSG_BLD_HDR1(pp, UCI_MSG_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST);
+  UINT8_TO_STREAM(pp, 0x00);
+  UINT8_TO_STREAM(pp, total_size);
+  UINT32_TO_STREAM(pp, session_id);
+  UINT8_TO_STREAM(pp, rr_rdm_count);
+  ARRAY_TO_STREAM(pp, data, length);
+
+  uwb_ucif_send_cmd(p);
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
 ** Function         uci_snd_set_country_code_cmd
 **
 ** Description      compose and send SET_COUNTRY_CODE_CMD command
@@ -946,5 +981,52 @@ uint8_t uci_send_data_frame(uint32_t session_id, uint8_t* p_addr, uint8_t dest_e
   }
   evt_data.status = UCI_STATUS_OK;
   (*uwb_cb.p_resp_cback)(UWB_SEND_DATA_STATUS_EVT, &evt_data);
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
+** Function         uci_send_range_round_index_update_cmd
+**
+** Description      compose and send range round index update command
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_send_range_round_index_update_cmd(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_active_rngIndex,
+                                 uint8_t rng_round_index_len, uint8_t* p_rng_round_index) {
+  UWB_HDR* p;
+  uint8_t* pp;
+  uint16_t total_size;
+  uint8_t oid;
+
+  total_size = sizeof(session_id) + sizeof(number_of_active_rngIndex) + rng_round_index_len;
+
+  if ((p = UCI_GET_CMD_BUF(total_size)) == NULL) return (UCI_STATUS_FAILED);
+
+  p->event = BT_EVT_TO_UWB_UCI;
+
+  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + total_size);
+
+  p->offset = UCI_MSG_OFFSET_SIZE;
+  p->layer_specific = 0;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  if(dlTdoaRole == 0x00) {
+    oid = UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_ANCHOR;
+  } else {
+    oid = UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_TAG;
+  }
+
+  UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_SESSION_MANAGE);
+  UCI_MSG_BLD_HDR1(pp, oid);
+  UINT8_TO_STREAM(pp, 0x00);
+  UINT8_TO_STREAM(pp, total_size);
+
+  UINT32_TO_STREAM(pp, session_id);
+  UINT8_TO_STREAM(pp, number_of_active_rngIndex);
+  ARRAY_TO_STREAM(pp, p_rng_round_index, rng_round_index_len);
+
+  uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
 }

@@ -144,7 +144,11 @@ enum {
   UWB_VENDOR_SPECIFIC_UCI_NTF_EVT,   /* 34 Proprietary ntf */
   UWB_SEND_DATA_STATUS_EVT,   /* 35 UWB data reception status by UWBS   */
   UWB_DATA_TRANSFER_STATUS_NTF_REVT, /* 36 UWB data transfer status over UWB   */
-  UWB_DATA_RECV_REVT         /* 37  received data over UWB */
+  UWB_DATA_RECV_REVT,         /* 37  received data over UWB */
+  UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT, /* 38 DL TDoA Configure DT Anchor
+                                                     RR RDM List Response */
+  UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT /* 39 DL-TDoA Update Ranging Index
+                                                     status Response */
 };
 typedef uint16_t tUWB_RESPONSE_EVT;
 
@@ -295,6 +299,29 @@ typedef struct {
 typedef struct {
   uint8_t mac_addr[8];
   uint8_t status;
+  uint8_t message_type;
+  uint16_t message_control;
+  uint16_t block_index;
+  uint8_t round_index;
+  uint8_t nLos;
+  uint16_t aoa_azimuth;
+  uint8_t aoa_azimuth_FOM;
+  uint16_t aoa_elevation;
+  uint8_t aoa_elevation_FOM;
+  uint8_t txTimeStamp[8];
+  uint8_t rxTimeStamp[8];
+  uint16_t cfo_anchor;
+  uint16_t cfo;
+  uint32_t initiator_reply_time;
+  uint32_t responder_reply_time;
+  uint16_t initiator_responder_TOF;
+  uint8_t anchor_location[12];
+  uint8_t active_ranging_round[15];
+} tUWB_DLTDOA_RANGING_MEASR
+
+typedef struct {
+  uint8_t mac_addr[8];
+  uint8_t status;
   uint8_t nLos;
   uint8_t frame_seq_num;
   uint16_t block_index;
@@ -307,8 +334,10 @@ typedef struct {
 typedef union {
   tUWB_TWR_RANGING_MEASR twr_range_measr[MAX_NUM_RESPONDERS];
   tUWB_TDoA_RANGING_MEASR tdoa_range_measr[MAX_NUM_OF_TDOA_MEASURES];
+  tUWB_DLTDOA_RANGING_MEASR dltdoa_range_measr[MAX_NUM_OF_DLTDOA_MEASURES];
   tUWB_OWR_WITH_AOA_RANGING_MEASR owr_with_aoa_range_measr;
 } tUWB_RANGING_MEASR;
+
 
 /* the data type associated with UWB_RANGE_DATA_REVT */
 typedef struct {
@@ -386,6 +415,21 @@ typedef struct {
   uint8_t data[UCI_MAX_DATA_SIZE];
 }tUWB_RX_DATA_REVT;
 
+
+/* the data type associated with UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT */
+typedef struct {
+  uint8_t status;
+  uint16_t len;
+  uint8_t rng_round_indexs[255];
+}tUWB_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_REVT;
+
+/* the data type associated with UWB_DATA_RECV_REVT */
+typedef struct {
+  uint8_t status;
+  uint16_t len;
+  uint8_t rng_round_index[255];
+}tUWB_UPDATE_RANGE_ROUND_INDEX_REVT;
+
 typedef struct {
   tUWB_STATUS status; /* The event status.                */
 } tUWB_SET_COUNTRY_CODE_REVT;
@@ -414,6 +458,8 @@ typedef union {
   tUWB_VENDOR_SPECIFIC_REVT vendor_specific_ntf;
   tUWB_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status;
   tUWB_RX_DATA_REVT sRcvd_data;
+  tUWB_UPDATE_RANGE_ROUND_INDEX_REVT sRange_round_index;
+  tUWB_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_REVT sConfigure_dt_anchor_rr_rdm_list;
 } tUWB_RESPONSE;
 
 /* Data types associated with all RF test Events */
@@ -851,6 +897,40 @@ extern tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback);
 tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
                          uint8_t dest_end_point, uint8_t sequence_num,
                          uint16_t data_len, uint8_t* p_data);
+/*******************************************************************************
+**
+** Function         UWB_ConfigureDTAnchorForRrRdmList
+**
+** Description      This function is called to Configure DT anchor RR RDM List.
+**
+** Parameter        session_id  - Session id To which Rangng index need to update
+**                  rr_rdm_count - Number Of rr_rdm
+**                  length - length of data buffer
+**                  p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+extern tUWB_STATUS UWB_ConfigureDTAnchorForRrRdmList(uint32_t session_id, uint8_t rr_rdm_count,
+                                                     uint8_t length, uint8_t* p_data);
+
+/*******************************************************************************
+**
+** Function         UWB_UpdateRangingRoundIndex
+**
+** Description      This function is called to Update Active Ranging Index.
+**
+** Parameter        dlTdoaRole - 0x00(Anchor) or 0x01(Tag)
+**                  session_id  - Session id To which Rangng index need to update
+**                  number_of_active_rngIndex - NUmber Of Ranging index to be updated
+**                  rng_round_index_len - Range Round Index Len
+**                  p_rng_round_index  -  pointer to Ranging Index buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_UpdateRangingRoundIndex(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_rng_index,
+                                    uint8_t rng_round_index_len, uint8_t* p_rng_round_index);
 
 /*******************************************************************************
 **
