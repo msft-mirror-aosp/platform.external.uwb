@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, error, warn};
+use num_traits::{FromPrimitive, ToPrimitive};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::uci::command::UciCommand;
@@ -24,9 +25,10 @@ use crate::uci::command::UciCommand;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, ControleesV2, CoreSetConfigResponse,
-    CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
-    RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
+    CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, GroupId,
+    MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
+    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UciPacketPacket,
+    UpdateMulticastListAction,
 };
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
@@ -55,7 +57,7 @@ pub(crate) trait UciManager: 'static + Send + Sync + Clone {
     );
     async fn set_vendor_notification_sender(
         &mut self,
-        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+        vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     );
 
     // Open the UCI HAL.
@@ -118,13 +120,8 @@ pub(crate) trait UciManager: 'static + Send + Sync + Clone {
     async fn android_set_country_code(&self, country_code: CountryCode) -> Result<()>;
     async fn android_get_power_stats(&self) -> Result<PowerStats>;
 
-    // Send a raw vendor command.
-    async fn raw_vendor_cmd(
-        &self,
-        gid: u32,
-        oid: u32,
-        payload: Vec<u8>,
-    ) -> Result<RawVendorMessage>;
+    // Send a raw uci command.
+    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -181,7 +178,7 @@ impl UciManager for UciManagerImpl {
     }
     async fn set_vendor_notification_sender(
         &mut self,
-        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+        vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     ) {
         let _ =
             self.send_cmd(UciManagerCmd::SetVendorNotificationSender { vendor_notf_sender }).await;
@@ -422,18 +419,24 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn raw_vendor_cmd(
-        &self,
-        gid: u32,
-        oid: u32,
-        payload: Vec<u8>,
-    ) -> Result<RawVendorMessage> {
-        let cmd = UciCommand::RawVendorCmd { gid, oid, payload };
+    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
+        let cmd = UciCommand::RawUciCmd { gid, oid, payload };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::RawVendorCmd(resp)) => resp,
+            Ok(UciResponse::RawUciCmd(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
+    }
+}
+
+struct RawCmdSignature {
+    gid: GroupId,
+    oid: u8,
+}
+
+impl RawCmdSignature {
+    pub fn is_same_signature(&self, packet: &UciPacketPacket) -> bool {
+        packet.get_group_id() == self.gid && packet.get_opcode() == self.oid
     }
 }
 
@@ -466,10 +469,14 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // command.
     wait_resp_timeout: PinSleep,
 
+    // Used to identify if response corseponds to the last vendor command, if so return
+    // a raw packet as a response to the sender.
+    last_raw_cmd: Option<RawCmdSignature>,
+
     // Send the notifications to the caller of UciManager.
     core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
-    vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -493,6 +500,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             wait_device_status_timeout: PinSleep::new(Duration::MAX),
             retryer: None,
             wait_resp_timeout: PinSleep::new(Duration::MAX),
+            last_raw_cmd: None,
             core_notf_sender: mpsc::unbounded_channel().0,
             session_notf_sender: mpsc::unbounded_channel().0,
             vendor_notf_sender: mpsc::unbounded_channel().0,
@@ -526,6 +534,22 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         Some(packet) => {
                             if let Some(packet) = self.defrager.defragment_packet(&packet) {
                                 self.logger.log_uci_response_or_notification(&packet);
+
+                                // Handle response to raw UCI cmd. We want to send it back as
+                                // raw UCI message instead of standard response message.
+                                if let Some(raw_cmd) = &self.last_raw_cmd {
+                                    if packet.get_message_type() == MessageType::Response {
+                                        let resp = if raw_cmd.is_same_signature(&packet) {
+                                            UciResponse::RawUciCmd(Ok(RawUciMessage::from(packet)))
+                                        } else {
+                                            UciResponse::RawUciCmd(Err(Error::Unknown))
+                                        };
+                                        self.handle_response(resp).await;
+                                        self.last_raw_cmd = None;
+                                        continue;
+                                    }
+                                }
+
                                 match packet.try_into() {
                                     Ok(UciMessage::Response(resp)) => {
                                         self.handle_response(resp).await;
@@ -636,6 +660,20 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
             UciManagerCmd::SendUciCommand { cmd } => {
                 debug_assert!(self.retryer.is_none());
+
+                // Remember that this command is a raw UCI command, we'll use this later
+                // to send a raw UCI response.
+                if let UciCommand::RawUciCmd { gid, oid, payload: _ } = cmd.clone() {
+                    let gid = GroupId::from_u32(gid);
+                    let oid = oid.to_u8();
+                    if oid == None || gid == None {
+                        let _ = result_sender.send(Err(Error::BadParameters));
+                        return;
+                    }
+                    self.last_raw_cmd =
+                        Some(RawCmdSignature { gid: gid.unwrap(), oid: oid.unwrap() });
+                }
+
                 self.retryer = Some(Retryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
                 self.retry_command().await;
             }
@@ -734,6 +772,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     fn on_hal_closed(&mut self) {
         self.is_hal_opened = false;
         self.packet_receiver = mpsc::unbounded_channel().1;
+        self.last_raw_cmd = None;
     }
 
     fn is_waiting_resp(&self) -> bool {
@@ -776,7 +815,7 @@ enum UciManagerCmd {
     SetLoggerMode { logger_mode: UciLoggerMode },
     SetCoreNotificationSender { core_notf_sender: mpsc::UnboundedSender<CoreNotification> },
     SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
-    SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage> },
+    SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage> },
     OpenHal,
     CloseHal { force: bool },
     SendUciCommand { cmd: UciCommand },
@@ -792,7 +831,7 @@ mod tests {
         SessionGetCountRspBuilder,
     };
 
-    use crate::params::uci_packets::{CapTlvType, StatusCode};
+    use crate::params::uci_packets::{AppConfigStatus, AppConfigTlvType, CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
     use crate::uci::uci_logger::NopUciLogger;
@@ -1449,8 +1488,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_raw_vendor_cmd_ok() {
-        let gid = 0xF;
+    async fn test_raw_uci_cmd_vendor_gid_ok() {
+        let gid = 0xF; // Vendor reserved GID.
         let oid = 0x3;
         let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
         let cmd_payload_clone = cmd_payload.clone();
@@ -1459,7 +1498,7 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RawVendorCmd { gid, oid, payload: cmd_payload_clone };
+                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
                 let resp = into_uci_hal_packets(uwb_uci_packets::UciVendor_F_ResponseBuilder {
                     opcode: oid as u8,
                     payload: Some(Bytes::from(resp_payload_clone)),
@@ -1472,8 +1511,77 @@ mod tests {
         )
         .await;
 
-        let expected_result = RawVendorMessage { gid, oid, payload: resp_payload };
-        let result = uci_manager.raw_vendor_cmd(gid, oid, cmd_payload).await.unwrap();
+        let expected_result = RawUciMessage { gid, oid, payload: resp_payload };
+        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_raw_uci_cmd_fira_gid_ok() {
+        let gid = 0x1; // SESSION_CONFIG GID.
+        let oid = 0x3;
+        let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
+        let cmd_payload_clone = cmd_payload.clone();
+        let resp_payload = vec![0x00, 0x01, 0x07, 0x00];
+        let status = StatusCode::UciStatusOk;
+        let cfg_id = AppConfigTlvType::DstMacAddress;
+        let app_config = AppConfigStatus { cfg_id, status };
+        let cfg_status = vec![app_config];
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
+                    status,
+                    cfg_status,
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let expected_result = RawUciMessage { gid, oid, payload: resp_payload };
+        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_raw_uci_cmd_wrong_gid() {
+        // Send a raw UCI command with CORE GID, but UCI HAL returns a UCI response
+        // with SESSION_CONFIG GID.
+        // In this case, UciManager should return Error::Unknown.
+
+        let gid = 0x0; // CORE GID.
+        let oid = 0x1;
+        let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
+        let cmd_payload_clone = cmd_payload.clone();
+        let status = StatusCode::UciStatusOk;
+        let cfg_id = AppConfigTlvType::DstMacAddress;
+        let app_config = AppConfigStatus { cfg_id, status };
+        let cfg_status = vec![app_config];
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
+                    status,
+                    cfg_status,
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let expected_result = Err(Error::Unknown);
+        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await;
         assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
