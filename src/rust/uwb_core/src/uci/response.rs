@@ -20,7 +20,8 @@ use num_traits::ToPrimitive;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse, StatusCode,
+    PowerStats, RawVendorMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, StatusCode,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -42,6 +43,7 @@ pub(super) enum UciResponse {
     SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
+    SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
     RangeStart(Result<()>),
     RangeStop(Result<()>),
     RangeGetRangingCount(Result<usize>),
@@ -66,6 +68,7 @@ impl UciResponse {
             Self::SessionUpdateControllerMulticastList(result) => {
                 Self::matches_result_retry(result)
             }
+            Self::SessionUpdateActiveRoundsDtTag(result) => Self::matches_result_retry(result),
             Self::RangeStart(result) => Self::matches_result_retry(result),
             Self::RangeStop(result) => Self::matches_result_retry(result),
             Self::RangeGetRangingCount(result) => Self::matches_result_retry(result),
@@ -164,6 +167,14 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
             SessionResponseChild::SessionUpdateControllerMulticastListRsp(evt) => {
                 Ok(UciResponse::SessionUpdateControllerMulticastList(status_code_to_result(
                     evt.get_status(),
+                )))
+            }
+            SessionResponseChild::SessionUpdateActiveRoundsDtTagRsp(evt) => {
+                Ok(UciResponse::SessionUpdateActiveRoundsDtTag(Ok(
+                    SessionUpdateActiveRoundsDtTagResponse {
+                        status: evt.get_status(),
+                        ranging_round_indexes: evt.get_ranging_round_indexes().to_vec(),
+                    },
                 )))
             }
             SessionResponseChild::SessionSetAppConfigRsp(evt) => {

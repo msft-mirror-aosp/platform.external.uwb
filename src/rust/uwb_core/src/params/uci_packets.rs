@@ -132,6 +132,15 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
+/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionUpdateActiveRoundsDtTagResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// Indexes of unsuccessful ranging rounds.
+    pub ranging_round_indexes: Vec<u8>,
+}
+
 /// The country code struct that contains 2 uppercase ASCII characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountryCode([u8; 2]);
