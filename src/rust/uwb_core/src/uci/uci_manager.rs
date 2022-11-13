@@ -158,7 +158,7 @@ impl UciManager for UciManagerImpl {
     async fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
         match self.send_cmd(UciManagerCmd::SetLoggerMode { logger_mode }).await {
             Ok(UciResponse::SetLoggerMode) => Ok(()),
-            Ok(_) => (Err(Error::Unknown)),
+            Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
