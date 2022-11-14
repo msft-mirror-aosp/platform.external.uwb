@@ -339,6 +339,11 @@ typedef union {
   tUWB_OWR_WITH_AOA_RANGING_MEASR owr_with_aoa_range_measr;
 } tUWB_RANGING_MEASR;
 
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWB_VENDOR_SPECIFIC_NTF;
 
 /* the data type associated with UWB_RANGE_DATA_REVT */
 typedef struct {
