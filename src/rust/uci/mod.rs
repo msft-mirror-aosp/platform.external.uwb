@@ -29,7 +29,7 @@ use arbitrary::Arbitrary;
 use log::{debug, error, info, warn};
 use std::future::Future;
 use std::option::Option;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::{select, task};
@@ -458,17 +458,20 @@ impl<T: EventManager> Driver<T> {
 pub trait Dispatcher {
     fn send_jni_command(&self, cmd: JNICommand) -> Result<()>;
     fn block_on_jni_command(&self, cmd: JNICommand) -> Result<UciResponse>;
-    fn wait_for_exit(&mut self) -> Result<()>;
-    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket>;
-    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>);
+    fn wait_for_exit(&self) -> Result<()>;
+    fn get_device_info(&self) -> Option<GetDeviceInfoRspPacket>;
+    fn set_device_info(&self, device_info: Option<GetDeviceInfoRspPacket>);
 }
 
 // Controller for sending tasks for the native thread to handle.
 pub struct DispatcherImpl {
     cmd_sender: mpsc::UnboundedSender<(JNICommand, Option<UciResponseHandle>)>,
-    join_handle: task::JoinHandle<Result<()>>,
+    // This isn't ideal, the wait should be inline with the teardown, and so the
+    // mutex would be unnecessary. However, as the surrounding code is being rearchitected,
+    // I'm just dropping Mutexes in here for now.
+    join_handle: Mutex<task::JoinHandle<Result<()>>>,
     runtime: Runtime,
-    device_info: Option<GetDeviceInfoRspPacket>,
+    device_info: Mutex<Option<GetDeviceInfoRspPacket>>,
 }
 
 impl DispatcherImpl {
@@ -507,8 +510,8 @@ impl DispatcherImpl {
             .enable_all()
             .build()?;
         let join_handle =
-            runtime.spawn(drive(adaptation, event_manager, cmd_receiver, rsp_receiver));
-        Ok(DispatcherImpl { cmd_sender, join_handle, runtime, device_info: None })
+            Mutex::new(runtime.spawn(drive(adaptation, event_manager, cmd_receiver, rsp_receiver)));
+        Ok(DispatcherImpl { cmd_sender, join_handle, runtime, device_info: Mutex::new(None) })
     }
 }
 
@@ -528,8 +531,8 @@ impl Dispatcher for DispatcherImpl {
         Ok(ret)
     }
 
-    fn wait_for_exit(&mut self) -> Result<()> {
-        match self.runtime.block_on(&mut self.join_handle) {
+    fn wait_for_exit(&self) -> Result<()> {
+        match self.runtime.block_on(&mut *self.join_handle.lock().unwrap()) {
             Err(err) if err.is_panic() => {
                 error!("Driver thread is panic!");
                 Err(UwbErr::Undefined)
@@ -538,11 +541,11 @@ impl Dispatcher for DispatcherImpl {
         }
     }
 
-    fn get_device_info(&self) -> &Option<GetDeviceInfoRspPacket> {
-        &self.device_info
+    fn get_device_info(&self) -> Option<GetDeviceInfoRspPacket> {
+        self.device_info.lock().unwrap().clone()
     }
-    fn set_device_info(&mut self, device_info: Option<GetDeviceInfoRspPacket>) {
-        self.device_info = device_info;
+    fn set_device_info(&self, device_info: Option<GetDeviceInfoRspPacket>) {
+        *self.device_info.lock().unwrap() = device_info;
     }
 }
 
@@ -631,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_deinitialize() {
-        let (mut dispatcher, hal_sender) =
+        let (dispatcher, hal_sender) =
             setup_dispatcher_and_return_hal_cb_sender(|mock_adaptation, _mock_event_manager| {
                 mock_adaptation.expect_hal_close(Ok(()));
             });
