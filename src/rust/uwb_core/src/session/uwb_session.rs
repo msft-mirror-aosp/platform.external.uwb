@@ -38,7 +38,7 @@ pub(crate) struct UwbSession {
 }
 
 impl UwbSession {
-    pub fn new<T: UciManager>(
+    pub fn new<T: UciManager + Sync>(
         uci_manager: T,
         session_id: SessionId,
         session_type: SessionType,
