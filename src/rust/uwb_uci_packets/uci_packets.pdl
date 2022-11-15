@@ -39,6 +39,7 @@ enum SessionOpCode : 6 {
     SESSION_GET_COUNT = 0x05,
     SESSION_GET_STATE = 0x06,
     SESSION_UPDATE_CONTROLLER_MULTICAST_LIST = 0x07,
+    SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG = 0X09,
 }
 
 enum RangeOpCode : 6 {
@@ -94,6 +95,10 @@ enum StatusCode : 8 {
     UCI_STATUS_RANGING_RX_MAC_DEC_FAILED = 0x25,
     UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED = 0x26,
     UCI_STATUS_RANGING_RX_MAC_IE_MISSING = 0x27,
+    UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED = 0x28,
+    UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED = 0x29,
+    UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR = 0x2A,
+    UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 0x2B,
 
     // UWB Data Session Specific Status Codes
     UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
@@ -635,6 +640,26 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
+packet SessionUpdateActiveRoundsDtTagCmd : SessionCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+    session_id: 32,
+    _count_(ranging_round_indexes): 8,
+    ranging_round_indexes: 8[],
+}
+
+test SessionUpdateActiveRoundsDtTagCmd {
+    "\x21\x09\x00\x0a\x00\x00\x00\x03\x03\x0f\x0c\x05\x08\x00\x00\x00\x00",
+}
+
+packet SessionUpdateActiveRoundsDtTagRsp : SessionResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+    status: StatusCode,
+    _count_(ranging_round_indexes): 8,
+    ranging_round_indexes: 8[],
+}
+
+test SessionUpdateActiveRoundsDtTagRsp {
+    "\x41\x09\x00\x03\x00\x00\x00\x01\x01\x01",
+}
+
 enum MessageControl: 8 {
     SUB_SESSION_KEY_NOT_CONFIGURED = 0x0,
     SHORT_SUB_SESSION_KEY_CONFIGURED = 0x8,
@@ -778,6 +803,7 @@ struct ExtendedAddressTwoWayRangingMeasurement {
 enum RangingMeasurementType : 8 {
     ONE_WAY = 0x0,
     TWO_WAY = 0x1,
+    DL_TDOA = 0x02,
 }
 
 packet RangeDataNtf : RangingNotification (opcode = 0x0) { //RANGE_START

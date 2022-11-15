@@ -27,8 +27,8 @@ use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawVendorMessage,
-    ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    ResetConfig, SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
@@ -296,6 +296,18 @@ impl UciManagerSync {
         self.runtime_handle.block_on(
             self.uci_manager_impl
                 .session_update_controller_multicast_list_v2(session_id, action, controlees),
+        )
+    }
+
+    /// Update active ranging rounds update for DT
+    pub fn session_update_active_rounds_dt_tag(
+        &mut self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+        self.runtime_handle.block_on(
+            self.uci_manager_impl
+                .session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
         )
     }
 

@@ -26,7 +26,7 @@ use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SetAppConfigResponse, UpdateMulticastListAction,
+    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
 use crate::uci::uci_logger::UciLoggerMode;
@@ -216,6 +216,21 @@ impl MockUciManager {
                 expected_action,
                 expected_controlees,
                 notfs,
+                out,
+            },
+        );
+    }
+
+    pub fn expect_session_update_active_rounds_dt_tag(
+        &mut self,
+        expected_session_id: u32,
+        expected_ranging_round_indexes: Vec<u8>,
+        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionUpdateActiveRoundsDtTag {
+                expected_session_id,
+                expected_ranging_round_indexes,
                 out,
             },
         );
@@ -634,6 +649,31 @@ impl UciManager for MockUciManager {
         }
     }
 
+    async fn session_update_active_rounds_dt_tag(
+        &mut self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionUpdateActiveRoundsDtTag {
+                expected_session_id,
+                expected_ranging_round_indexes,
+                out,
+            }) if expected_session_id == session_id
+                && expected_ranging_round_indexes == ranging_round_indexes =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
@@ -815,6 +855,11 @@ enum ExpectedCall {
         expected_controlees: ControleesV2,
         notfs: Vec<UciNotification>,
         out: Result<()>,
+    },
+    SessionUpdateActiveRoundsDtTag {
+        expected_session_id: u32,
+        expected_ranging_round_indexes: Vec<u8>,
+        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
     },
     RangeStart {
         expected_session_id: SessionId,
