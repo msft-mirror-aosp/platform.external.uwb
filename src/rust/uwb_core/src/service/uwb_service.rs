@@ -61,6 +61,22 @@ pub trait UwbServiceCallback: 'static {
     fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>);
 }
 
+/// A placeholder implementation for UwbServiceCallback that does nothing.
+pub struct NopUwbServiceCallback {}
+impl UwbServiceCallback for NopUwbServiceCallback {
+    fn on_service_reset(&mut self, _success: bool) {}
+    fn on_uci_device_status_changed(&mut self, _state: DeviceState) {}
+    fn on_session_state_changed(
+        &mut self,
+        _session_id: SessionId,
+        _session_state: SessionState,
+        _reason_code: ReasonCode,
+    ) {
+    }
+    fn on_range_data_received(&mut self, _session_id: SessionId, _range_data: SessionRangeData) {}
+    fn on_vendor_notification_received(&mut self, _gid: u32, _oid: u32, _payload: Vec<u8>) {}
+}
+
 /// The entry class (a.k.a top shim) of the core library. The class accepts requests from the
 /// client, and delegates the requests to other components. It should provide the
 /// backward-compatible interface for the client of the library.

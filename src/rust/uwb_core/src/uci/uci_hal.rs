@@ -72,6 +72,21 @@ pub trait UciHal: 'static + Send {
     }
 }
 
+/// A placeholder implementation for UciHal that do nothing.
+pub struct NopUciHal {}
+#[async_trait]
+impl UciHal for NopUciHal {
+    async fn open(&mut self, _packet_sender: mpsc::UnboundedSender<UciHalPacket>) -> Result<()> {
+        Ok(())
+    }
+    async fn close(&mut self) -> Result<()> {
+        Ok(())
+    }
+    async fn send_packet(&mut self, _packet: UciHalPacket) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
