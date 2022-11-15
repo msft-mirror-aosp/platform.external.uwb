@@ -43,4 +43,5 @@ pub use command::UciCommand;
 pub use notification::{
     CoreNotification, RangingMeasurements, SessionNotification, SessionRangeData, UciNotification,
 };
-pub use uci_hal::{UciHal, UciHalPacket};
+pub use uci_hal::{NopUciHal, UciHal, UciHalPacket};
+pub use uci_logger_factory::{NopUciLoggerFactory, UciLoggerFactory};

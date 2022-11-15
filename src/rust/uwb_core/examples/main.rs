@@ -14,81 +14,25 @@
 
 //! A simple example for the usage of the uwb_core library.
 
-use async_trait::async_trait;
 use log::debug;
-use tokio::sync::mpsc;
 
 use uwb_core::error::{Error as UwbError, Result as UwbResult};
-use uwb_core::params::uci_packets::{DeviceState, ReasonCode, SessionId, SessionState};
 use uwb_core::service::{
-    default_runtime, UwbServiceBuilder, UwbServiceCallback, UwbServiceCallbackSendBuilder,
+    default_runtime, NopUwbServiceCallback, UwbServiceBuilder, UwbServiceCallbackSendBuilder,
 };
-use uwb_core::uci::uci_logger_factory::UciLoggerFactoryNull;
-use uwb_core::uci::{SessionRangeData, UciHal, UciHalPacket};
-
-/// A placeholder implementation for UciHal.
-struct UciHalImpl {}
-#[async_trait]
-impl UciHal for UciHalImpl {
-    async fn open(&mut self, _packet_sender: mpsc::UnboundedSender<UciHalPacket>) -> UwbResult<()> {
-        debug!("UciHalImpl::open() is called");
-        Ok(())
-    }
-    async fn close(&mut self) -> UwbResult<()> {
-        debug!("UciHalImpl::close() is called");
-        Ok(())
-    }
-    async fn send_packet(&mut self, packet: UciHalPacket) -> UwbResult<()> {
-        debug!("UciHalImpl::send_packet({:?}) is called", packet);
-        Ok(())
-    }
-}
-
-/// A placeholder implementation for UwbServiceCallback.
-struct UwbServiceCallbackImpl {}
-impl UwbServiceCallback for UwbServiceCallbackImpl {
-    fn on_service_reset(&mut self, success: bool) {
-        debug!("UwbService is reset, success: {}", success);
-    }
-
-    fn on_uci_device_status_changed(&mut self, state: DeviceState) {
-        debug!("UCI device status: {:?}", state);
-    }
-
-    fn on_session_state_changed(
-        &mut self,
-        session_id: SessionId,
-        session_state: SessionState,
-        reason_code: ReasonCode,
-    ) {
-        debug!(
-            "Session {:?}'s state is changed to {:?}, reason: {:?}",
-            session_id, session_state, reason_code
-        );
-    }
-
-    fn on_range_data_received(&mut self, session_id: SessionId, range_data: SessionRangeData) {
-        debug!("Received range data {:?} from Session {:?}", range_data, session_id);
-    }
-
-    fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>) {
-        debug!("Received vendor notification: gid={}, oid={}, payload={:?}", gid, oid, payload);
-    }
-}
+use uwb_core::uci::{NopUciHal, NopUciLoggerFactory};
 
 fn main() {
     env_logger::init();
 
     // The UwbService needs an outlived Tokio Runtime.
     let runtime = default_runtime().unwrap();
-    // Initialize callback object.
-    let callback = UwbServiceCallbackImpl {};
     // Initialize the UWB service.
     let mut service = UwbServiceBuilder::new()
         .runtime_handle(runtime.handle().to_owned())
-        .callback_builder(UwbServiceCallbackSendBuilder::new(callback))
-        .uci_hal(UciHalImpl {})
-        .uci_logger_factory(UciLoggerFactoryNull::default())
+        .callback_builder(UwbServiceCallbackSendBuilder::new(NopUwbServiceCallback {}))
+        .uci_hal(NopUciHal {})
+        .uci_logger_factory(NopUciLoggerFactory {})
         .build()
         .unwrap();
 

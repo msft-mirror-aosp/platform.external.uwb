@@ -348,7 +348,7 @@ mod tests {
     use crate::error::Error;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::uci_hal::UciHalPacket;
-    use crate::uci::uci_logger::UciLoggerNull;
+    use crate::uci::uci_logger::NopUciLogger;
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
@@ -411,7 +411,7 @@ mod tests {
         let mut uci_manager_sync = UciManagerSync::new(
             hal,
             MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
-            UciLoggerNull::default(),
+            NopUciLogger::default(),
             test_rt.handle().to_owned(),
         )
         .unwrap();
