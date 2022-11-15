@@ -806,7 +806,7 @@ mod tests {
     use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
-    use crate::uci::uci_logger::UciLoggerNull;
+    use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -863,7 +863,7 @@ mod tests {
         let mut hal = MockUciHal::new();
         hal.expected_open(None, Ok(()));
         let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), UciLoggerMode::Disabled);
 
         let result = uci_manager.open_hal().await;
         assert!(matches!(result, Err(Error::Timeout)));
@@ -908,7 +908,7 @@ mod tests {
 
         let mut hal = MockUciHal::new();
         let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), UciLoggerMode::Disabled);
 
         let result = uci_manager.close_hal(false).await;
         assert!(matches!(result, Err(Error::BadParameters)));
