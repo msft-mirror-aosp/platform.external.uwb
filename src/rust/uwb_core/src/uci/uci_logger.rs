@@ -156,11 +156,11 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
     }
 }
 
-/// A null UciLogger implementation that does nothing.
+/// A placeholder UciLogger implementation that does nothing.
 #[derive(Default)]
-pub struct UciLoggerNull {}
+pub struct NopUciLogger {}
 
-impl UciLogger for UciLoggerNull {
+impl UciLogger for NopUciLogger {
     fn log_uci_packet(&mut self, _packet: UciPacketPacket) {}
 
     fn log_hal_open(&mut self, _result: Result<()>) {}
