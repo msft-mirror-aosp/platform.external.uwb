@@ -261,6 +261,51 @@ rust_binary {
     host_supported: true,
 }
 
+// Build the uwb_core library with "proto" feature enabled.
+// It's used for fuzzer test.
+rust_library {
+    name: "libuwb_core_with_proto",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
+    srcs: [
+        // Generate the protobuf bindings.
+        // These genrule follows the logic of rust/uwb_core/build.rs.
+        ":gen_uwb_core_proto",
+        ":include_uwb_core_proto",
+    ],
+    rustlibs: [
+        "libprotobuf",
+    ],
+    features: ["proto"],
+    host_supported: true,
+}
+
+genrule {
+    name: "gen_uwb_core_proto",
+    tools: ["aprotoc", "protoc-gen-rust"],
+    cmd: "$(location aprotoc)" +
+         " --proto_path=`dirname $(in)`" +
+         " --dependency_out=$(depfile)" +
+         " --plugin=$(location protoc-gen-rust)" +
+         " --rust_out=$(genDir) $(in)",
+    srcs: [
+        "rust/uwb_core/protos/uwb_service.proto",
+    ],
+    out: [
+        "uwb_service.rs",
+    ],
+    depfile: true,
+}
+
+genrule {
+    name: "include_uwb_core_proto",
+    cmd: "echo '#[path = \"uwb_service.rs\"]' > $(out);" +
+         "echo 'pub mod bindings;' >> $(out);",
+    out: [
+        "proto_bindings.rs",
+    ],
+}
+
 rust_fuzz {
     name: "uwb_uci_rust_fuzzer",
     srcs: [
