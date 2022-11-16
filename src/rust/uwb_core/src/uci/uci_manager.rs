@@ -25,8 +25,8 @@ use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, ControleesV2, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, PowerStats,
-    RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
+    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
@@ -107,6 +107,13 @@ pub(crate) trait UciManager: 'static + Send + Clone {
         action: UpdateMulticastListAction,
         controlees: ControleesV2,
     ) -> Result<()>;
+    // Update active ranging rounds update for DT
+    async fn session_update_active_rounds_dt_tag(
+        &mut self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse>;
+
     async fn range_start(&mut self, session_id: SessionId) -> Result<()>;
     async fn range_stop(&mut self, session_id: SessionId) -> Result<()>;
     async fn range_get_ranging_count(&mut self, session_id: SessionId) -> Result<usize>;
@@ -363,6 +370,19 @@ impl UciManager for UciManagerImpl {
             UciCommand::SessionUpdateControllerMulticastListV2 { session_id, action, controlees };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn session_update_active_rounds_dt_tag(
+        &mut self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+        let cmd = UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionUpdateActiveRoundsDtTag(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -786,7 +806,7 @@ mod tests {
     use crate::params::uci_packets::{CapTlvType, StatusCode};
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
-    use crate::uci::uci_logger::UciLoggerNull;
+    use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciPacketPacket>>(
@@ -843,7 +863,7 @@ mod tests {
         let mut hal = MockUciHal::new();
         hal.expected_open(None, Ok(()));
         let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), UciLoggerMode::Disabled);
 
         let result = uci_manager.open_hal().await;
         assert!(matches!(result, Err(Error::Timeout)));
@@ -888,7 +908,7 @@ mod tests {
 
         let mut hal = MockUciHal::new();
         let mut uci_manager =
-            UciManagerImpl::new(hal.clone(), UciLoggerNull::default(), UciLoggerMode::Disabled);
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), UciLoggerMode::Disabled);
 
         let result = uci_manager.close_hal(false).await;
         assert!(matches!(result, Err(Error::BadParameters)));
@@ -1278,6 +1298,39 @@ mod tests {
             )
             .await;
         assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_set_active_ranging_rounds_dt_tag() {
+        let ranging_rounds = SessionUpdateActiveRoundsDtTagResponse {
+            status: StatusCode::UciStatusErrorRoundIndexNotActivated,
+            ranging_round_indexes: vec![3],
+        };
+
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let cmd = UciCommand::SessionUpdateActiveRoundsDtTag {
+                    session_id: 1,
+                    ranging_round_indexes: vec![3, 5],
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionUpdateActiveRoundsDtTagRspBuilder {
+                        status: StatusCode::UciStatusErrorRoundIndexNotActivated,
+                        ranging_round_indexes: vec![3],
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let result = uci_manager.session_update_active_rounds_dt_tag(1, vec![3, 5]).await.unwrap();
+
+        assert_eq!(result, ranging_rounds);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 

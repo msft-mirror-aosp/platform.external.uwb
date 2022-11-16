@@ -27,8 +27,8 @@ use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
     DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawVendorMessage,
-    ResetConfig, SessionId, SessionState, SessionType, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    ResetConfig, SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
@@ -299,6 +299,18 @@ impl UciManagerSync {
         )
     }
 
+    /// Update active ranging rounds update for DT
+    pub fn session_update_active_rounds_dt_tag(
+        &mut self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+        self.runtime_handle.block_on(
+            self.uci_manager_impl
+                .session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
+        )
+    }
+
     /// Send UCI command for starting ranging of the session.
     pub fn range_start(&mut self, session_id: SessionId) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager_impl.range_start(session_id))
@@ -348,7 +360,7 @@ mod tests {
     use crate::error::Error;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::uci_hal::UciHalPacket;
-    use crate::uci::uci_logger::UciLoggerNull;
+    use crate::uci::uci_logger::NopUciLogger;
 
     struct MockNotificationManager {
         device_state_sender: mpsc::UnboundedSender<DeviceState>,
@@ -411,7 +423,7 @@ mod tests {
         let mut uci_manager_sync = UciManagerSync::new(
             hal,
             MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
-            UciLoggerNull::default(),
+            NopUciLogger::default(),
             test_rt.handle().to_owned(),
         )
         .unwrap();
