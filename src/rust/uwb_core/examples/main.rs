@@ -28,7 +28,7 @@ fn main() {
     // The UwbService needs an outlived Tokio Runtime.
     let runtime = default_runtime().unwrap();
     // Initialize the UWB service.
-    let mut service = UwbServiceBuilder::new()
+    let service = UwbServiceBuilder::new()
         .runtime_handle(runtime.handle().to_owned())
         .callback_builder(UwbServiceCallbackSendBuilder::new(NopUwbServiceCallback {}))
         .uci_hal(NopUciHal {})
