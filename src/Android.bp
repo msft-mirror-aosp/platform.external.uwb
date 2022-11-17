@@ -307,6 +307,25 @@ genrule {
 }
 
 rust_fuzz {
+    name: "uwb_core_fuzzer",
+    srcs: [
+        "rust/uwb_core/fuzz/proto_uwb_service_fuzzer.rs",
+    ],
+    rustlibs: [
+        "libarbitrary",
+        "libuwb_core_with_proto",
+    ],
+    fuzz_config: {
+        cc: [
+            "android-uwb-team@google.com",
+        ],
+        componentid: 1042770,
+        fuzz_on_haiku_device: true,
+        fuzz_on_haiku_host: true,
+    },
+}
+
+rust_fuzz {
     name: "uwb_uci_rust_fuzzer",
     srcs: [
         "fuzz/fuzzer.rs",
