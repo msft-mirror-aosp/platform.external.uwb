@@ -50,7 +50,7 @@ impl ProtoUwbService {
     }
 
     /// Set UCI log mode.
-    pub fn set_logger_mode(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn set_logger_mode(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<SetLoggerModeRequest>(request)?;
         let mut resp = SetLoggerModeResponse::new();
         resp.set_status(self.service.set_logger_mode(request.logger_mode.into()).into());
@@ -58,14 +58,14 @@ impl ProtoUwbService {
     }
 
     /// Enable the UWB service.
-    pub fn enable(&mut self) -> Result<Vec<u8>> {
+    pub fn enable(&self) -> Result<Vec<u8>> {
         let mut resp = EnableResponse::new();
         resp.set_status(self.service.enable().into());
         write_to_bytes(&resp)
     }
 
     /// Disable the UWB service.
-    pub fn disable(&mut self) -> Result<Vec<u8>> {
+    pub fn disable(&self) -> Result<Vec<u8>> {
         let mut resp = DisableResponse::new();
         resp.set_status(self.service.disable().into());
         write_to_bytes(&resp)
@@ -74,7 +74,7 @@ impl ProtoUwbService {
     /// Initialize a new ranging session with the given parameters.
     ///
     /// Note: Currently the protobuf only support Fira parameters, but not support CCC parameters.
-    pub fn init_session(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn init_session(&self, request: &[u8]) -> Result<Vec<u8>> {
         let mut request = parse_from_bytes::<InitSessionRequest>(request)?;
         let params = request
             .params
@@ -99,7 +99,7 @@ impl ProtoUwbService {
     }
 
     /// Destroy the session.
-    pub fn deinit_session(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn deinit_session(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<DeinitSessionRequest>(request)?;
         let mut resp = DeinitSessionResponse::new();
         resp.set_status(self.service.deinit_session(request.session_id).into());
@@ -107,7 +107,7 @@ impl ProtoUwbService {
     }
 
     /// Start ranging of the session.
-    pub fn start_ranging(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn start_ranging(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<StartRangingRequest>(request)?;
         // Currently we only support FiRa session, not CCC. For FiRa session, the returned
         // AppConfigParams is the same as the configured one before start_ranging(). Therefore, we
@@ -118,7 +118,7 @@ impl ProtoUwbService {
     }
 
     /// Stop ranging.
-    pub fn stop_ranging(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn stop_ranging(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<StopRangingRequest>(request)?;
         let mut resp = StopRangingResponse::new();
         resp.set_status(self.service.stop_ranging(request.session_id).into());
@@ -126,7 +126,7 @@ impl ProtoUwbService {
     }
 
     /// Reconfigure the parameters of the session.
-    pub fn reconfigure(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn reconfigure(&self, request: &[u8]) -> Result<Vec<u8>> {
         let mut request = parse_from_bytes::<ReconfigureRequest>(request)?;
         let params = request
             .params
@@ -147,7 +147,7 @@ impl ProtoUwbService {
     }
 
     /// Update the list of the controlees to the ongoing session.
-    pub fn update_controller_multicast_list(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn update_controller_multicast_list(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<UpdateControllerMulticastListRequest>(request)?;
         let mut controlees = vec![];
         for controlee in request.controlees.into_iter() {
@@ -172,7 +172,7 @@ impl ProtoUwbService {
     }
 
     /// Set the country code. Android-specific method.
-    pub fn android_set_country_code(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn android_set_country_code(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<AndroidSetCountryCodeRequest>(request)?;
         let country_code = request.country_code.try_into()?;
 
@@ -182,7 +182,7 @@ impl ProtoUwbService {
     }
 
     /// Get the power statistics. Android-specific method.
-    pub fn android_get_power_stats(&mut self) -> Result<Vec<u8>> {
+    pub fn android_get_power_stats(&self) -> Result<Vec<u8>> {
         let mut resp = AndroidGetPowerStatsResponse::new();
         match self.service.android_get_power_stats() {
             Ok(power_stats) => {
@@ -197,7 +197,7 @@ impl ProtoUwbService {
     }
 
     /// Send a vendor-specific UCI message.
-    pub fn send_vendor_cmd(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn send_vendor_cmd(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<SendVendorCmdRequest>(request)?;
         let mut resp = SendVendorCmdResponse::new();
         match self.service.send_vendor_cmd(request.gid, request.oid, request.payload) {
@@ -215,7 +215,7 @@ impl ProtoUwbService {
     }
 
     /// Get app config params for the given session id
-    pub fn session_params(&mut self, request: &[u8]) -> Result<Vec<u8>> {
+    pub fn session_params(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<SessionParamsRequest>(request)?;
         let mut resp = SessionParamsResponse::new();
         match self.service.session_params(request.session_id) {
