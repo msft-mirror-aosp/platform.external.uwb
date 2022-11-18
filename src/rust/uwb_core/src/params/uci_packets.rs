@@ -27,6 +27,8 @@ pub use uwb_uci_packets::{
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 
+use crate::error::Error;
+
 /// The type of the session identifier.
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
@@ -159,6 +161,14 @@ impl CountryCode {
 impl From<CountryCode> for [u8; 2] {
     fn from(item: CountryCode) -> [u8; 2] {
         item.0
+    }
+}
+
+impl TryFrom<String> for CountryCode {
+    type Error = Error;
+    fn try_from(item: String) -> Result<Self, Self::Error> {
+        let code = item.as_bytes().try_into().map_err(|_| Error::BadParameters)?;
+        Self::new(code).ok_or(Error::BadParameters)
     }
 }
 
