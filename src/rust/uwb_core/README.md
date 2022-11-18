@@ -11,7 +11,7 @@ using `cargo build` will fail. Follow the steps below before using cargo.
 1. Enter Android environment by `source build/make/rbesetup.sh; lunch <target>`
 2. Run `m -j32 bluetooth_packetgen` to compile `bluetooth_packetgen` c++ binary.
 
-After that, we could build or test the package by cargo.
+After that, we could build or test the package by `cargo test --features proto`.
 
 ## Enable logging for a certain test case of uwb\_core library
 
