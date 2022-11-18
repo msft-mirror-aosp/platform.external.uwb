@@ -21,26 +21,37 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
-use crate::uci::error::{Error, Result};
-use crate::uci::notification::UciNotification;
-use crate::uci::params::{
+use crate::error::{Error, Result};
+use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SetAppConfigResponse, UpdateMulticastListAction,
+    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
+use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
+use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
+use uwb_uci_packets::ControleesV2;
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct MockUciManager {
     expected_calls: Arc<Mutex<VecDeque<ExpectedCall>>>,
-    notf_sender: Arc<Mutex<Option<mpsc::UnboundedSender<UciNotification>>>>,
     expect_call_consumed: Arc<Notify>,
+    core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
 }
 
+#[allow(dead_code)]
 impl MockUciManager {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            expected_calls: Default::default(),
+            expect_call_consumed: Default::default(),
+            core_notf_sender: mpsc::unbounded_channel().0,
+            session_notf_sender: mpsc::unbounded_channel().0,
+            vendor_notf_sender: mpsc::unbounded_channel().0,
+        }
     }
 
     pub async fn wait_expected_calls_done(&mut self) -> bool {
@@ -57,8 +68,11 @@ impl MockUciManager {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
-    pub fn expect_close_hal(&mut self, out: Result<()>) {
-        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CloseHal { out });
+    pub fn expect_close_hal(&mut self, expected_force: bool, out: Result<()>) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::CloseHal { expected_force, out });
     }
 
     pub fn expect_device_reset(&mut self, expected_reset_config: ResetConfig, out: Result<()>) {
@@ -113,11 +127,17 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_deinit(&mut self, expected_session_id: SessionId, out: Result<()>) {
-        self.expected_calls
-            .lock()
-            .unwrap()
-            .push_back(ExpectedCall::SessionDeinit { expected_session_id, out });
+    pub fn expect_session_deinit(
+        &mut self,
+        expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionDeinit {
+            expected_session_id,
+            notfs,
+            out,
+        });
     }
 
     pub fn expect_session_set_app_config(
@@ -148,7 +168,7 @@ impl MockUciManager {
         });
     }
 
-    pub fn expect_session_get_count(&mut self, out: Result<usize>) {
+    pub fn expect_session_get_count(&mut self, out: Result<u8>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionGetCount { out });
     }
 
@@ -177,6 +197,40 @@ impl MockUciManager {
                 expected_action,
                 expected_controlees,
                 notfs,
+                out,
+            },
+        );
+    }
+
+    pub fn expect_session_update_controller_multicast_list_v2(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_action: UpdateMulticastListAction,
+        expected_controlees: ControleesV2,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionUpdateControllerMulticastListV2 {
+                expected_session_id,
+                expected_action,
+                expected_controlees,
+                notfs,
+                out,
+            },
+        );
+    }
+
+    pub fn expect_session_update_active_rounds_dt_tag(
+        &mut self,
+        expected_session_id: u32,
+        expected_ranging_round_indexes: Vec<u8>,
+        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionUpdateActiveRoundsDtTag {
+                expected_session_id,
+                expected_ranging_round_indexes,
                 out,
             },
         );
@@ -248,45 +302,76 @@ impl MockUciManager {
             out,
         });
     }
-    fn send_notf(&self, notf: UciNotification) {
-        // The only error is that the other side is gone, and we don't care.
-        let _ = self.notf_sender.lock().unwrap().as_ref().unwrap().send(notf);
+
+    fn send_notifications(&self, notfs: Vec<UciNotification>) {
+        for notf in notfs.into_iter() {
+            match notf {
+                UciNotification::Core(notf) => {
+                    let _ = self.core_notf_sender.send(notf);
+                }
+                UciNotification::Session(notf) => {
+                    let _ = self.session_notf_sender.send(notf);
+                }
+                UciNotification::Vendor(notf) => {
+                    let _ = self.vendor_notf_sender.send(notf);
+                }
+            }
+        }
     }
 }
 
 #[async_trait]
 impl UciManager for MockUciManager {
-    async fn open_hal(&self, notf_sender: mpsc::UnboundedSender<UciNotification>) -> Result<()> {
+    async fn set_logger_mode(&self, _logger_mode: UciLoggerMode) -> Result<()> {
+        Ok(())
+    }
+    async fn set_core_notification_sender(
+        &mut self,
+        core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    ) {
+        self.core_notf_sender = core_notf_sender;
+    }
+    async fn set_session_notification_sender(
+        &mut self,
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    ) {
+        self.session_notf_sender = session_notf_sender;
+    }
+    async fn set_vendor_notification_sender(
+        &mut self,
+        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    ) {
+        self.vendor_notf_sender = vendor_notf_sender;
+    }
+
+    async fn open_hal(&self) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::OpenHal { notfs, out }) => {
                 self.expect_call_consumed.notify_one();
-                *self.notf_sender.lock().unwrap() = Some(notf_sender);
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
-    async fn close_hal(&self) -> Result<()> {
+    async fn close_hal(&self, force: bool) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::CloseHal { out }) => {
+            Some(ExpectedCall::CloseHal { expected_force, out }) if expected_force == force => {
                 self.expect_call_consumed.notify_one();
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -301,9 +386,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -316,9 +401,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -331,9 +416,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -351,9 +436,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -371,9 +456,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -387,33 +472,32 @@ impl UciManager for MockUciManager {
                 out,
             }) if expected_session_id == session_id && expected_session_type == session_type => {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
     async fn session_deinit(&self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionDeinit { expected_session_id, out })
+            Some(ExpectedCall::SessionDeinit { expected_session_id, notfs, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -433,16 +517,14 @@ impl UciManager for MockUciManager {
                 && app_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -463,13 +545,13 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
-    async fn session_get_count(&self) -> Result<usize> {
+    async fn session_get_count(&self) -> Result<u8> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::SessionGetCount { out }) => {
@@ -478,9 +560,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -495,9 +577,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -522,16 +604,69 @@ impl UciManager for MockUciManager {
                 }) =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_update_controller_multicast_list_v2(
+        &self,
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionUpdateControllerMulticastListV2 {
+                expected_session_id,
+                expected_action,
+                expected_controlees,
+                notfs,
+                out,
+            }) if expected_session_id == session_id
+                && expected_action == action
+                && expected_controlees == controlees =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_update_active_rounds_dt_tag(
+        &self,
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionUpdateActiveRoundsDtTag {
+                expected_session_id,
+                expected_ranging_round_indexes,
+                out,
+            }) if expected_session_id == session_id
+                && expected_ranging_round_indexes == ranging_round_indexes =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -542,16 +677,14 @@ impl UciManager for MockUciManager {
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -562,16 +695,14 @@ impl UciManager for MockUciManager {
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
-                for notf in notfs.into_iter() {
-                    self.send_notf(notf);
-                }
+                self.send_notifications(notfs);
                 out
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -586,9 +717,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -603,9 +734,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -618,9 +749,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 
@@ -643,9 +774,9 @@ impl UciManager for MockUciManager {
             }
             Some(call) => {
                 expected_calls.push_front(call);
-                Err(Error::WrongState)
+                Err(Error::MockUndefined)
             }
-            None => Err(Error::WrongState),
+            None => Err(Error::MockUndefined),
         }
     }
 }
@@ -657,6 +788,7 @@ enum ExpectedCall {
         out: Result<()>,
     },
     CloseHal {
+        expected_force: bool,
         out: Result<()>,
     },
     DeviceReset {
@@ -685,6 +817,7 @@ enum ExpectedCall {
     },
     SessionDeinit {
         expected_session_id: SessionId,
+        notfs: Vec<UciNotification>,
         out: Result<()>,
     },
     SessionSetAppConfig {
@@ -699,7 +832,7 @@ enum ExpectedCall {
         out: Result<Vec<AppConfigTlv>>,
     },
     SessionGetCount {
-        out: Result<usize>,
+        out: Result<u8>,
     },
     SessionGetState {
         expected_session_id: SessionId,
@@ -711,6 +844,18 @@ enum ExpectedCall {
         expected_controlees: Vec<Controlee>,
         notfs: Vec<UciNotification>,
         out: Result<()>,
+    },
+    SessionUpdateControllerMulticastListV2 {
+        expected_session_id: SessionId,
+        expected_action: UpdateMulticastListAction,
+        expected_controlees: ControleesV2,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    },
+    SessionUpdateActiveRoundsDtTag {
+        expected_session_id: u32,
+        expected_ranging_round_indexes: Vec<u8>,
+        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
     },
     RangeStart {
         expected_session_id: SessionId,

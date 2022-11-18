@@ -17,13 +17,14 @@
 extern crate libc;
 
 #[cfg(test)]
-use crate::uci::mock_uci_logger::{create_dir, remove_file, rename};
+use crate::uci::mock_uci_logger::{create_dir, remove_file, rename, Instant};
 use crate::uci::UwbErr;
 use async_trait::async_trait;
-use bytes::{BufMut, BytesMut};
 use log::{error, info};
 use std::marker::Unpin;
 use std::sync::Arc;
+#[cfg(not(test))]
+use std::time::Instant;
 use std::time::SystemTime;
 use tokio::fs::OpenOptions;
 #[cfg(not(test))]
@@ -32,23 +33,19 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::{task, time};
 use uwb_uci_packets::{
-    AppConfigTlv, AppConfigTlvType, MessageType, Packet, SessionCommandChild,
-    SessionGetAppConfigRspBuilder, SessionResponseChild, SessionSetAppConfigCmdBuilder,
-    UciCommandChild, UciCommandPacket, UciNotificationPacket, UciPacketPacket, UciResponseChild,
-    UciResponsePacket,
+    AppConfigTlv, AppConfigTlvType, Packet, SessionCommandChild, SessionGetAppConfigRspBuilder,
+    SessionResponseChild, SessionSetAppConfigCmdBuilder, UciCommandChild, UciCommandPacket,
+    UciNotificationPacket, UciPacketPacket, UciResponseChild, UciResponsePacket,
 };
 
 // micros since 0000-01-01
-const UCI_EPOCH_DELTA: u64 = 0x00dcddb30f2f8000;
 const UCI_LOG_LAST_FILE_STORE_TIME_SEC: u64 = 86400; // 24 hours
-const MAX_FILE_SIZE: usize = 102400; // 100 kb
-const MAX_BUFFER_SIZE: usize = 10240; // 10 kb
-const PKT_LOG_HEADER_SIZE: usize = 25;
+const MAX_FILE_SIZE: usize = 102400; // 100 KB
+const MAX_BUFFER_SIZE: usize = 10240; // 10 KB
 const VENDOR_ID: u64 = AppConfigTlvType::VendorId as u64;
 const STATIC_STS_IV: u64 = AppConfigTlvType::StaticStsIv as u64;
 const LOG_DIR: &str = "/data/misc/apexdata/com.android.uwb/log";
-const FILE_NAME: &str = "uwb_uci.log";
-const LOG_HEADER: &[u8] = b"ucilogging";
+const FILE_NAME: &str = "uwb_uci.pcapng";
 
 type SyncFile = Arc<Mutex<dyn AsyncWrite + Send + Sync + Unpin>>;
 type SyncFactory = Arc<Mutex<dyn FileFactory + Send + Sync>>;
@@ -58,13 +55,6 @@ pub enum UciLogMode {
     Disabled,
     Filtered,
     Enabled,
-}
-
-#[derive(Clone)]
-enum Type {
-    Command = 1,
-    Response,
-    Notification,
 }
 
 #[derive(Clone)]
@@ -89,8 +79,8 @@ pub trait UciLogger {
 
 struct BufferedFile {
     file: Option<SyncFile>,
-    size_count: usize,
-    buffer: BytesMut,
+    written_size: usize,
+    buffer: Vec<u8>,
     deleter_handle: Option<task::JoinHandle<()>>,
 }
 
@@ -114,20 +104,50 @@ impl BufferedFile {
                 error!("Failed to remove file!");
             };
         }));
-        let mut file = factory.lock().await.create_file_using_open_options(path).await?;
-        write(&mut file, LOG_HEADER).await;
+        let file = factory.lock().await.create_file_using_open_options(path).await?;
         self.file = Some(file);
+        let header = get_pcapng_header();
+        self.buffered_write(header).await;
         Ok(())
     }
 
-    async fn close_file(&mut self) {
-        if let Some(file) = &mut self.file {
-            info!("UCI log file closing");
-            write(file, &self.buffer).await;
-            self.file = None;
-            self.buffer.clear();
+    fn file_size(&self) -> usize {
+        self.written_size + self.buffer.len()
+    }
+
+    async fn buffered_write(&mut self, mut data: Vec<u8>) {
+        if self.buffer.len() + data.len() >= MAX_BUFFER_SIZE {
+            self.flush_buffer().await;
         }
-        self.size_count = 0;
+        self.buffer.append(&mut data);
+    }
+
+    async fn close_file(&mut self) {
+        if self.file.is_some() {
+            info!("UCI log file closing");
+            self.flush_buffer().await;
+            self.file = None;
+        }
+        self.written_size = 0;
+    }
+
+    async fn flush_buffer(&mut self) {
+        let mut locked_file = match &self.file {
+            Some(file) => file.lock().await,
+            None => {
+                return;
+            }
+        };
+        if locked_file.write_all(&self.buffer).await.is_err() {
+            error!("Failed to write");
+            return;
+        }
+        if let Err(e) = locked_file.flush().await {
+            error!("Failed to flush: {:?}", e);
+            return;
+        }
+        self.written_size += self.buffer.len();
+        self.buffer.clear();
     }
 }
 
@@ -135,6 +155,7 @@ pub struct UciLoggerImpl {
     config: UciLogConfig,
     buf_file: Mutex<BufferedFile>,
     file_factory: SyncFactory,
+    start_time: Instant,
 }
 
 impl UciLoggerImpl {
@@ -143,68 +164,136 @@ impl UciLoggerImpl {
         let mut factory = file_factory.lock().await;
         factory.set_config(config.clone()).await;
         let (file, size) = factory.new_file().await;
-        let buf_file =
-            BufferedFile { size_count: size, file, buffer: BytesMut::new(), deleter_handle: None };
-        let ret =
-            Self { config, buf_file: Mutex::new(buf_file), file_factory: file_factory.clone() };
+        let buf_file = BufferedFile {
+            written_size: size,
+            file,
+            buffer: Vec::with_capacity(MAX_BUFFER_SIZE),
+            deleter_handle: None,
+        };
+        let ret = Self {
+            config,
+            buf_file: Mutex::new(buf_file),
+            file_factory: file_factory.clone(),
+            start_time: Instant::now(),
+        };
         info!("UCI logger created");
         ret
     }
 
     async fn log_uci_packet(&self, packet: UciPacketPacket) {
-        let mt = packet.get_message_type();
+        const HEADER_SIZE: usize = 48;
         let bytes = packet.to_vec();
-        let mt_byte = match mt {
-            MessageType::Command => Type::Command as u8,
-            MessageType::Response => Type::Response as u8,
-            MessageType::Notification => Type::Notification as u8,
-        };
-        let flags = match mt {
-            MessageType::Command => 0b10,      // down direction
-            MessageType::Response => 0b01,     // up direction
-            MessageType::Notification => 0b01, // up direction
-        };
-        let timestamp = u64::try_from(
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_micros(),
-        )
-        .unwrap()
-            + UCI_EPOCH_DELTA;
-
-        let length = u32::try_from(bytes.len()).unwrap() + 1;
-
-        // Check whether exceeded the size limit
+        let timestamp = self.start_time.elapsed().as_micros() as u64;
+        let enhanced_block = EnhancedBlockBuilder::new()
+            .interface_id(0)
+            .timestamp(timestamp)
+            .packet(bytes)
+            .max_block_size(MAX_FILE_SIZE - HEADER_SIZE)
+            .build();
+        // Checks whether the enhanced_block fits inside the file:
         let mut buf_file = self.buf_file.lock().await;
-        if buf_file.size_count + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_FILE_SIZE {
+        if buf_file.file_size() + enhanced_block.len() > MAX_FILE_SIZE {
             match buf_file.open_next_file(self.file_factory.clone(), &self.config.path).await {
-                Ok(()) => info!("New file created"),
-                Err(e) => error!("Open next file failed: {:?}", e),
-            }
-        } else if buf_file.buffer.len() + bytes.len() + PKT_LOG_HEADER_SIZE > MAX_BUFFER_SIZE {
-            let temp_buf = buf_file.buffer.clone();
-            if let Some(file) = &mut buf_file.file {
-                write(file, &temp_buf).await;
-                buf_file.buffer.clear();
+                Ok(()) => info!("Created new pcagng log file"),
+                Err(e) => {
+                    error!("Failed to open new pcapng log file: {:?}", e);
+                    return;
+                }
             }
         }
-        buf_file.buffer.put_u32(length); // original length
-        buf_file.buffer.put_u32(length); // captured length
-        buf_file.buffer.put_u32(flags); // flags
-        buf_file.buffer.put_u32(0); // dropped packets
-        buf_file.buffer.put_u64(timestamp); // timestamp
-        buf_file.buffer.put_u8(mt_byte); // type
-        buf_file.buffer.put_slice(&bytes); // full packet.
-        buf_file.size_count += bytes.len() + PKT_LOG_HEADER_SIZE;
+        buf_file.buffered_write(enhanced_block).await;
     }
 }
 
-async fn write(file: &mut SyncFile, buffer: &[u8]) {
-    let mut locked_file = file.lock().await;
-    if locked_file.write_all(buffer).await.is_err() {
-        error!("Failed to write");
+/// Constructs Enhanced Packet Block from raw packet and additional fields.
+struct EnhancedBlockBuilder {
+    interface_id: u32,
+    timestamp: u64,
+    packet: Vec<u8>,
+    max_block_size: Option<usize>,
+}
+impl EnhancedBlockBuilder {
+    /// Constructor.
+    fn new() -> Self {
+        Self { interface_id: 0, timestamp: 0, packet: vec![], max_block_size: None }
     }
-    if locked_file.flush().await.is_err() {
-        error!("Failed to flush");
+
+    /// Sets interface_id.
+    fn interface_id(mut self, interface_id: u32) -> Self {
+        self.interface_id = interface_id;
+        self
     }
+
+    /// Sets timestamp.
+    fn timestamp(mut self, timestamp: u64) -> Self {
+        self.timestamp = timestamp;
+        self
+    }
+
+    /// Sets packet.
+    fn packet(mut self, packet: Vec<u8>) -> Self {
+        self.packet = packet;
+        self
+    }
+
+    /// Sets maximum block size permitted (optional). Truncated down to nearest multiple of 4.
+    fn max_block_size(mut self, max_size: usize) -> Self {
+        self.max_block_size = Some(max_size / 4 * 4);
+        self
+    }
+
+    /// Builds the packet.
+    fn build(mut self) -> Vec<u8> {
+        const ENHANCED_BLOCK_SIZE: usize = 32;
+        let packet_length = self.packet.len() as u32;
+        let padded_data_length = (self.packet.len() + 3) / 4 * 4; // padded to multiple of 4.
+        let mut pad_length = padded_data_length - self.packet.len();
+        let mut block_total_length = padded_data_length + ENHANCED_BLOCK_SIZE;
+        if let Some(max_block_size) = self.max_block_size {
+            if block_total_length > max_block_size {
+                self.packet.truncate(max_block_size - ENHANCED_BLOCK_SIZE);
+                pad_length = 0;
+                block_total_length = max_block_size;
+            }
+        }
+        let mut block_data = Vec::<u8>::new();
+        block_data.extend_from_slice(&u32::to_le_bytes(0x00000006)); // Block Type
+        block_data.extend_from_slice(&u32::to_le_bytes(block_total_length.try_into().unwrap()));
+        block_data.extend_from_slice(&u32::to_le_bytes(self.interface_id)); // Interface ID
+                                                                            // High timestamp
+        block_data.extend_from_slice(&u32::to_le_bytes((self.timestamp >> 32) as u32));
+        // Low timestamp
+        block_data.extend_from_slice(&u32::to_le_bytes(self.timestamp as u32));
+        // Captured Packet Length
+        block_data.extend_from_slice(&u32::to_le_bytes(self.packet.len() as u32));
+        block_data.extend_from_slice(&u32::to_le_bytes(packet_length)); // Original Packet Length
+        block_data.append(&mut self.packet);
+        block_data.extend_from_slice(&vec![0; pad_length]);
+        block_data.extend_from_slice(&u32::to_le_bytes(block_total_length.try_into().unwrap()));
+        block_data
+    }
+}
+
+fn get_pcapng_header() -> Vec<u8> {
+    let mut bytes = vec![];
+    // PCAPng files must start with a Section Header Block.
+    bytes.extend_from_slice(&u32::to_le_bytes(0x0A0D0D0A)); // Block Type
+    bytes.extend_from_slice(&u32::to_le_bytes(28)); // Block Total Length
+    bytes.extend_from_slice(&u32::to_le_bytes(0x1A2B3C4D)); // Byte-Order Magic
+    bytes.extend_from_slice(&u16::to_le_bytes(1)); // Major Version
+    bytes.extend_from_slice(&u16::to_le_bytes(0)); // Minor Version
+    bytes.extend_from_slice(&u64::to_le_bytes(0xFFFFFFFFFFFFFFFF)); // Section Length (not specified)
+    bytes.extend_from_slice(&u32::to_le_bytes(28)); // Block Total Length
+
+    // Write the Interface Description Block used for all
+    // UCI records.
+    bytes.extend_from_slice(&u32::to_le_bytes(0x00000001)); // Block Type
+    bytes.extend_from_slice(&u32::to_le_bytes(20)); // Block Total Length
+    bytes.extend_from_slice(&u16::to_le_bytes(293)); // LinkType
+    bytes.extend_from_slice(&u16::to_le_bytes(0)); // Reserved
+    bytes.extend_from_slice(&u32::to_le_bytes(0)); // SnapLen (no limit)
+    bytes.extend_from_slice(&u32::to_le_bytes(20)); // Block Total Length
+    bytes
 }
 
 #[async_trait]
@@ -371,6 +460,7 @@ impl FileFactory for RealFileFactory {
     async fn create_file_using_open_options(&self, path: &str) -> Result<SyncFile, UwbErr> {
         Ok(Arc::new(Mutex::new(OpenOptions::new().write(true).create_new(true).open(path).await?)))
     }
+
     async fn create_file_at_path(&self, path: &str) -> Option<SyncFile> {
         if create_dir(LOG_DIR).await.is_err() {
             error!("Failed to create dir");
@@ -379,10 +469,7 @@ impl FileFactory for RealFileFactory {
             error!("Failed to remove file!");
         }
         match self.create_file_using_open_options(path).await {
-            Ok(mut f) => {
-                write(&mut f, LOG_HEADER).await;
-                Some(f)
-            }
+            Ok(f) => Some(f),
             Err(e) => {
                 error!("Failed to create file {:?}", e);
                 None
@@ -452,6 +539,59 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_enhanced_packet_build() {
+        let uci_packet: Vec<u8> = vec![0x41, 0x03, 0x00, 0x02, 0x00, 0x00];
+        let timestamp: u64 = 0x0102_0304_0506_0708;
+        let interface_id: u32 = 0;
+        let enhanced_block = EnhancedBlockBuilder::new()
+            .timestamp(timestamp)
+            .interface_id(interface_id)
+            .packet(uci_packet)
+            .build();
+
+        let expected_block: Vec<u8> = vec![
+            0x06, 0x00, 0x00, 0x00, // block type
+            // packet is of length 6, padded to 8, with total length 40=0x28
+            0x28, 0x00, 0x00, 0x00, // block length
+            0x00, 0x00, 0x00, 0x00, // interface id
+            0x04, 0x03, 0x02, 0x01, // timestamp high
+            0x08, 0x07, 0x06, 0x05, // timestemp low
+            0x06, 0x00, 0x00, 0x00, // captured length
+            0x06, 0x00, 0x00, 0x00, // original length
+            0x41, 0x03, 0x00, 0x02, // packet (padded)
+            0x00, 0x00, 0x00, 0x00, // packet (padded)
+            0x28, 0x00, 0x00, 0x00, // block length
+        ];
+        assert_eq!(&enhanced_block, &expected_block);
+    }
+
+    #[test]
+    fn test_enhanced_packet_truncate_build() {
+        let uci_packet: Vec<u8> = vec![0x41, 0x03, 0x00, 0x02, 0x00, 0x00];
+        let timestamp: u64 = 0x0102_0304_0506_0708;
+        let interface_id: u32 = 0;
+        let enhanced_block = EnhancedBlockBuilder::new()
+            .timestamp(timestamp)
+            .interface_id(interface_id)
+            .packet(uci_packet)
+            .max_block_size(0x24) // packet need truncation
+            .build();
+
+        let expected_block: Vec<u8> = vec![
+            0x06, 0x00, 0x00, 0x00, // block type
+            0x24, 0x00, 0x00, 0x00, // block length
+            0x00, 0x00, 0x00, 0x00, // interface id
+            0x04, 0x03, 0x02, 0x01, // timestamp high
+            0x08, 0x07, 0x06, 0x05, // timestemp low
+            0x04, 0x00, 0x00, 0x00, // captured length
+            0x06, 0x00, 0x00, 0x00, // original length
+            0x41, 0x03, 0x00, 0x02, // packet (truncated)
+            0x24, 0x00, 0x00, 0x00, // block length
+        ];
+        assert_eq!(&enhanced_block, &expected_block);
+    }
+
     #[tokio::test]
     async fn test_log_command() -> Result<(), UwbErr> {
         let logger =
@@ -459,10 +599,12 @@ mod tests {
                 .await;
         let cmd: UciCommandPacket = GetDeviceInfoCmdBuilder {}.build().into();
         logger.log_uci_command(cmd).await;
-        let data = [0x20, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let expected_buffer = [
+            6, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0,
+            32, 2, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0,
+        ];
         let buf_file = logger.buf_file.lock().await;
-        assert_eq!(1, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
-        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        assert_eq!(&buf_file.buffer, &expected_buffer);
         Ok(())
     }
 
@@ -482,13 +624,12 @@ mod tests {
         .build()
         .into();
         logger.log_uci_response(rsp).await;
-        let data = [
-            0x40, 0x02, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00,
+        let expected_buffer = [
+            6, 0, 0, 0, 52, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 17, 0, 0, 0, 17, 0, 0, 0,
+            64, 2, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 52, 0, 0, 0,
         ];
         let buf_file = logger.buf_file.lock().await;
-        assert_eq!(2, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
-        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        assert_eq!(&buf_file.buffer, &expected_buffer);
         Ok(())
     }
 
@@ -500,10 +641,20 @@ mod tests {
         let ntf =
             DeviceStatusNtfBuilder { device_state: DeviceState::DeviceStateReady }.build().into();
         logger.log_uci_notification(ntf).await;
-        let data = [0x60, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01];
+        let expected_buffer = [
+            6, 0, 0, 0, // block type
+            40, 0, 0, 0, // block length
+            0, 0, 0, 0, // interface id
+            0, 0, 0, 0, // timestamp high
+            0, 0, 0, 0, // timestamp low
+            8, 0, 0, 0, // captured length
+            8, 0, 0, 0, // original length
+            96, 1, 0, 1, // packet
+            0, 0, 0, 1, // packet
+            40, 0, 0, 0, // block length
+        ];
         let buf_file = logger.buf_file.lock().await;
-        assert_eq!(3, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
-        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        assert_eq!(&buf_file.buffer, &expected_buffer);
         Ok(())
     }
 
@@ -531,10 +682,12 @@ mod tests {
         .build()
         .into();
         logger.log_uci_response(rsp).await;
-        let data = [0x41, 0x04, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x27, 0x02, 0x00, 0x00];
+        let expected_buffer = [
+            6, 0, 0, 0, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 13, 0, 0, 0,
+            65, 4, 0, 6, 0, 0, 0, 0, 1, 39, 2, 0, 0, 0, 0, 0, 48, 0, 0, 0,
+        ];
         let buf_file = logger.buf_file.lock().await;
-        assert_eq!(2, buf_file.buffer[buf_file.buffer.len() - data.len() - 1]);
-        assert_eq!(data, buf_file.buffer[(buf_file.buffer.len() - data.len())..]);
+        assert_eq!(&buf_file.buffer, &expected_buffer);
         Ok(())
     }
 }
