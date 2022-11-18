@@ -148,7 +148,7 @@ impl EventManagerImpl {
 
     fn get_classloader_obj<'a>(env: &'a JNIEnv) -> Result<JObject<'a>> {
         // Use UwbRangingData class to find the classloader used by the java service.
-        let ranging_data_class = env.find_class(&UWB_RANGING_DATA_CLASS)?;
+        let ranging_data_class = env.find_class(UWB_RANGING_DATA_CLASS)?;
         let ranging_data_class_class = env.get_object_class(ranging_data_class)?;
         let get_class_loader_method = env.get_method_id(
             ranging_data_class_class,
