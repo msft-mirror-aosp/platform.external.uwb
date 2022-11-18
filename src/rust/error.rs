@@ -36,7 +36,7 @@ pub enum UwbErr {
     Io(#[from] std::io::Error),
     #[error("SendError for JNICommand: {0}")]
     SendJNICommand(
-        #[from] mpsc::error::SendError<(JNICommand, Option<oneshot::Sender<UciResponse>>)>,
+        #[from] mpsc::error::SendError<(JNICommand, Option<oneshot::Sender<UciResponse>>, String)>,
     ),
     #[error("SendError for HalCallback: {0}")]
     SendHalCallback(#[from] mpsc::error::SendError<HalCallback>),

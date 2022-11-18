@@ -50,8 +50,16 @@ const EXTENDED_MAC_ADDRESS_LEN: usize = 8;
 // of less safety.
 
 pub trait EventManager {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()>;
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()>;
+    fn device_status_notification_received(
+        &self,
+        data: DeviceStatusNtfPacket,
+        chip_id: &str,
+    ) -> Result<()>;
+    fn core_generic_error_notification_received(
+        &self,
+        data: GenericErrorPacket,
+        chip_id: &str,
+    ) -> Result<()>;
     fn session_status_notification_received(&self, data: SessionStatusNtfPacket) -> Result<()>;
     fn short_range_data_notification_received(
         &self,
@@ -65,7 +73,11 @@ pub trait EventManager {
         &self,
         data: SessionUpdateControllerMulticastListNtfPacket,
     ) -> Result<()>;
-    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()>;
+    fn vendor_uci_notification_received(
+        &self,
+        data: UciNotificationPacket,
+        chip_id: &str,
+    ) -> Result<()>;
 }
 
 // Manages calling Java callbacks through the JNI.
@@ -77,16 +89,24 @@ pub struct EventManagerImpl {
 }
 
 impl EventManager for EventManagerImpl {
-    fn device_status_notification_received(&self, data: DeviceStatusNtfPacket) -> Result<()> {
+    fn device_status_notification_received(
+        &self,
+        data: DeviceStatusNtfPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_device_status_notification_received(&env, data);
+        let result = self.handle_device_status_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
 
-    fn core_generic_error_notification_received(&self, data: GenericErrorPacket) -> Result<()> {
+    fn core_generic_error_notification_received(
+        &self,
+        data: GenericErrorPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_core_generic_error_notification_received(&env, data);
+        let result = self.handle_core_generic_error_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
@@ -128,9 +148,13 @@ impl EventManager for EventManagerImpl {
         self.clear_exception(env);
         result
     }
-    fn vendor_uci_notification_received(&self, data: UciNotificationPacket) -> Result<()> {
+    fn vendor_uci_notification_received(
+        &self,
+        data: UciNotificationPacket,
+        chip_id: &str,
+    ) -> Result<()> {
         let env = self.jvm.attach_current_thread()?;
-        let result = self.handle_vendor_uci_notification_received(&env, data);
+        let result = self.handle_vendor_uci_notification_received(&env, data, chip_id);
         self.clear_exception(env);
         result
     }
@@ -148,7 +172,7 @@ impl EventManagerImpl {
 
     fn get_classloader_obj<'a>(env: &'a JNIEnv) -> Result<JObject<'a>> {
         // Use UwbRangingData class to find the classloader used by the java service.
-        let ranging_data_class = env.find_class(UWB_RANGING_DATA_CLASS)?;
+        let ranging_data_class = env.find_class(&UWB_RANGING_DATA_CLASS)?;
         let ranging_data_class_class = env.get_object_class(ranging_data_class)?;
         let get_class_loader_method = env.get_method_id(
             ranging_data_class_class,
@@ -178,6 +202,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: DeviceStatusNtfPacket,
+        chip_id: &str,
     ) -> Result<()> {
         let state = data.get_device_state().to_i32().ok_or_else(|| {
             error!("Failed converting device_state to i32");
@@ -186,8 +211,8 @@ impl EventManagerImpl {
         env.call_method(
             self.obj.as_obj(),
             "onDeviceStatusNotificationReceived",
-            "(I)V",
-            &[JValue::Int(state)],
+            "(ILjava/lang/String;)V",
+            &[JValue::Int(state), JValue::Object(JObject::from(env.new_string(chip_id)?))],
         )
         .map(|_| ()) // drop void method return
     }
@@ -222,6 +247,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: GenericErrorPacket,
+        chip_id: &str,
     ) -> Result<()> {
         let status = data.get_status().to_i32().ok_or_else(|| {
             error!("Failed converting status to i32");
@@ -230,8 +256,8 @@ impl EventManagerImpl {
         env.call_method(
             self.obj.as_obj(),
             "onCoreGenericErrorNotificationReceived",
-            "(I)V",
-            &[JValue::Int(status)],
+            "(ILjava/lang/String;)V",
+            &[JValue::Int(status), JValue::Object(JObject::from(env.new_string(chip_id)?))],
         )
         .map(|_| ()) // drop void method return
     }
@@ -243,9 +269,10 @@ impl EventManagerImpl {
     ) -> Result<JObject<'a>> {
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
+                JValue::Int(0),
                 JValue::Int(0),
                 JValue::Int(0),
                 JValue::Int(0),
@@ -278,7 +305,7 @@ impl EventManagerImpl {
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
                 JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
@@ -337,6 +364,10 @@ impl EventManagerImpl {
                 ),
                 JValue::Int(two_way_measurement.slot_index.to_i32().ok_or_else(|| {
                     error!("Failed converting slot index to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
+                JValue::Int(two_way_measurement.rssi.to_i32().ok_or_else(|| {
+                    error!("Failed converting rssi to i32");
                     Error::JniCall(JniError::Unknown)
                 })?),
             ],
@@ -359,7 +390,7 @@ impl EventManagerImpl {
         env.set_byte_array_region(mac_address_java, 0, &mac_address_arr_i8)?;
         env.new_object(
             two_way_measurement_class,
-            "([BIIIIIIIIIIII)V",
+            "([BIIIIIIIIIIIII)V",
             &[
                 JValue::Object(JObject::from(mac_address_java)),
                 JValue::Int(two_way_measurement.status.to_i32().ok_or_else(|| {
@@ -420,6 +451,10 @@ impl EventManagerImpl {
                     error!("Failed converting slot index to i32");
                     Error::JniCall(JniError::Unknown)
                 })?),
+                JValue::Int(two_way_measurement.rssi.to_i32().ok_or_else(|| {
+                    error!("Failed converting rssi to i32");
+                    Error::JniCall(JniError::Unknown)
+                })?),
             ],
         )
     }
@@ -432,9 +467,11 @@ impl EventManagerImpl {
         num_two_way_measurements: i32,
     ) -> Result<JObject<'a>> {
         let ranging_data_class = self.find_class(env, UWB_RANGING_DATA_CLASS)?;
+        let raw_ntf: Vec<u8> = data.clone().to_vec();
+        let raw_ntf_jbytearray = env.byte_array_from_slice(raw_ntf.as_ref())?;
         env.new_object(
             ranging_data_class,
-            "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;)V",
+            "(JJIJIII[Lcom/android/server/uwb/data/UwbTwoWayMeasurement;[B)V",
             &[
                 JValue::Long(data.get_sequence_number().to_i64().ok_or_else(|| {
                     error!("Failed converting seq num to i64");
@@ -462,6 +499,7 @@ impl EventManagerImpl {
                 })?),
                 JValue::Int(num_two_way_measurements),
                 JValue::Object(JObject::from(two_way_measurements_java)),
+                JValue::Object(JObject::from(raw_ntf_jbytearray)),
             ],
         )
     }
@@ -476,7 +514,7 @@ impl EventManagerImpl {
             EventManagerImpl::create_zeroed_two_way_measurement_java(
                 env,
                 two_way_measurement_class,
-                env.new_byte_array(EXTENDED_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
+                env.new_byte_array(SHORT_MAC_ADDRESS_LEN.to_i32().ok_or_else(|| {
                     error!("Failed converting mac address len to i32");
                     Error::JniCall(JniError::Unknown)
                 })?)?,
@@ -672,6 +710,7 @@ impl EventManagerImpl {
         &self,
         env: &JNIEnv,
         data: UciNotificationPacket,
+        _chip_id: &str,
     ) -> Result<()> {
         let gid: i32 = data.get_group_id().to_i32().ok_or_else(|| {
             error!("Failed to convert gid");
@@ -684,10 +723,11 @@ impl EventManagerImpl {
         let payload: Vec<u8> = EventManagerImpl::get_vendor_uci_payload(data)?;
         let payload_jbytearray = env.byte_array_from_slice(payload.as_ref())?;
 
+        // TODO(b/237533396): Add chip_id parameter to onVendorUciNotificationReceived
         env.call_method(
             self.obj.as_obj(),
             "onVendorUciNotificationReceived",
-            "(IIB])V",
+            "(II[B)V",
             &[
                 JValue::Int(gid),
                 JValue::Int(oid),
