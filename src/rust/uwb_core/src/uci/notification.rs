@@ -37,7 +37,7 @@ pub enum UciNotification {
 }
 
 /// UCI CoreNotification.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreNotification {
     /// DeviceStatusNtf equivalent.
     DeviceStatus(DeviceState),

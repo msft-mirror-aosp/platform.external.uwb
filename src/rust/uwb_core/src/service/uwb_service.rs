@@ -61,6 +61,22 @@ pub trait UwbServiceCallback: 'static {
     fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>);
 }
 
+/// A placeholder implementation for UwbServiceCallback that does nothing.
+pub struct NopUwbServiceCallback {}
+impl UwbServiceCallback for NopUwbServiceCallback {
+    fn on_service_reset(&mut self, _success: bool) {}
+    fn on_uci_device_status_changed(&mut self, _state: DeviceState) {}
+    fn on_session_state_changed(
+        &mut self,
+        _session_id: SessionId,
+        _session_state: SessionState,
+        _reason_code: ReasonCode,
+    ) {
+    }
+    fn on_range_data_received(&mut self, _session_id: SessionId, _range_data: SessionRangeData) {}
+    fn on_vendor_notification_received(&mut self, _gid: u32, _oid: u32, _payload: Vec<u8>) {}
+}
+
 /// The entry class (a.k.a top shim) of the core library. The class accepts requests from the
 /// client, and delegates the requests to other components. It should provide the
 /// backward-compatible interface for the client of the library.
@@ -127,26 +143,26 @@ impl UwbService {
     }
 
     /// Set UCI log mode.
-    pub fn set_logger_mode(&mut self, logger_mode: UciLoggerMode) -> Result<()> {
+    pub fn set_logger_mode(&self, logger_mode: UciLoggerMode) -> Result<()> {
         self.block_on_cmd(Command::SetLoggerMode { logger_mode })?;
         Ok(())
     }
 
     /// Enable the UWB service.
-    pub fn enable(&mut self) -> Result<()> {
+    pub fn enable(&self) -> Result<()> {
         self.block_on_cmd(Command::Enable)?;
         Ok(())
     }
 
     /// Disable the UWB service.
-    pub fn disable(&mut self) -> Result<()> {
+    pub fn disable(&self) -> Result<()> {
         self.block_on_cmd(Command::Disable)?;
         Ok(())
     }
 
     /// Initialize a new ranging session with the given parameters.
     pub fn init_session(
-        &mut self,
+        &self,
         session_id: SessionId,
         session_type: SessionType,
         params: AppConfigParams,
@@ -156,13 +172,13 @@ impl UwbService {
     }
 
     /// Destroy the session.
-    pub fn deinit_session(&mut self, session_id: SessionId) -> Result<()> {
+    pub fn deinit_session(&self, session_id: SessionId) -> Result<()> {
         self.block_on_cmd(Command::DeinitSession { session_id })?;
         Ok(())
     }
 
     /// Start ranging of the session.
-    pub fn start_ranging(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+    pub fn start_ranging(&self, session_id: SessionId) -> Result<AppConfigParams> {
         match self.block_on_cmd(Command::StartRanging { session_id })? {
             Response::AppConfigParams(params) => Ok(params),
             _ => panic!("start_ranging() should return AppConfigParams"),
@@ -170,20 +186,20 @@ impl UwbService {
     }
 
     /// Stop ranging.
-    pub fn stop_ranging(&mut self, session_id: SessionId) -> Result<()> {
+    pub fn stop_ranging(&self, session_id: SessionId) -> Result<()> {
         self.block_on_cmd(Command::StopRanging { session_id })?;
         Ok(())
     }
 
     /// Reconfigure the parameters of the session.
-    pub fn reconfigure(&mut self, session_id: SessionId, params: AppConfigParams) -> Result<()> {
+    pub fn reconfigure(&self, session_id: SessionId, params: AppConfigParams) -> Result<()> {
         self.block_on_cmd(Command::Reconfigure { session_id, params })?;
         Ok(())
     }
 
     /// Update the list of the controlees to the ongoing session.
     pub fn update_controller_multicast_list(
-        &mut self,
+        &self,
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
@@ -197,13 +213,13 @@ impl UwbService {
     }
 
     /// Set the country code. Android-specific method.
-    pub fn android_set_country_code(&mut self, country_code: CountryCode) -> Result<()> {
+    pub fn android_set_country_code(&self, country_code: CountryCode) -> Result<()> {
         self.block_on_cmd(Command::AndroidSetCountryCode { country_code })?;
         Ok(())
     }
 
     /// Get the power statistics. Android-specific method.
-    pub fn android_get_power_stats(&mut self) -> Result<PowerStats> {
+    pub fn android_get_power_stats(&self) -> Result<PowerStats> {
         match self.block_on_cmd(Command::AndroidGetPowerStats)? {
             Response::PowerStats(stats) => Ok(stats),
             _ => panic!("android_get_power_stats() should return PowerStats"),
@@ -212,7 +228,7 @@ impl UwbService {
 
     /// Send a vendor-specific UCI message.
     pub fn send_vendor_cmd(
-        &mut self,
+        &self,
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
@@ -224,7 +240,7 @@ impl UwbService {
     }
 
     /// Get app config params for the given session id
-    pub fn session_params(&mut self, session_id: SessionId) -> Result<AppConfigParams> {
+    pub fn session_params(&self, session_id: SessionId) -> Result<AppConfigParams> {
         match self.block_on_cmd(Command::GetParams { session_id })? {
             Response::AppConfigParams(params) => Ok(params),
             _ => panic!("session_params() should return AppConfigParams"),
@@ -581,7 +597,7 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(vec![], Ok(()));
         uci_manager.expect_close_hal(false, Ok(()));
-        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
+        let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.enable();
         assert!(result.is_ok());
@@ -630,7 +646,7 @@ mod tests {
             Ok(()),
         );
 
-        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
+        let (service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
         service.enable().unwrap();
 
         // Initialize a normal session.
@@ -692,7 +708,7 @@ mod tests {
         let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
-        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
+        let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.init_session(session_id, session_type, params.clone());
         assert!(result.is_err());
@@ -713,7 +729,7 @@ mod tests {
         let country_code = CountryCode::new(b"US").unwrap();
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_set_country_code(country_code.clone(), Ok(()));
-        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
+        let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.android_set_country_code(country_code);
         assert!(result.is_ok());
@@ -730,7 +746,7 @@ mod tests {
         };
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_android_get_power_stats(Ok(stats.clone()));
-        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
+        let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.android_get_power_stats().unwrap();
         assert_eq!(result, stats);
@@ -750,7 +766,7 @@ mod tests {
             cmd_payload.clone(),
             Ok(RawVendorMessage { gid, oid, payload: resp_payload.clone() }),
         );
-        let (mut service, _, _runtime) = setup_uwb_service(uci_manager);
+        let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
         let result = service.send_vendor_cmd(gid, oid, cmd_payload).unwrap();
         assert_eq!(result, RawVendorMessage { gid, oid, payload: resp_payload });
@@ -767,7 +783,7 @@ mod tests {
             vec![UciNotification::Vendor(RawVendorMessage { gid, oid, payload: payload.clone() })],
             Ok(()),
         );
-        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager);
+        let (service, mut callback, _runtime) = setup_uwb_service(uci_manager);
 
         callback.expect_on_vendor_notification_received(gid, oid, payload);
         service.enable().unwrap();
@@ -783,7 +799,7 @@ mod tests {
             vec![UciNotification::Core(CoreNotification::DeviceStatus(state))],
             Ok(()),
         );
-        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager);
+        let (service, mut callback, _runtime) = setup_uwb_service(uci_manager);
         callback.expect_on_uci_device_status_changed(state);
         service.enable().unwrap();
         assert!(service.block_on_for_testing(callback.wait_expected_calls_done()));
@@ -797,7 +813,7 @@ mod tests {
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
         uci_manager.expect_open_hal(vec![], Ok(()));
-        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
+        let (service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
         let result = service.enable();
@@ -820,7 +836,7 @@ mod tests {
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
         uci_manager.expect_open_hal(vec![], Ok(()));
-        let (mut service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
+        let (service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
         let result = service.enable();

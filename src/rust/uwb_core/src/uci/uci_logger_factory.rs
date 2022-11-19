@@ -15,7 +15,7 @@
 //! This file defines UciLoggerFactory, which manages the shared log file for multiple UciManager
 //! instances.
 
-use crate::uci::uci_logger::{UciLogger, UciLoggerNull};
+use crate::uci::uci_logger::{NopUciLogger, UciLogger};
 
 /// Trait definition for UciLoggerFactory, which builds UciLoggers that shares a single log file
 /// created by this struct.
@@ -31,14 +31,13 @@ pub trait UciLoggerFactory {
     fn build_logger(&mut self, chip_id: &str) -> Option<Self::Logger>;
 }
 
-/// The null implementation for UciLoggerFactory.
+/// The UciLoggerFactory implementation that always builds NopUciLogger.
 #[derive(Default)]
-pub struct UciLoggerFactoryNull {}
-//UciLoggerFactoryNull builds UciLoggerNull.
-impl UciLoggerFactory for UciLoggerFactoryNull {
-    type Logger = UciLoggerNull;
+pub struct NopUciLoggerFactory {}
+impl UciLoggerFactory for NopUciLoggerFactory {
+    type Logger = NopUciLogger;
 
-    fn build_logger(&mut self, _chip_id: &str) -> Option<UciLoggerNull> {
-        Some(UciLoggerNull::default())
+    fn build_logger(&mut self, _chip_id: &str) -> Option<NopUciLogger> {
+        Some(NopUciLogger::default())
     }
 }
