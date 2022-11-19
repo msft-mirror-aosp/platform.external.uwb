@@ -18,14 +18,20 @@ use bytes::Bytes;
 use log::error;
 use num_traits::FromPrimitive;
 
-use crate::uci::error::{Error, Result as UciResult};
-use crate::uci::params::{
+use crate::error::{Error, Result};
+use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
+use uwb_uci_packets::{
+    build_session_update_controller_multicast_list_cmd_v1,
+    build_session_update_controller_multicast_list_cmd_v2, ControleesV2,
+};
 
-#[derive(Debug, Clone)]
-pub(super) enum UciCommand {
+/// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum UciCommand {
     DeviceReset {
         reset_config: ResetConfig,
     },
@@ -61,6 +67,15 @@ pub(super) enum UciCommand {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
     },
+    SessionUpdateControllerMulticastListV2 {
+        session_id: SessionId,
+        action: UpdateMulticastListAction,
+        controlees: ControleesV2,
+    },
+    SessionUpdateActiveRoundsDtTag {
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    },
     RangeStart {
         session_id: SessionId,
     },
@@ -83,7 +98,7 @@ pub(super) enum UciCommand {
 
 impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
     type Error = Error;
-    fn try_from(cmd: UciCommand) -> Result<Self, Self::Error> {
+    fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
             UciCommand::SessionInit { session_id, session_type } => {
                 uwb_uci_packets::SessionInitCmdBuilder { session_id, session_type }.build().into()
@@ -105,14 +120,19 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 uwb_uci_packets::SessionGetStateCmdBuilder { session_id }.build().into()
             }
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
-                uwb_uci_packets::SessionUpdateControllerMulticastListCmdBuilder {
-                    session_id,
-                    action,
-                    controlees,
-                }
-                .build()
+                build_session_update_controller_multicast_list_cmd_v1(
+                    session_id, action, controlees,
+                )
                 .into()
             }
+            UciCommand::SessionUpdateControllerMulticastListV2 {
+                session_id,
+                action,
+                controlees,
+            } => build_session_update_controller_multicast_list_cmd_v2(
+                session_id, action, controlees,
+            )
+            .into(),
             UciCommand::CoreSetConfig { config_tlvs } => {
                 uwb_uci_packets::SetConfigCmdBuilder { tlvs: config_tlvs }.build().into()
             }
@@ -122,9 +142,12 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             .build()
             .into(),
             UciCommand::SessionSetAppConfig { session_id, config_tlvs } => {
-                uwb_uci_packets::SessionSetAppConfigCmdBuilder { session_id, tlvs: config_tlvs }
-                    .build()
-                    .into()
+                uwb_uci_packets::SessionSetAppConfigCmdBuilder {
+                    session_id,
+                    tlvs: config_tlvs.into_iter().map(|tlv| tlv.into_inner()).collect(),
+                }
+                .build()
+                .into()
             }
             UciCommand::SessionGetAppConfig { session_id, app_cfg } => {
                 uwb_uci_packets::SessionGetAppConfigCmdBuilder {
@@ -134,6 +157,16 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 .build()
                 .into()
             }
+
+            UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
+                uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+                    session_id,
+                    ranging_round_indexes,
+                }
+                .build()
+                .into()
+            }
+
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
@@ -165,11 +198,17 @@ fn build_uci_vendor_cmd_packet(
     gid: u32,
     oid: u32,
     payload: Vec<u8>,
-) -> UciResult<uwb_uci_packets::UciCommandPacket> {
+) -> Result<uwb_uci_packets::UciCommandPacket> {
     use uwb_uci_packets::GroupId;
-    let group_id = GroupId::from_u32(gid).ok_or(Error::InvalidArgs)?;
+    let group_id = GroupId::from_u32(gid).ok_or_else(|| {
+        error!("Invalid GroupId: {}", gid);
+        Error::BadParameters
+    })?;
     let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
-    let opcode = oid.try_into().map_err(|_| Error::InvalidArgs)?;
+    let opcode = oid.try_into().map_err(|_| {
+        error!("Invalid opcod: {}", oid);
+        Error::BadParameters
+    })?;
     let packet = match group_id {
         GroupId::VendorReserved9 => {
             uwb_uci_packets::UciVendor_9_CommandBuilder { opcode, payload }.build().into()
@@ -188,7 +227,7 @@ fn build_uci_vendor_cmd_packet(
         }
         _ => {
             error!("Invalid vendor gid {:?}", gid);
-            return Err(Error::InvalidArgs);
+            return Err(Error::BadParameters);
         }
     };
     Ok(packet)

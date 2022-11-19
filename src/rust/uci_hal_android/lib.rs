@@ -12,16 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Provide the error and result type for the UwbService.
+//! This library provides adaptation to UWB core from Android UCI HAL library.
 
-/// The error code for service module.
-#[derive(Debug)]
-pub enum Error {
-    /// Failed to transmit the message via tokio's channel.
-    TokioFailure,
-    /// Error occurs at the UCI stack.
-    UciError,
-}
-
-/// The result type returned by UwbService.
-pub type Result<T> = std::result::Result<T, Error>;
+pub mod error;
+pub mod uci_hal_android;
