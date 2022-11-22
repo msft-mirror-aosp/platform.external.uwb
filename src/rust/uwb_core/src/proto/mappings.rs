@@ -121,6 +121,7 @@ enum_mapping! {
     UCI_STATUS_MULTICAST_LIST_FULL => UciStatusMulticastListFull,
     UCI_STATUS_ADDRESS_NOT_FOUND => UciStatusAddressNotFound,
     UCI_STATUS_ADDRESS_ALREADY_PRESENT => UciStatusAddressAlreadyPresent,
+    UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT => UciStatusOkNegativeDistanceReport,
     UCI_STATUS_RANGING_TX_FAILED => UciStatusRangingTxFailed,
     UCI_STATUS_RANGING_RX_TIMEOUT => UciStatusRangingRxTimeout,
     UCI_STATUS_RANGING_RX_PHY_DEC_FAILED => UciStatusRangingRxPhyDecFailed,
