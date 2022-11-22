@@ -22,9 +22,10 @@ use std::iter::FromIterator;
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
     Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
-    DeviceState, ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
-    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
-    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
+    DeviceState, ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType,
+    MulticastUpdateStatusCode, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig,
+    SessionState, SessionType, ShortAddressTwoWayRangingMeasurement, StatusCode, UciPacketPacket,
+    UpdateMulticastListAction,
 };
 
 use crate::error::Error;
@@ -189,13 +190,23 @@ pub struct GetDeviceInfoResponse {
 
 /// The raw UCI message for the vendor commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawVendorMessage {
+pub struct RawUciMessage {
     /// The group id of the message.
     pub gid: u32,
     /// The opcode of the message.
     pub oid: u32,
     /// The payload of the message.
     pub payload: Vec<u8>,
+}
+
+impl From<UciPacketPacket> for RawUciMessage {
+    fn from(packet: UciPacketPacket) -> Self {
+        Self {
+            gid: packet.get_group_id() as u32,
+            oid: packet.get_opcode() as u32,
+            payload: packet.to_raw_payload(),
+        }
+    }
 }
 
 #[cfg(test)]
