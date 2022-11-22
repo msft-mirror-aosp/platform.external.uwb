@@ -26,8 +26,8 @@ use tokio::task;
 use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
-    DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawVendorMessage,
-    ResetConfig, SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
+    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification};
@@ -49,8 +49,8 @@ pub trait NotificationManager: 'static {
     /// Callback for SessionNotification.
     fn on_session_notification(&mut self, session_notification: SessionNotification) -> Result<()>;
 
-    /// Callback for RawVendorMessage.
-    fn on_vendor_notification(&mut self, vendor_notification: RawVendorMessage) -> Result<()>;
+    /// Callback for RawUciMessage.
+    fn on_vendor_notification(&mut self, vendor_notification: RawUciMessage) -> Result<()>;
 }
 
 /// Builder for NotificationManager. Builder is sent between threads.
@@ -62,14 +62,14 @@ pub trait NotificationManagerBuilder<T: NotificationManager>: 'static + Send + S
 struct NotificationDriver<U: NotificationManager> {
     core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
     session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
-    vendor_notification_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
+    vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
     notification_manager: U,
 }
 impl<U: NotificationManager> NotificationDriver<U> {
     fn new(
         core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
         session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
-        vendor_notification_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
+        vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
         notification_manager: U,
     ) -> Self {
         Self {
@@ -94,7 +94,7 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 }
                 Some(ntf) = self.vendor_notification_receiver.recv() =>{
                     self.notification_manager.on_vendor_notification(ntf).unwrap_or_else(|e|{
-                        error!("NotificationDriver: RawVendorMessage callback error: {:?}",e);
+                        error!("NotificationDriver: RawUciMessage callback error: {:?}",e);
                 });
                 }
                 else =>{
@@ -138,7 +138,7 @@ impl UciManagerSync {
         let (session_notification_sender, session_notification_receiver) =
             mpsc::unbounded_channel::<SessionNotification>();
         let (vendor_notification_sender, vendor_notification_receiver) =
-            mpsc::unbounded_channel::<RawVendorMessage>();
+            mpsc::unbounded_channel::<RawUciMessage>();
         runtime_handle.block_on(async {
             uci_manager_impl.set_core_notification_sender(core_notification_sender).await;
             uci_manager_impl.set_session_notification_sender(session_notification_sender).await;
@@ -333,9 +333,9 @@ impl UciManagerSync {
         self.runtime_handle.block_on(self.uci_manager_impl.android_get_power_stats())
     }
 
-    /// Send UCI command for a vendor-specific message.
-    pub fn raw_vendor_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawVendorMessage> {
-        self.runtime_handle.block_on(self.uci_manager_impl.raw_vendor_cmd(gid, oid, payload))
+    /// Send a raw UCI command.
+    pub fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
+        self.runtime_handle.block_on(self.uci_manager_impl.raw_uci_cmd(gid, oid, payload))
     }
 }
 
@@ -376,7 +376,7 @@ mod tests {
         ) -> Result<()> {
             Ok(())
         }
-        fn on_vendor_notification(&mut self, _vendor_notification: RawVendorMessage) -> Result<()> {
+        fn on_vendor_notification(&mut self, _vendor_notification: RawUciMessage) -> Result<()> {
             Ok(())
         }
     }
