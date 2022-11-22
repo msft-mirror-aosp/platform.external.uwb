@@ -27,6 +27,8 @@ pub use uwb_uci_packets::{
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 
+use crate::error::Error;
+
 /// The type of the session identifier.
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
@@ -132,6 +134,15 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
+/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionUpdateActiveRoundsDtTagResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// Indexes of unsuccessful ranging rounds.
+    pub ranging_round_indexes: Vec<u8>,
+}
+
 /// The country code struct that contains 2 uppercase ASCII characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountryCode([u8; 2]);
@@ -150,6 +161,14 @@ impl CountryCode {
 impl From<CountryCode> for [u8; 2] {
     fn from(item: CountryCode) -> [u8; 2] {
         item.0
+    }
+}
+
+impl TryFrom<String> for CountryCode {
+    type Error = Error;
+    fn try_from(item: String) -> Result<Self, Self::Error> {
+        let code = item.as_bytes().try_into().map_err(|_| Error::BadParameters)?;
+        Self::new(code).ok_or(Error::BadParameters)
     }
 }
 

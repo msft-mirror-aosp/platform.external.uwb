@@ -72,6 +72,10 @@ pub enum UciCommand {
         action: UpdateMulticastListAction,
         controlees: ControleesV2,
     },
+    SessionUpdateActiveRoundsDtTag {
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
+    },
     RangeStart {
         session_id: SessionId,
     },
@@ -153,6 +157,16 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 .build()
                 .into()
             }
+
+            UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
+                uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+                    session_id,
+                    ranging_round_indexes,
+                }
+                .build()
+                .into()
+            }
+
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
