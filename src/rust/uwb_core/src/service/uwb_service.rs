@@ -22,7 +22,7 @@ use tokio::task;
 use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, CountryCode, DeviceState, PowerStats, RawVendorMessage, ReasonCode, SessionId,
+    Controlee, CountryCode, DeviceState, PowerStats, RawUciMessage, ReasonCode, SessionId,
     SessionState, SessionType, UpdateMulticastListAction,
 };
 use crate::session::session_manager::{SessionManager, SessionNotification};
@@ -226,16 +226,11 @@ impl UwbService {
         }
     }
 
-    /// Send a vendor-specific UCI message.
-    pub fn send_vendor_cmd(
-        &self,
-        gid: u32,
-        oid: u32,
-        payload: Vec<u8>,
-    ) -> Result<RawVendorMessage> {
-        match self.block_on_cmd(Command::SendVendorCmd { gid, oid, payload })? {
-            Response::RawVendorMessage(msg) => Ok(msg),
-            _ => panic!("send_vendor_cmd() should return RawVendorMessage"),
+    /// Send a raw UCI message.
+    pub fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
+        match self.block_on_cmd(Command::RawUciCmd { gid, oid, payload })? {
+            Response::RawUciMessage(msg) => Ok(msg),
+            _ => panic!("raw_uci_cmd() should return RawUciMessage"),
         }
     }
 
@@ -277,7 +272,7 @@ struct UwbServiceActor<C: UwbServiceCallback, U: UciManager> {
     session_manager: Option<SessionManager>,
     core_notf_receiver: mpsc::UnboundedReceiver<CoreNotification>,
     session_notf_receiver: mpsc::UnboundedReceiver<SessionNotification>,
-    vendor_notf_receiver: mpsc::UnboundedReceiver<RawVendorMessage>,
+    vendor_notf_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
 }
 
 impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
@@ -412,9 +407,9 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
                 let stats = self.uci_manager.android_get_power_stats().await?;
                 Ok(Response::PowerStats(stats))
             }
-            Command::SendVendorCmd { gid, oid, payload } => {
-                let msg = self.uci_manager.raw_vendor_cmd(gid, oid, payload).await?;
-                Ok(Response::RawVendorMessage(msg))
+            Command::RawUciCmd { gid, oid, payload } => {
+                let msg = self.uci_manager.raw_uci_cmd(gid, oid, payload).await?;
+                Ok(Response::RawUciMessage(msg))
             }
             Command::GetParams { session_id } => {
                 if let Some(session_manager) = self.session_manager.as_mut() {
@@ -454,7 +449,7 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
         }
     }
 
-    async fn handle_vendor_notification(&mut self, notf: RawVendorMessage) {
+    async fn handle_vendor_notification(&mut self, notf: RawUciMessage) {
         self.callback.on_vendor_notification_received(notf.gid, notf.oid, notf.payload);
     }
 
@@ -546,7 +541,7 @@ enum Command {
         country_code: CountryCode,
     },
     AndroidGetPowerStats,
-    SendVendorCmd {
+    RawUciCmd {
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
@@ -561,7 +556,7 @@ enum Response {
     Null,
     AppConfigParams(AppConfigParams),
     PowerStats(PowerStats),
-    RawVendorMessage(RawVendorMessage),
+    RawUciMessage(RawUciMessage),
 }
 type ResponseSender = oneshot::Sender<Result<Response>>;
 
@@ -753,23 +748,23 @@ mod tests {
     }
 
     #[test]
-    fn test_send_vendor_cmd() {
+    fn test_send_raw_cmd() {
         let gid = 0x09;
         let oid = 0x35;
         let cmd_payload = vec![0x12, 0x34];
         let resp_payload = vec![0x56, 0x78];
 
         let mut uci_manager = MockUciManager::new();
-        uci_manager.expect_raw_vendor_cmd(
+        uci_manager.expect_raw_uci_cmd(
             gid,
             oid,
             cmd_payload.clone(),
-            Ok(RawVendorMessage { gid, oid, payload: resp_payload.clone() }),
+            Ok(RawUciMessage { gid, oid, payload: resp_payload.clone() }),
         );
         let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
-        let result = service.send_vendor_cmd(gid, oid, cmd_payload).unwrap();
-        assert_eq!(result, RawVendorMessage { gid, oid, payload: resp_payload });
+        let result = service.raw_uci_cmd(gid, oid, cmd_payload).unwrap();
+        assert_eq!(result, RawUciMessage { gid, oid, payload: resp_payload });
     }
 
     #[test]
@@ -780,7 +775,7 @@ mod tests {
 
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(
-            vec![UciNotification::Vendor(RawVendorMessage { gid, oid, payload: payload.clone() })],
+            vec![UciNotification::Vendor(RawUciMessage { gid, oid, payload: payload.clone() })],
             Ok(()),
         );
         let (service, mut callback, _runtime) = setup_uwb_service(uci_manager);

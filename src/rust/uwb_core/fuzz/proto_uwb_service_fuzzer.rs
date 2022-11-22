@@ -77,7 +77,7 @@ fuzz_target!(|methods: Vec<(Command, &[u8])>| {
                 let _ = proto_service.android_set_country_code(bytes);
             }
             Command::SendVendorCmd => {
-                let _ = proto_service.send_vendor_cmd(bytes);
+                let _ = proto_service.raw_uci_cmd(bytes);
             }
             Command::SessionParams => {
                 let _ = proto_service.session_params(bytes);

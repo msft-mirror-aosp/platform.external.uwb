@@ -48,6 +48,13 @@ fn is_same_packet(header: &UciPacketHeader, packet: &UciPacketHalPacket) -> bool
         && header.opcode == packet.get_opcode()
 }
 
+impl UciPacketPacket {
+    // For some usage, we need to get the raw payload.
+    pub fn to_raw_payload(self) -> Vec<u8> {
+        self.to_bytes().slice(UCI_PACKET_HEADER_LEN..).to_vec()
+    }
+}
+
 // Helper to convert from vector of |UciPacketHalPacket| to |UciPacketPacket|
 impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
     type Error = Error;
@@ -432,5 +439,34 @@ mod tests {
                 0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
             ]
         );
+    }
+
+    #[test]
+    fn test_to_raw_payload() {
+        let payload = vec![0x11, 0x22, 0x33];
+        let payload_clone = payload.clone();
+        let packet = UciPacketBuilder {
+            group_id: GroupId::Test,
+            message_type: MessageType::Response,
+            opcode: 0x5,
+            payload: Some(payload_clone.into()),
+        }
+        .build();
+
+        assert_eq!(payload, packet.to_raw_payload());
+    }
+
+    #[test]
+    fn test_to_raw_payload_empty() {
+        let payload: Vec<u8> = vec![];
+        let packet = UciPacketBuilder {
+            group_id: GroupId::Test,
+            message_type: MessageType::Response,
+            opcode: 0x5,
+            payload: None,
+        }
+        .build();
+
+        assert_eq!(payload, packet.to_raw_payload());
     }
 }
