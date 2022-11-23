@@ -14,14 +14,13 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use log::error;
 use num_traits::ToPrimitive;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawVendorMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, StatusCode,
+    PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, StatusCode, UciPacketPacket,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -49,7 +48,7 @@ pub(super) enum UciResponse {
     RangeGetRangingCount(Result<usize>),
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
-    RawVendorCmd(Result<RawVendorMessage>),
+    RawUciCmd(Result<RawUciMessage>),
 }
 
 impl UciResponse {
@@ -74,7 +73,7 @@ impl UciResponse {
             Self::RangeGetRangingCount(result) => Self::matches_result_retry(result),
             Self::AndroidSetCountryCode(result) => Self::matches_result_retry(result),
             Self::AndroidGetPowerStats(result) => Self::matches_result_retry(result),
-            Self::RawVendorCmd(result) => Self::matches_result_retry(result),
+            Self::RawUciCmd(result) => Self::matches_result_retry(result),
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
@@ -98,11 +97,11 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
             UciResponseChild::SessionResponse(evt) => evt.try_into(),
             UciResponseChild::RangingResponse(evt) => evt.try_into(),
             UciResponseChild::AndroidResponse(evt) => evt.try_into(),
-            UciResponseChild::UciVendor_9_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_A_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_B_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_E_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_F_Response(evt) => vendor_response(evt.into()),
+            UciResponseChild::UciVendor_9_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_A_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_B_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_E_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_F_Response(evt) => raw_response(evt.into()),
             _ => Err(Error::Unknown),
         }
     }
@@ -238,39 +237,9 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
     }
 }
 
-fn vendor_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
-    Ok(UciResponse::RawVendorCmd(Ok(RawVendorMessage {
-        gid: evt.get_group_id().to_u32().ok_or(Error::Unknown)?,
-        oid: evt.get_opcode().to_u32().ok_or(Error::Unknown)?,
-        payload: get_vendor_uci_payload(evt)?,
-    })))
-}
-
-fn get_vendor_uci_payload(data: uwb_uci_packets::UciResponsePacket) -> Result<Vec<u8>> {
-    match data.specialize() {
-        uwb_uci_packets::UciResponseChild::UciVendor_9_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_9_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_9_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_A_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_A_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_A_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_B_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_B_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_B_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_E_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_E_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_E_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_F_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_F_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_F_ResponseChild::None => Ok(Vec::new()),
-        },
-        _ => {
-            error!("Invalid vendor response with gid {:?}", data.get_group_id());
-            Err(Error::Unknown)
-        }
-    }
+fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
+    let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
+    let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
+    let packet: UciPacketPacket = evt.into();
+    Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
