@@ -25,7 +25,7 @@ use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawVendorMessage, ResetConfig, SessionId, SessionState, SessionType,
+    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
     SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
@@ -39,7 +39,7 @@ pub(crate) struct MockUciManager {
     expect_call_consumed: Arc<Notify>,
     core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
-    vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+    vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
 }
 
 #[allow(dead_code)]
@@ -288,14 +288,14 @@ impl MockUciManager {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::AndroidGetPowerStats { out });
     }
 
-    pub fn expect_raw_vendor_cmd(
+    pub fn expect_raw_uci_cmd(
         &mut self,
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
-        out: Result<RawVendorMessage>,
+        out: Result<RawUciMessage>,
     ) {
-        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RawVendorCmd {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::RawUciCmd {
             expected_gid,
             expected_oid,
             expected_payload,
@@ -339,7 +339,7 @@ impl UciManager for MockUciManager {
     }
     async fn set_vendor_notification_sender(
         &mut self,
-        vendor_notf_sender: mpsc::UnboundedSender<RawVendorMessage>,
+        vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     ) {
         self.vendor_notf_sender = vendor_notf_sender;
     }
@@ -755,20 +755,12 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn raw_vendor_cmd(
-        &self,
-        gid: u32,
-        oid: u32,
-        payload: Vec<u8>,
-    ) -> Result<RawVendorMessage> {
+    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RawVendorCmd {
-                expected_gid,
-                expected_oid,
-                expected_payload,
-                out,
-            }) if expected_gid == gid && expected_oid == oid && expected_payload == payload => {
+            Some(ExpectedCall::RawUciCmd { expected_gid, expected_oid, expected_payload, out })
+                if expected_gid == gid && expected_oid == oid && expected_payload == payload =>
+            {
                 self.expect_call_consumed.notify_one();
                 out
             }
@@ -878,10 +870,10 @@ enum ExpectedCall {
     AndroidGetPowerStats {
         out: Result<PowerStats>,
     },
-    RawVendorCmd {
+    RawUciCmd {
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
-        out: Result<RawVendorMessage>,
+        out: Result<RawUciMessage>,
     },
 }

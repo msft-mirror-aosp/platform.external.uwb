@@ -196,11 +196,11 @@ impl ProtoUwbService {
         write_to_bytes(&resp)
     }
 
-    /// Send a vendor-specific UCI message.
-    pub fn send_vendor_cmd(&self, request: &[u8]) -> Result<Vec<u8>> {
+    /// Send a raw UCI message.
+    pub fn raw_uci_cmd(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<SendVendorCmdRequest>(request)?;
         let mut resp = SendVendorCmdResponse::new();
-        match self.service.send_vendor_cmd(request.gid, request.oid, request.payload) {
+        match self.service.raw_uci_cmd(request.gid, request.oid, request.payload) {
             Ok(msg) => {
                 resp.set_status(Ok(()).into());
                 resp.set_gid(msg.gid);
