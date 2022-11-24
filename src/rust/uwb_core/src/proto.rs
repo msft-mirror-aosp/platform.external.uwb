@@ -12,14 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The library provides the core logic of Ultra-wide band (UWB) technology.
+//! Provide the protobuf bindings and the conversion between the elements of uwb_core and protobuf.
 
-pub(crate) mod session;
-pub(crate) mod utils;
+// Include the protobuf bindings generated from protoc_rust to "pub mod bindings;".
+include!(concat!(env!("OUT_DIR"), "/proto_bindings.rs"));
 
-pub mod error;
-pub mod params;
-#[cfg(feature = "proto")]
-pub mod proto;
-pub mod service;
-pub mod uci;
+pub(crate) mod mappings;
+pub mod utils;
