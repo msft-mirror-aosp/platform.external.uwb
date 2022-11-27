@@ -21,7 +21,7 @@ use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
-    RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
+    RawUciMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
     StatusCode,
 };
 
@@ -33,7 +33,7 @@ pub enum UciNotification {
     /// SessionNotificationPacket equivalent.
     Session(SessionNotification),
     /// UciVendor_X_Notification equivalent.
-    Vendor(RawVendorMessage),
+    Vendor(RawUciMessage),
 }
 
 /// UCI CoreNotification.
@@ -250,7 +250,7 @@ impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
 }
 
 fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> Result<UciNotification> {
-    Ok(UciNotification::Vendor(RawVendorMessage {
+    Ok(UciNotification::Vendor(RawUciMessage {
         gid: evt.get_group_id().to_u32().ok_or_else(|| {
             error!("Failed to get gid from packet: {:?}", evt);
             Error::Unknown
@@ -554,7 +554,7 @@ mod tests {
             UciNotification::try_from(vendor_A_nonempty_notification).unwrap();
         assert_eq!(
             uci_notification_from_vendor_9,
-            UciNotification::Vendor(RawVendorMessage {
+            UciNotification::Vendor(RawUciMessage {
                 gid: 0x9, // per enum GroupId in uci_packets.pdl
                 oid: 0x40,
                 payload: vec![],
@@ -562,7 +562,7 @@ mod tests {
         );
         assert_eq!(
             uci_notification_from_vendor_A,
-            UciNotification::Vendor(RawVendorMessage {
+            UciNotification::Vendor(RawUciMessage {
                 gid: 0xa,
                 oid: 0x41,
                 payload: b"Placeholder notification.".to_owned().into(),
