@@ -139,6 +139,7 @@ enum RangingMeasurementType {
   ONE_WAY = 0;
   TWO_WAY = 1;
   DL_TDOA = 2;
+  OWR_AOA = 3;
 }
 
 // Represent uwb_uci_packets::SessionType.

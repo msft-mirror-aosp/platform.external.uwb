@@ -182,6 +182,7 @@ enum_mapping! {
     ONE_WAY => OneWay,
     TWO_WAY => TwoWay,
     DL_TDOA => DlTdoa,
+    OWR_AOA => OwrAoa,
 }
 
 enum_mapping! {
