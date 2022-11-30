@@ -22,10 +22,10 @@ use std::iter::FromIterator;
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
     Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
-    DeviceState, ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType,
-    MulticastUpdateStatusCode, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig,
-    SessionState, SessionType, ShortAddressTwoWayRangingMeasurement, StatusCode, UciPacketPacket,
-    UpdateMulticastListAction,
+    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    GroupId, MessageType, MulticastUpdateStatusCode, PowerStats, RangingMeasurementType,
+    ReasonCode, ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode, UciPacketPacket, UpdateMulticastListAction,
 };
 
 use crate::error::Error;

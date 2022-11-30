@@ -20,9 +20,10 @@ use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
-    RawUciMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
-    StatusCode,
+    ControleeStatus, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, ReasonCode,
+    SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -104,6 +105,12 @@ pub enum RangingMeasurements {
 
     /// The measurement with extended address.
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
+
+    /// Dl-TDoA measurement with short address.
+    ShortDltdoa(Vec<ShortAddressDlTdoaRangingMeasurement>),
+
+    /// Dl-TDoA measurement with extended address.
+    ExtendedDltdoa(Vec<ExtendedAddressDlTdoaRangingMeasurement>),
 }
 
 impl UciNotification {
@@ -214,6 +221,32 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
             }
             RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
                 RangingMeasurements::Extended(evt.get_two_way_ranging_measurements().clone())
+            }
+            RangeDataNtfChild::ShortMacDlTDoARangeDataNtf(evt) => {
+                match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                    Some(v) => {
+                        if v.len() == evt.get_no_of_ranging_measurements().into() {
+                            RangingMeasurements::ShortDltdoa(v)
+                        } else {
+                            error!("Wrong count of ranging measurements {:?}", evt);
+                            return Err(Error::BadParameters);
+                        }
+                    }
+                    None => return Err(Error::BadParameters),
+                }
+            }
+            RangeDataNtfChild::ExtendedMacDlTDoARangeDataNtf(evt) => {
+                match ExtendedAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                    Some(v) => {
+                        if v.len() == evt.get_no_of_ranging_measurements().into() {
+                            RangingMeasurements::ExtendedDltdoa(v)
+                        } else {
+                            error!("Wrong count of ranging measurements {:?}", evt);
+                            return Err(Error::BadParameters);
+                        }
+                    }
+                    None => return Err(Error::BadParameters),
+                }
             }
             _ => {
                 error!("Unknown RangeDataNtfPacket: {:?}", evt);
