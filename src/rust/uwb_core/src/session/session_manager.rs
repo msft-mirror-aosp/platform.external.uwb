@@ -438,7 +438,7 @@ pub(crate) mod test_utils {
             session_id,
             current_ranging_interval_ms: 3,
             ranging_measurement_type: RangingMeasurementType::TwoWay,
-            ranging_measurements: RangingMeasurements::Short(vec![
+            ranging_measurements: RangingMeasurements::ShortAddressTwoWay(vec![
                 ShortAddressTwoWayRangingMeasurement {
                     mac_address: 0x123,
                     status: StatusCode::UciStatusOk,
