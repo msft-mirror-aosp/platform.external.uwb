@@ -420,6 +420,8 @@ fn to_proto_ranging_measurements(item: RangingMeasurements) -> Vec<ProtoRangingM
     match item {
         RangingMeasurements::Short(arr) => arr.into_iter().map(|item| item.into()).collect(),
         RangingMeasurements::Extended(arr) => arr.into_iter().map(|item| item.into()).collect(),
+        // TODO(b/260499366): Add support for DlTDoA.
+        _ => todo!(),
     }
 }
 
