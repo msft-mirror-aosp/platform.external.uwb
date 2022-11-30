@@ -20,9 +20,10 @@ use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    ControleeStatus, DeviceState, ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType,
-    RawVendorMessage, ReasonCode, SessionId, SessionState, ShortAddressTwoWayRangingMeasurement,
-    StatusCode,
+    ControleeStatus, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, ReasonCode,
+    SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -33,11 +34,11 @@ pub enum UciNotification {
     /// SessionNotificationPacket equivalent.
     Session(SessionNotification),
     /// UciVendor_X_Notification equivalent.
-    Vendor(RawVendorMessage),
+    Vendor(RawUciMessage),
 }
 
 /// UCI CoreNotification.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreNotification {
     /// DeviceStatusNtf equivalent.
     DeviceStatus(DeviceState),
@@ -104,6 +105,12 @@ pub enum RangingMeasurements {
 
     /// The measurement with extended address.
     Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
+
+    /// Dl-TDoA measurement with short address.
+    ShortDltdoa(Vec<ShortAddressDlTdoaRangingMeasurement>),
+
+    /// Dl-TDoA measurement with extended address.
+    ExtendedDltdoa(Vec<ExtendedAddressDlTdoaRangingMeasurement>),
 }
 
 impl UciNotification {
@@ -215,6 +222,32 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
             RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
                 RangingMeasurements::Extended(evt.get_two_way_ranging_measurements().clone())
             }
+            RangeDataNtfChild::ShortMacDlTDoARangeDataNtf(evt) => {
+                match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                    Some(v) => {
+                        if v.len() == evt.get_no_of_ranging_measurements().into() {
+                            RangingMeasurements::ShortDltdoa(v)
+                        } else {
+                            error!("Wrong count of ranging measurements {:?}", evt);
+                            return Err(Error::BadParameters);
+                        }
+                    }
+                    None => return Err(Error::BadParameters),
+                }
+            }
+            RangeDataNtfChild::ExtendedMacDlTDoARangeDataNtf(evt) => {
+                match ExtendedAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                    Some(v) => {
+                        if v.len() == evt.get_no_of_ranging_measurements().into() {
+                            RangingMeasurements::ExtendedDltdoa(v)
+                        } else {
+                            error!("Wrong count of ranging measurements {:?}", evt);
+                            return Err(Error::BadParameters);
+                        }
+                    }
+                    None => return Err(Error::BadParameters),
+                }
+            }
             _ => {
                 error!("Unknown RangeDataNtfPacket: {:?}", evt);
                 return Err(Error::Unknown);
@@ -250,7 +283,7 @@ impl TryFrom<uwb_uci_packets::AndroidNotificationPacket> for UciNotification {
 }
 
 fn vendor_notification(evt: uwb_uci_packets::UciNotificationPacket) -> Result<UciNotification> {
-    Ok(UciNotification::Vendor(RawVendorMessage {
+    Ok(UciNotification::Vendor(RawUciMessage {
         gid: evt.get_group_id().to_u32().ok_or_else(|| {
             error!("Failed to get gid from packet: {:?}", evt);
             Error::Unknown
@@ -554,7 +587,7 @@ mod tests {
             UciNotification::try_from(vendor_A_nonempty_notification).unwrap();
         assert_eq!(
             uci_notification_from_vendor_9,
-            UciNotification::Vendor(RawVendorMessage {
+            UciNotification::Vendor(RawUciMessage {
                 gid: 0x9, // per enum GroupId in uci_packets.pdl
                 oid: 0x40,
                 payload: vec![],
@@ -562,7 +595,7 @@ mod tests {
         );
         assert_eq!(
             uci_notification_from_vendor_A,
-            UciNotification::Vendor(RawVendorMessage {
+            UciNotification::Vendor(RawUciMessage {
                 gid: 0xa,
                 oid: 0x41,
                 payload: b"Placeholder notification.".to_owned().into(),
