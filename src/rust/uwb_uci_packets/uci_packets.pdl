@@ -837,6 +837,16 @@ test ExtendedMacTwoWayRangeDataNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
+packet ShortMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
+    no_of_ranging_measurements : 8,
+    _payload_,
+}
+
+packet ExtendedMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
+    no_of_ranging_measurements : 8,
+    _payload_,
+}
+
 packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
     session_id: 32,
 }
