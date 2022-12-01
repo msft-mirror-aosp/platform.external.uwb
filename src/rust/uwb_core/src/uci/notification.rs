@@ -21,8 +21,9 @@ use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     ControleeStatus, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, ReasonCode,
-    SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    RangingMeasurementType, RawUciMessage, ReasonCode, SessionId, SessionState,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
@@ -100,17 +101,23 @@ pub struct SessionRangeData {
 /// The ranging measurements.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RangingMeasurements {
-    /// The measurement with short address.
-    Short(Vec<ShortAddressTwoWayRangingMeasurement>),
+    /// A Two-Way measurement with short address.
+    ShortAddressTwoWay(Vec<ShortAddressTwoWayRangingMeasurement>),
 
-    /// The measurement with extended address.
-    Extended(Vec<ExtendedAddressTwoWayRangingMeasurement>),
+    /// A Two-Way measurement with extended address.
+    ExtendedAddressTwoWay(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 
     /// Dl-TDoA measurement with short address.
     ShortDltdoa(Vec<ShortAddressDlTdoaRangingMeasurement>),
 
     /// Dl-TDoA measurement with extended address.
     ExtendedDltdoa(Vec<ExtendedAddressDlTdoaRangingMeasurement>),
+
+    /// OWR for AoA measurement with short address.
+    ShortAddressOwrAoa(Vec<ShortAddressOwrAoaRangingMeasurement>),
+
+    /// OWR for AoA measurement with extended address.
+    ExtendedAddressOwrAoa(Vec<ExtendedAddressOwrAoaRangingMeasurement>),
 }
 
 impl UciNotification {
@@ -217,10 +224,24 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
         use uwb_uci_packets::RangeDataNtfChild;
         let ranging_measurements = match evt.specialize() {
             RangeDataNtfChild::ShortMacTwoWayRangeDataNtf(evt) => {
-                RangingMeasurements::Short(evt.get_two_way_ranging_measurements().clone())
+                RangingMeasurements::ShortAddressTwoWay(
+                    evt.get_two_way_ranging_measurements().clone(),
+                )
             }
             RangeDataNtfChild::ExtendedMacTwoWayRangeDataNtf(evt) => {
-                RangingMeasurements::Extended(evt.get_two_way_ranging_measurements().clone())
+                RangingMeasurements::ExtendedAddressTwoWay(
+                    evt.get_two_way_ranging_measurements().clone(),
+                )
+            }
+            RangeDataNtfChild::ShortMacOwrAoaRangeDataNtf(evt) => {
+                RangingMeasurements::ShortAddressOwrAoa(
+                    evt.get_owr_aoa_ranging_measurements().clone(),
+                )
+            }
+            RangeDataNtfChild::ExtendedMacOwrAoaRangeDataNtf(evt) => {
+                RangingMeasurements::ExtendedAddressOwrAoa(
+                    evt.get_owr_aoa_ranging_measurements().clone(),
+                )
             }
             RangeDataNtfChild::ShortMacDlTDoARangeDataNtf(evt) => {
                 match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
@@ -348,12 +369,14 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotificationPacket) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::params::uci_packets::OwrAoaStatusCode;
+
     #[test]
     fn test_ranging_measurements_trait() {
-        let empty_short_ranging_measurements = RangingMeasurements::Short(vec![]);
+        let empty_short_ranging_measurements = RangingMeasurements::ShortAddressTwoWay(vec![]);
         assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
-        let extended_ranging_measurements =
-            RangingMeasurements::Extended(vec![ExtendedAddressTwoWayRangingMeasurement {
+        let extended_ranging_measurements = RangingMeasurements::ExtendedAddressTwoWay(vec![
+            ExtendedAddressTwoWayRangingMeasurement {
                 mac_address: 0x1234_5678_90ab,
                 status: StatusCode::UciStatusOk,
                 nlos: 0,
@@ -368,10 +391,12 @@ mod tests {
                 aoa_destination_elevation_fom: 12,
                 slot_index: 0,
                 rssi: u8::MAX,
-            }]);
+            },
+        ]);
         let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
         assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
-        let empty_extended_ranging_measurements = RangingMeasurements::Extended(vec![]);
+        let empty_extended_ranging_measurements =
+            RangingMeasurements::ExtendedAddressTwoWay(vec![]);
         assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
         //short and extended measurements are unequal even if both are empty:
         assert_ne!(empty_short_ranging_measurements, empty_extended_ranging_measurements);
@@ -410,6 +435,7 @@ mod tests {
             ))
         );
     }
+
     #[test]
     fn test_session_notification_casting_from_extended_mac_two_way_range_data_ntf() {
         let extended_measurement = uwb_uci_packets::ExtendedAddressTwoWayRangingMeasurement {
@@ -451,7 +477,9 @@ mod tests {
                 session_id: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
-                ranging_measurements: RangingMeasurements::Extended(vec![extended_measurement]),
+                ranging_measurements: RangingMeasurements::ExtendedAddressTwoWay(vec![
+                    extended_measurement
+                ]),
                 rcr_indicator: 0x12,
                 raw_ranging_data,
             }))
@@ -498,7 +526,98 @@ mod tests {
                 session_id: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
-                ranging_measurements: RangingMeasurements::Short(vec![short_measurement]),
+                ranging_measurements: RangingMeasurements::ShortAddressTwoWay(vec![
+                    short_measurement
+                ]),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_extended_mac_owr_aoa_range_data_ntf() {
+        let extended_measurement = uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement {
+            mac_address: 0x1234_5678_90ab,
+            status: OwrAoaStatusCode::UciStatusSuccess,
+            nlos: 0,
+            frame_sequence_number: 1,
+            block_index: 1,
+            aoa_azimuth: 5,
+            aoa_azimuth_fom: 6,
+            aoa_elevation: 7,
+            aoa_elevation_fom: 8,
+        };
+        let extended_owr_aoa_range_data_ntf =
+            uwb_uci_packets::ExtendedMacOwrAoaRangeDataNtfBuilder {
+                sequence_number: 0x10,
+                session_id: 0x11,
+                rcr_indicator: 0x12,
+                current_ranging_interval: 0x13,
+                owr_aoa_ranging_measurements: vec![extended_measurement.clone()],
+            }
+            .build();
+        let raw_ranging_data = extended_owr_aoa_range_data_ntf.clone().to_vec();
+        let range_notification =
+            uwb_uci_packets::RangingNotificationPacket::try_from(extended_owr_aoa_range_data_ntf)
+                .unwrap();
+        let session_notification = SessionNotification::try_from(range_notification).unwrap();
+        let uci_notification_from_extended_owr_aoa_range_data_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_extended_owr_aoa_range_data_ntf,
+            UciNotification::Session(SessionNotification::RangeData(SessionRangeData {
+                sequence_number: 0x10,
+                session_id: 0x11,
+                ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::OwrAoa,
+                current_ranging_interval_ms: 0x13,
+                ranging_measurements: RangingMeasurements::ExtendedAddressOwrAoa(vec![
+                    extended_measurement
+                ]),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_short_mac_owr_aoa_range_data_ntf() {
+        let short_measurement = uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement {
+            mac_address: 0x1234,
+            status: OwrAoaStatusCode::UciStatusSuccess,
+            nlos: 0,
+            frame_sequence_number: 1,
+            block_index: 1,
+            aoa_azimuth: 5,
+            aoa_azimuth_fom: 6,
+            aoa_elevation: 7,
+            aoa_elevation_fom: 8,
+        };
+        let short_owr_aoa_range_data_ntf = uwb_uci_packets::ShortMacOwrAoaRangeDataNtfBuilder {
+            sequence_number: 0x10,
+            session_id: 0x11,
+            rcr_indicator: 0x12,
+            current_ranging_interval: 0x13,
+            owr_aoa_ranging_measurements: vec![short_measurement.clone()],
+        }
+        .build();
+        let raw_ranging_data = short_owr_aoa_range_data_ntf.clone().to_vec();
+        let range_notification =
+            uwb_uci_packets::RangingNotificationPacket::try_from(short_owr_aoa_range_data_ntf)
+                .unwrap();
+        let session_notification = SessionNotification::try_from(range_notification).unwrap();
+        let uci_notification_from_short_owr_aoa_range_data_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_short_owr_aoa_range_data_ntf,
+            UciNotification::Session(SessionNotification::RangeData(SessionRangeData {
+                sequence_number: 0x10,
+                session_id: 0x11,
+                ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::OwrAoa,
+                current_ranging_interval_ms: 0x13,
+                ranging_measurements: RangingMeasurements::ShortAddressOwrAoa(vec![
+                    short_measurement
+                ]),
                 rcr_indicator: 0x12,
                 raw_ranging_data,
             }))

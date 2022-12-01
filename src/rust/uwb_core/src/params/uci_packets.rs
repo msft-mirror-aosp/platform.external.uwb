@@ -22,9 +22,10 @@ use std::iter::FromIterator;
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
     Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
-    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    GroupId, MessageType, MulticastUpdateStatusCode, PowerStats, RangingMeasurementType,
-    ReasonCode, ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
+    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
+    OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState,
+    SessionType, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UciPacketPacket, UpdateMulticastListAction,
 };
 
