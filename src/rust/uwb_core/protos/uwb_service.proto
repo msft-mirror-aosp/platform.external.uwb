@@ -103,7 +103,12 @@ enum StatusCode {
 
   UCI_STATUS_ERROR_CCC_SE_BUSY = 80;
   UCI_STATUS_ERROR_CCC_LIFECYCLE = 81;
+}
 
+// Represents uwb_uci_packets::OwrAoaStatusCode
+enum OwrAoaStatusCode {
+    UCI_STATUS_SUCCESS = 0;
+    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT = 1;
 }
 
 // Represent uwb_uci_packets::DeviceState.
@@ -139,6 +144,7 @@ enum RangingMeasurementType {
   ONE_WAY = 0;
   TWO_WAY = 1;
   DL_TDOA = 2;
+  OWR_AOA = 3;
 }
 
 // Represent uwb_uci_packets::SessionType.
@@ -379,8 +385,12 @@ message Controlee {
   uint32 subsession_id = 2;
 }
 
+// TODO(b/246678053): Should this be split into separate message types ?
+//
 // Represent uwb_uci_packets::ShortAddressTwoWayRangingMeasurement or
-// uwb_uci_packets::ExtendedAddressTwoWayRangingMeasurement.
+// uwb_uci_packets::ExtendedAddressTwoWayRangingMeasurement or
+// uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement or
+// uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement.
 message RangingMeasurement {
   uint64 mac_address = 1;
   StatusCode status = 2;
@@ -396,6 +406,9 @@ message RangingMeasurement {
   uint32 aoa_destination_elevation_fom = 12;
   uint32 slot_index = 13;
   uint32 rssi = 14;
+  uint32 frame_sequence_number = 15;
+  uint32 block_index = 16;
+  OwrAoaStatusCode owr_aoa_status_code = 17;
 }
 
 // Represent uwb_core::uci::notification::SessionRangeData;
