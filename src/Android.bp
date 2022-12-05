@@ -3,96 +3,6 @@ package {
 }
 
 rust_defaults {
-    name: "libuwb_uci_defaults",
-    srcs: [
-        "rust/lib.rs",
-    ],
-    crate_name: "uwb_uci_rust",
-    lints: "android",
-    clippy_lints: "android",
-    rustlibs: [
-        "android.hardware.uwb-V1-rust",
-        "libanyhow",
-        "libbinder_ndk_sys",
-        "libbinder_rs",
-        "libbinder_tokio_rs",
-        "libbytes",
-        "libjni",
-        "liblazy_static",
-        "liblog_rust",
-        "liblogger",
-        "libnum_traits",
-        "libthiserror",
-        "libtokio",
-        "libuwb_uci_packets",
-    ],
-    target: {
-        android: {
-            rustlibs: [
-                "librustutils",
-            ],
-        },
-    },
-    rlibs: [
-        "libarbitrary",
-    ],
-    proc_macros: [
-        "libasync_trait",
-    ],
-    apex_available: [
-        "com.android.uwb",
-    ],
-    min_sdk_version: "Tiramisu",
-    host_supported: true,
-}
-
-rust_library {
-    name: "libuwb_uci_rust",
-    defaults: ["libuwb_uci_defaults"],
-}
-
-rust_test {
-    name: "libuwb_uci_rust_tests",
-    defaults: ["libuwb_uci_defaults"],
-    target: {
-        android: {
-            test_suites: [
-                "general-tests",
-                "mts-uwb"
-            ],
-            test_config_template: "uwb_rust_test_config_template.xml",
-        },
-        host: {
-            test_suites: [
-                "general-tests",
-            ],
-            data_libs: [
-                "libandroid_runtime_lazy",
-                "libbase",
-                "libbinder",
-                "libbinder_ndk",
-                "libcutils",
-                "liblog",
-                "libutils",
-            ],
-        },
-    },
-    // Support multilib variants (using different suffix per sub-architecture), which is needed on
-    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
-    // all test artifacts into a single `testcases` directory.
-    compile_multilib: "both",
-    multilib: {
-        lib32: {
-            suffix: "32",
-        },
-        lib64: {
-            suffix: "64",
-        },
-    },
-    auto_gen_config: true,
-}
-
-rust_defaults {
     name: "libuwb_uci_packet_defaults",
     srcs: [
         "rust/uwb_uci_packets/src/lib.rs",
@@ -207,9 +117,40 @@ rust_test {
         "libenv_logger",
         "libtempfile",
     ],
-    test_suites: [
-      "general-tests",
-    ],
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+            data_libs: [
+                "libandroid_runtime_lazy",
+                "libbase",
+                "libcutils",
+                "liblog",
+                "libutils",
+            ],
+        },
+    },
+    // Support multilib variants (using different suffix per sub-architecture), which is needed on
+    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
+    // all test artifacts into a single `testcases` directory.
+    compile_multilib: "both",
+    multilib: {
+        lib32: {
+            suffix: "32",
+        },
+        lib64: {
+            suffix: "64",
+        },
+    },
+    auto_gen_config: true,
 }
 
 rust_binary {
@@ -231,19 +172,59 @@ rust_binary {
     host_supported: true,
 }
 
-rust_fuzz {
-    name: "uwb_uci_rust_fuzzer",
+// Build the uwb_core library with "proto" feature enabled.
+// It's used for fuzzer test.
+rust_library {
+    name: "libuwb_core_with_proto",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
     srcs: [
-        "fuzz/fuzzer.rs",
+        // Generate the protobuf bindings.
+        // These genrule follows the logic of rust/uwb_core/build.rs.
+        ":gen_uwb_core_proto",
+        ":include_uwb_core_proto",
     ],
     rustlibs: [
-        "android.hardware.uwb-V1-rust",
+        "libprotobuf",
+    ],
+    features: ["proto"],
+    host_supported: true,
+}
+
+genrule {
+    name: "gen_uwb_core_proto",
+    tools: ["aprotoc", "protoc-gen-rust"],
+    cmd: "$(location aprotoc)" +
+         " --proto_path=`dirname $(in)`" +
+         " --dependency_out=$(depfile)" +
+         " --plugin=$(location protoc-gen-rust)" +
+         " --rust_out=$(genDir) $(in)",
+    srcs: [
+        "rust/uwb_core/protos/uwb_service.proto",
+    ],
+    out: [
+        "uwb_service.rs",
+    ],
+    depfile: true,
+}
+
+genrule {
+    name: "include_uwb_core_proto",
+    cmd: "echo '#[path = \"uwb_service.rs\"]' > $(out);" +
+         "echo 'pub mod bindings;' >> $(out);",
+    out: [
+        "proto_bindings.rs",
+    ],
+}
+
+rust_fuzz {
+    name: "uwb_core_fuzzer",
+    srcs: [
+        "rust/uwb_core/fuzz/proto_uwb_service_fuzzer.rs",
+    ],
+    rustlibs: [
         "libarbitrary",
-        "liblog_rust",
-        "libnum_traits",
-        "libtokio",
-        "libuwb_uci_packets",
-        "libuwb_uci_rust",
+        "libuwb_core_with_proto",
     ],
     fuzz_config: {
         cc: [
@@ -263,7 +244,6 @@ rust_library {
     rustlibs: [
         "android.hardware.uwb-V1-rust",
         "libanyhow",
-        "libbinder_ndk_sys",
         "libbinder_rs",
         "libbinder_tokio_rs",
         "libbytes",
