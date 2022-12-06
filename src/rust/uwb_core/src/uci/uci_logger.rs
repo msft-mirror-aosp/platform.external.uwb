@@ -51,6 +51,7 @@ impl TryFrom<String> for UciLoggerMode {
 /// Trait definition for the thread-safe uci logger
 pub trait UciLogger: 'static + Send + Sync {
     /// Logs Uci Packet.
+    /// TODO(b/261762781): Add logging for UciDataPacketPacket also.
     fn log_uci_packet(&mut self, packet: UciControlPacketPacket);
     /// Logs hal open event.
     fn log_hal_open(&mut self, result: Result<()>);
@@ -154,6 +155,8 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
             },
         }
     }
+
+    // TODO(b/261762781): Add a fn log_uci_data() to log a UciDataPacketPacket.
 }
 
 /// A placeholder UciLogger implementation that does nothing.
