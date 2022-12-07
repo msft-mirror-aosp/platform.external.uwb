@@ -81,7 +81,7 @@
 #define UCI_GID_CORE 0x00           /* 0000b UCI Core group */
 #define UCI_GID_SESSION_MANAGE 0x01 /* 0001b Session Config commands */
 #define UCI_GID_RANGE_MANAGE 0x02   /* 0010b Range Management group */
-#define UCI_GID_ANDROID 0x0E        /* 1110b Android vendor group */
+#define UCI_GID_ANDROID 0x0C        /* 1110b Android vendor group */
 #define UCI_GID_TEST 0x0D           /* 1101b RF Test Gropup */
 
 /* Vendor specific group Identifier */
