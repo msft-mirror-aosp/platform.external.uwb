@@ -666,7 +666,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 if let UciCommand::RawUciCmd { gid, oid, payload: _ } = cmd.clone() {
                     let gid = GroupId::from_u32(gid);
                     let oid = oid.to_u8();
-                    if oid == None || gid == None {
+                    if oid.is_none() || gid.is_none() {
                         let _ = result_sender.send(Err(Error::BadParameters));
                         return;
                     }
