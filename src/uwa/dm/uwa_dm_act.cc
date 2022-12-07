@@ -429,8 +429,8 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
     } break;
     case UWB_VENDOR_SPECIFIC_UCI_NTF_EVT:
     {
-      dm_cback_data.sVendor_specific_ntf.len = p_data->sVendor_specific_ntf.len;
-      memcpy((uint8_t*)dm_cback_data.sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.len);
+      dm_cback_data.vendor_specific_ntf.len = p_data->vendor_specific_ntf.len;
+      memcpy((uint8_t*)dm_cback_data.vendor_specific_ntf.data, p_data->vendor_specific_ntf.data, p_data->vendor_specific_ntf.len);
       (*uwa_dm_cb.p_dm_cback)(UWA_VENDOR_SPECIFIC_UCI_NTF_EVT, &dm_cback_data);
     } break;
     default:
