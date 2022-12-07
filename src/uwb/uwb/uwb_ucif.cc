@@ -1234,13 +1234,14 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
       STREAM_TO_UINT16(twr_range_measr->aoa_dest_elevation, p);
       STREAM_TO_UINT8(twr_range_measr->aoa_dest_elevation_FOM, p);
       STREAM_TO_UINT8(twr_range_measr->slot_index, p);
+      STREAM_TO_UINT8(twr_range_measr->rssi, p);
       /* Read & Ignore RFU bytes
-         if mac address format is short, then 12 bytes
-         if mac address format is extended, then read 6 bytes */
+         if mac address format is short, then 11 bytes
+         if mac address format is extended, then read 5 bytes */
       if (sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
-        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 12);
+        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 11);
       } else {
-        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 6);
+        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 5);
       }
     }
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA) {

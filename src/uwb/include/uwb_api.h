@@ -104,7 +104,7 @@ typedef uint8_t tUWB_STATUS;
 // RFU size for tdoa Ranging
 
 #define TDOA_RANGE_MEASR_RFU 12
-#define TWR_RANGE_MEASR_RFU 12
+#define TWR_RANGE_MEASR_RFU 11
 
 #define CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH 260
 
@@ -268,6 +268,7 @@ typedef struct {
   uint16_t aoa_dest_elevation;
   uint8_t aoa_dest_elevation_FOM;
   uint8_t slot_index;
+  uint8_t rssi;
   uint8_t rfu[TWR_RANGE_MEASR_RFU];
 } tUWB_TWR_RANGING_MEASR;
 
