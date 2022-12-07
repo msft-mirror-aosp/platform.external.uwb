@@ -285,6 +285,13 @@ typedef struct {
   uint8_t* blink_payload_data; /* Blink Payload Data */
 } tUWB_TDoA_RANGING_MEASR;
 
+
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWB_VENDOR_SPECIFIC_NTF;
+
 typedef struct {
   uint8_t mac_addr[8];
   uint8_t status;
@@ -316,6 +323,7 @@ typedef struct {
   uint8_t reserved[8];
   uint8_t no_of_measurements;
   tUWB_RANGING_MEASR ranging_measures;
+  tUWB_VENDOR_SPECIFIC_NTF vendor_specific_ntf;
 } tUWB_RANGE_DATA_REVT;
 
 /* the data type associated with UWB_CONFORMANCE_TEST_DATA */
@@ -403,7 +411,7 @@ typedef union {
   tUWB_SET_COUNTRY_CODE_REVT sSet_country_code_status;
   tUWB_SEND_BLINK_DATA_NTF_REVT sSend_blink_data_ntf;
   tUWB_CONFORMANCE_TEST_DATA sConformance_test_data;
-  tUWB_VENDOR_SPECIFIC_REVT sVendor_specific_ntf;
+  tUWB_VENDOR_SPECIFIC_REVT vendor_specific_ntf;
   tUWB_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status;
   tUWB_RX_DATA_REVT sRcvd_data;
 } tUWB_RESPONSE;
