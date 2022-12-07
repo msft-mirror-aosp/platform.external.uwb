@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -1008,6 +1008,44 @@ tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
                          uint8_t dest_end_point, uint8_t sequence_num,
                          uint16_t data_len, uint8_t* p_data) {
   return uci_send_data_frame(session_id, addr_len, p_addr, dest_end_point, sequence_num, data_len, p_data);
+}
+
+/*******************************************************************************
+**
+** Function         UWB_UpdateRangingRoundIndex
+**
+** Description      This function is called to Update Active Ranging Index.
+**
+** Parameter        dlTdoaRole - 0x00(Anchor) or 0x01(Tag)
+**                  session_id  - Session id To which Rangng index need to update
+**                  number_of_active_rngIndex - NUmber Of Ranging index to be updated
+**                  rng_round_index_len - Range Round Index Len
+**                  p_rng_round_index  -  pointer to Ranging Index buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_UpdateRangingRoundIndex(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_rng_index,
+                                    uint8_t rng_round_index_len, uint8_t* p_rng_round_index) {
+  return uci_send_range_round_index_update_cmd(dlTdoaRole, session_id, number_of_rng_index, rng_round_index_len, p_rng_round_index);
+}
+
+/*******************************************************************************
+**
+** Function         UWB_ConfigureDTAnchorForRrRdmList
+**
+** Description      This function is called to Configure DT anchor RR RDM List.
+**
+** Parameter        session_id  - Session id To which Rangng index need to update
+**                  rr_rdm_count - Number Of rr_rdm
+**                  length - length of data buffer
+**                  p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_ConfigureDTAnchorForRrRdmList(uint32_t session_id, uint8_t rr_rdm_count, uint8_t length, uint8_t* p_data) {
+  return uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd(session_id, rr_rdm_count, length, p_data);
 }
 
 /*******************************************************************************
