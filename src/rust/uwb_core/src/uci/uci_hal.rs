@@ -18,7 +18,9 @@ use std::convert::TryInto;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{Packet, UciCommandPacket, UciPacketHalPacket, UciPacketPacket};
+use uwb_uci_packets::{
+    Packet, UciCommandPacket, UciControlPacketHalPacket, UciControlPacketPacket,
+};
 
 use crate::error::Result;
 use crate::params::uci_packets::SessionId;
@@ -55,8 +57,8 @@ pub trait UciHal: 'static + Send {
         // maximum packet size. We convert the command into list of UciHalPacket, then send the
         // packets via send_packet().
         let packet: UciCommandPacket = cmd.try_into()?;
-        let packet: UciPacketPacket = packet.into();
-        let fragmented_packets: Vec<UciPacketHalPacket> = packet.into();
+        let packet: UciControlPacketPacket = packet.into();
+        let fragmented_packets: Vec<UciControlPacketHalPacket> = packet.into();
         for packet in fragmented_packets.into_iter() {
             self.send_packet(packet.to_vec()).await?;
         }

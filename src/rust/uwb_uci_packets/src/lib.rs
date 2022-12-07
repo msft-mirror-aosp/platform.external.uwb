@@ -230,36 +230,36 @@ generate_extract_func!(extract_u32, u32);
 generate_extract_func!(extract_u64, u64);
 
 // Container for UCI packet header fields.
-struct UciPacketHeader {
+struct UciControlPacketHeader {
     message_type: MessageType,
     group_id: GroupId,
     opcode: u8,
 }
 
 // Ensure that the new packet fragment belong to the same packet.
-fn is_same_packet(header: &UciPacketHeader, packet: &UciPacketHalPacket) -> bool {
+fn is_same_packet(header: &UciControlPacketHeader, packet: &UciControlPacketHalPacket) -> bool {
     header.message_type == packet.get_message_type()
         && header.group_id == packet.get_group_id()
         && header.opcode == packet.get_opcode()
 }
 
-impl UciPacketPacket {
+impl UciControlPacketPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
         self.to_bytes().slice(UCI_PACKET_HEADER_LEN..).to_vec()
     }
 }
 
-// Helper to convert from vector of |UciPacketHalPacket| to |UciPacketPacket|
-impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
+// Helper to convert from vector of |UciControlPacketHalPacket| to |UciControlPacketPacket|
+impl TryFrom<Vec<UciControlPacketHalPacket>> for UciControlPacketPacket {
     type Error = Error;
 
-    fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
+    fn try_from(packets: Vec<UciControlPacketHalPacket>) -> Result<Self> {
         if packets.is_empty() {
             return Err(Error::InvalidPacketError);
         }
         // Store header info from the first packet.
-        let header = UciPacketHeader {
+        let header = UciControlPacketHeader {
             message_type: packets[0].get_message_type(),
             group_id: packets[0].get_group_id(),
             opcode: packets[0].get_opcode(),
@@ -276,10 +276,10 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
             // get payload by stripping the header.
             payload_buf.extend_from_slice(&packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
         }
-        // Create assembled |UciPacketPacket| and convert to bytes again since we need to
+        // Create assembled |UciControlPacketPacket| and convert to bytes again since we need to
         // reparse the packet after defragmentation to get the appropriate message.
-        UciPacketPacket::parse(
-            &UciPacketBuilder {
+        UciControlPacketPacket::parse(
+            &UciControlPacketBuilder {
                 message_type: header.message_type,
                 group_id: header.group_id,
                 opcode: header.opcode,
@@ -291,21 +291,21 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
     }
 }
 
-// Helper to convert from |UciPacketPacket| to vector of |UciPacketHalPacket|s
-impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
-    fn from(packet: UciPacketPacket) -> Self {
+// Helper to convert from |UciControlPacketPacket| to vector of |UciControlPacketHalPacket|s
+impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
+    fn from(packet: UciControlPacketPacket) -> Self {
         // Store header info.
-        let header = UciPacketHeader {
+        let header = UciControlPacketHeader {
             message_type: packet.get_message_type(),
             group_id: packet.get_group_id(),
             opcode: packet.get_opcode(),
         };
-        let mut fragments: Vec<UciPacketHalPacket> = Vec::new();
+        let mut fragments: Vec<UciControlPacketHalPacket> = Vec::new();
         // get payload by stripping the header.
         let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
         if payload.is_empty() {
             fragments.push(
-                UciPacketHalBuilder {
+                UciControlPacketHalBuilder {
                     message_type: header.message_type,
                     group_id: header.group_id,
                     opcode: header.opcode,
@@ -324,7 +324,7 @@ impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
                     PacketBoundaryFlag::Complete
                 };
                 fragments.push(
-                    UciPacketHalBuilder {
+                    UciControlPacketHalBuilder {
                         message_type: header.message_type,
                         group_id: header.group_id,
                         opcode: header.opcode,
@@ -343,12 +343,12 @@ impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
 pub struct PacketDefrager {
     // Cache to store incoming fragmented packets in the middle of reassembly.
     // Will be empty if there is no reassembly in progress.
-    fragment_cache: Vec<UciPacketHalPacket>,
+    fragment_cache: Vec<UciControlPacketHalPacket>,
 }
 
 impl PacketDefrager {
-    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciPacketPacket> {
-        match UciPacketHalPacket::parse(msg) {
+    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciControlPacketPacket> {
+        match UciControlPacketHalPacket::parse(msg) {
             Ok(packet) => {
                 let pbf = packet.get_packet_boundary_flag();
                 // Add the incoming fragment to the packet cache.
@@ -617,13 +617,13 @@ mod tests {
     #[test]
     fn test_build_multicast_update_v1_packet() {
         let controlee = Controlee { short_address: 0x1234, subsession_id: 0x1324_3546 };
-        let packet: UciPacketPacket = build_session_update_controller_multicast_list_cmd_v1(
+        let packet: UciControlPacketPacket = build_session_update_controller_multicast_list_cmd_v1(
             0x1425_3647,
             UpdateMulticastListAction::AddControlee,
             vec![controlee; 1],
         )
         .into();
-        let packet_fragments: Vec<UciPacketHalPacket> = packet.into();
+        let packet_fragments: Vec<UciControlPacketHalPacket> = packet.into();
         let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
         assert_eq!(
             uci_packet,
@@ -640,7 +640,7 @@ mod tests {
     fn test_to_raw_payload() {
         let payload = vec![0x11, 0x22, 0x33];
         let payload_clone = payload.clone();
-        let packet = UciPacketBuilder {
+        let packet = UciControlPacketBuilder {
             group_id: GroupId::Test,
             message_type: MessageType::Response,
             opcode: 0x5,
@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn test_to_raw_payload_empty() {
         let payload: Vec<u8> = vec![];
-        let packet = UciPacketBuilder {
+        let packet = UciControlPacketBuilder {
             group_id: GroupId::Test,
             message_type: MessageType::Response,
             opcode: 0x5,

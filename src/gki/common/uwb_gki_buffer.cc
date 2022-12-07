@@ -93,7 +93,7 @@ static bool phUwb_gki_alloc_free_queue(uint8_t id) {
   if (Q->p_first == 0) {
     uint32_t requested_size;
     bool overflow = __builtin_mul_overflow(Q->size + BUFFER_PADDING_SIZE,
-                                           Q->total, &requested_size)
+                                           Q->total, &requested_size);
     if (overflow) {
       phUwb_GKI_exception(GKI_ERROR_BUF_SIZE_TOOBIG,
                          "gki_alloc_free_queue: Buffer overflow");

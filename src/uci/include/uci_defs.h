@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -27,6 +27,9 @@
 
 #include <stdint.h>
 
+#define UCI_PAYLOAD_SUPPORT  1
+#define UCI_MAX_PAYLOAD_SIZE 4096
+
 /* Define the message header size for all UCI Commands and Notifications.
  */
 #define UCI_MSG_HDR_SIZE 0x04     /* per UCI spec */
@@ -37,9 +40,10 @@
 
 #define UCI_PAYLOAD_SUPPORT 1
 #define MAX_UCI_DATA_PKT_SIZE 4096
-#define LENGTH_INDCATOR_BIT 0x80  // 1000 0000
 #define UCI_LENGTH_SHIFT 8
 #define UCI_RESPONSE_STATUS_OFFSET 0x04
+#define UCI_RESPONSE_PAYLOAD_OFFSET 0x05
+#define UCI_MAX_FRAGMENT_BUFF_SIZE 4200
 
 /* UCI Command and Notification Format:
  * 4 byte message header:
@@ -51,6 +55,7 @@
 /* MT: Message Type (byte 0) */
 #define UCI_MT_MASK 0xE0
 #define UCI_MT_SHIFT 0x05
+#define UCI_MT_DATA 0x00 /* (UCI_MT_DATA << UCI_MT_SHIFT) = 0x00 */
 #define UCI_MT_CMD 0x01 /* (UCI_MT_CMD << UCI_MT_SHIFT) = 0x20 */
 #define UCI_MT_RSP 0x02 /* (UCI_MT_RSP << UCI_MT_SHIFT) = 0x40 */
 #define UCI_MT_NTF 0x03 /* (UCI_MT_NTF << UCI_MT_SHIFT) = 0x60 */
@@ -68,13 +73,15 @@
 #define UCI_PBF_NO_OR_LAST 0x00 /* not fragmented or last fragment */
 #define UCI_PBF_ST_CONT 0x10    /* start or continuing fragment */
 
+#define DATA_MESSAGE_SND 0x01
+
 /* GID: Group Identifier (byte 0) */
 #define UCI_GID_MASK 0x0F
 #define UCI_GID_SHIFT 0x00
 #define UCI_GID_CORE 0x00           /* 0000b UCI Core group */
 #define UCI_GID_SESSION_MANAGE 0x01 /* 0001b Session Config commands */
 #define UCI_GID_RANGE_MANAGE 0x02   /* 0010b Range Management group */
-#define UCI_GID_ANDROID 0x0E        /* 1110b Android vendor group */
+#define UCI_GID_ANDROID 0x0C        /* 1110b Android vendor group */
 #define UCI_GID_TEST 0x0D           /* 1101b RF Test Gropup */
 
 /* Vendor specific group Identifier */
@@ -120,6 +127,17 @@
   ((UWB_HDR*)phUwb_GKI_getbuf((uint16_t)(UWB_HDR_SIZE + UCI_MSG_HDR_SIZE + \
                                          UCI_MSG_OFFSET_SIZE + (paramlen))))
 
+/* UCI Data Format:
+ * byte 0: MT(0) PBF DPF
+ * byte 1: RFU
+ * byte 2: Data Length
+ * byte 3: Data Length */
+#define UCI_DATA_PBLD_HDR(p, pbf, len)             \
+  *(p)++ = (uint8_t)(((pbf) << UCI_PBF_SHIFT) | DATA_MESSAGE_SND);       \
+  *(p)++ = 0x00;                    \
+  *(p)++ = (uint8_t)(len);       \
+  *(p)++ = (uint8_t)(((len) >> UCI_LENGTH_SHIFT));
+
 /**********************************************
  * UCI Core Group-0: Opcodes and size of commands
  **********************************************/
@@ -135,6 +153,9 @@
 #define UCI_MSG_CORE_DEVICE_RESET_CMD_SIZE 0x01
 #define UCI_MSG_CORE_DEVICE_INFO_CMD_SIZE 0x00
 #define UCI_MSG_CORE_GET_CAPS_INFO_CMD_SIZE 0x00
+
+#define UCI_MSG_DATA_CREDIT_NTF           0x0B
+#define UCI_MSG_DATA_TRANSFER_STATUS_NTF  0x0C
 
 /*********************************************************
  * UCI session config Group-2: Opcodes and size of command
@@ -219,6 +240,7 @@
 #define UCI_PARAM_ID_TX_ADAPTIVE_PAYLOAD_POWER 0x1C
 #define UCI_PARAM_ID_RESPONDER_SLOT_INDEX 0x1E
 #define UCI_PARAM_ID_PRF_MODE 0x1F
+#define UCI_PARAM_ID_CAP_SIZE_RANGE 0x20
 #define UCI_PARAM_ID_SCHEDULED_MODE 0x22
 #define UCI_PARAM_ID_KEY_ROTATION 0x23
 #define UCI_PARAM_ID_KEY_ROTATION_RATE 0x24
@@ -313,6 +335,8 @@
 #define UCI_STATUS_RANGING_RX_MAC_DEC_FAILED 0x25
 #define UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED 0x26
 #define UCI_STATUS_RANGING_RX_MAC_IE_MISSING 0x27
+#define STS_LENGTH 0x35
+#define RSSI_REPORTING 0x36
 
 /* UWB Data Session Specific Status Codes */
 #define UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED 0x30
@@ -336,6 +360,19 @@
  **************************************************/
 #define MEASUREMENT_TYPE_ONEWAY 0x00
 #define MEASUREMENT_TYPE_TWOWAY 0x01
+#define MEASUREMENT_TYPE_DLTDOA 0x02
+#define MEASUREMENT_TYPE_OWR_WITH_AOA 0x03
+
+#define EXTENDED_ADDRESS_LEN       0x08
+#define EXTENDED_PARAM_ID_MASK     0xF0
+
+/* Maximum size of UCI DATA Message the UWBS can receive */
+#define MAX_DATA_MSG_SIZE                   0x00
+#define MAX_DATA_PKT_PAYLOAD_SIZE           0x01
+
+
+/* Maximum Length of RrRdmList*/
+#define MAX_RRRDM_LIST_LENGTH               0XFF
 
 /*************************************************
  * Mac Addressing Mode Indicator
@@ -348,6 +385,10 @@
 #define SHORT_ADDRESS_LEN 0x02
 #define EXTENDED_ADDRESS_LEN 0x08
 #define MAX_NUM_OF_TDOA_MEASURES 24
+#define MAX_NUM_OF_DLTDOA_MEASURES 10
+#define MAX_NUM_OWR_AOA_MEASURES   1
+#define UCI_MAX_DATA_SIZE 4196
+
 #define MAX_NUM_RESPONDERS \
   12  // max number of responders for contention based raning
 #define MAX_NUM_CONTROLLEES \

@@ -27,7 +27,7 @@ use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, ControleesV2, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, GroupId,
     MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UciPacketPacket,
+    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UciControlPacketPacket,
     UpdateMulticastListAction,
 };
 use crate::uci::message::UciMessage;
@@ -435,7 +435,7 @@ struct RawCmdSignature {
 }
 
 impl RawCmdSignature {
-    pub fn is_same_signature(&self, packet: &UciPacketPacket) -> bool {
+    pub fn is_same_signature(&self, packet: &UciControlPacketPacket) -> bool {
         packet.get_group_id() == self.gid && packet.get_opcode() == self.oid
     }
 }
@@ -666,7 +666,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 if let UciCommand::RawUciCmd { gid, oid, payload: _ } = cmd.clone() {
                     let gid = GroupId::from_u32(gid);
                     let oid = oid.to_u8();
-                    if oid == None || gid == None {
+                    if oid.is_none() || gid.is_none() {
                         let _ = result_sender.send(Err(Error::BadParameters));
                         return;
                     }
@@ -837,10 +837,10 @@ mod tests {
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
-    fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciPacketPacket>>(
+    fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
-        let packets: Vec<uwb_uci_packets::UciPacketHalPacket> = builder.into().into();
+        let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
         packets.into_iter().map(|packet| packet.into()).collect()
     }
 

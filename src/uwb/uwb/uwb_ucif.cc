@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -34,6 +34,20 @@
 #include "uwb_target.h"
 
 #define NORMAL_MODE_LENGTH_OFFSET 0x03
+#define DATA_PACKET_LEN_SHIFT 0x08
+#define EXTENDED_MODE_LEN_OFFSET 0x02
+#define EXTENDED_MODE_LEN_SHIFT 0x08
+#define EXTND_LEN_INDICATOR_OFFSET 0x01
+#define EXTND_LEN_INDICATOR_OFFSET_MASK  0x80
+#define TDOA_TX_TIMESTAMP_OFFSET         0x00FF
+#define TDOA_TX_TIMESTAMP_OFFSET_MASK    0x06
+#define TDOA_RX_TIMESTAMP_OFFSET         0x00FF
+#define TDOA_RX_TIMESTAMP_OFFSET_MASK    0x18
+#define TDOA_ANCHOR_LOC_OFFSET           0x00FF
+#define TDOA_ANCHOR_LOC_OFFSET_MASK      0x60
+#define TDOA_ACTIVE_RR_OFFSET            0x0FF0
+#define TDOA_ACTIVE_RR_OFFSET_MASK       0x0780
+
 #define MAC_SHORT_ADD_LEN 2
 #define MAC_EXT_ADD_LEN 8
 #define PDOA_LEN 4
@@ -45,6 +59,19 @@
 #define RANGING_DATA_LENGTH 25
 
 #define VENDOR_SPEC_INFO_LEN 2
+#define OWR_WITH_AOA_MEASUREMENT_LENGTH    11
+#define TDOA_TIMESTAMP_LEN_40BITS          5
+#define TDOA_TIMESTAMP_LEN_64BITS          8
+#define TDOA_ANCHOR_LOC_LEN_10BYTES        10
+#define TDOA_ANCHOR_LOC_LEN_12BYTES        12
+#define TDOA_TX_TIMESTAMP_40BITS           0
+#define TDOA_TX_TIMESTAMP_64BITS           2
+#define TDOA_RX_TIMESTAMP_40BITS           0
+#define TDOA_RX_TIMESTAMP_64BITS           8
+#define TDOA_ANCHOR_LOC_NOT_INCLUDED       0
+#define TDOA_ANCHOR_LOC_IN_RELATIVE_SYSTEM 0x40
+#define TDOA_ANCHOR_LOC_IN_WGS84_SYSTEM    0x20
+#define TDOA_ACTIVE_RR_INDEX_POSITION      7
 
 uint8_t last_cmd_buff[UCI_MAX_PAYLOAD_SIZE];
 uint8_t last_data_buff[4096];
@@ -55,15 +82,7 @@ static uint8_t blink_payload_buffer[MAX_NUM_OF_TDOA_MEASURES]
 static uint8_t range_data_ntf_buffer[2048];
 static uint8_t range_data_ntf_len =0;
 
-struct chained_uci_packet {
-  uint8_t buffer[4192];
-  uint8_t oid;
-  uint8_t gid;
-  uint16_t offset;
-  uint8_t is_first_frgmnt_done;
-};
-
-typedef struct chained_uci_packet chained_uci_packet;
+chained_uci_packet chained_packet;
 
 /*******************************************************************************
  **
@@ -141,6 +160,28 @@ void uwb_ucif_retransmit_cmd(UWB_HDR* p_buf) {
 
 /*******************************************************************************
  **
+ ** Function         uwb_ucif_retransmit_data
+ **
+ ** Description      Retransmission of last data packet
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uwb_ucif_retransmit_data(UWB_HDR* p_buf) {
+  UCI_TRACE_I("uwb_ucif_retransmit_data");
+  if (p_buf == NULL) {
+    UCI_TRACE_E("uwb_ucif_retransmit_data: p_data is NULL");
+    return;
+  }
+  HAL_RE_WRITE(p_buf);
+
+  /* start the credit timeout timer */
+  uwb_start_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer,
+      (uint16_t)(UWB_TTYPE_UCI_WAIT_DATA_NTF),uwb_cb.uci_credit_ntf_timeout);
+}
+
+/*******************************************************************************
+ **
  ** Function         uwb_ucif_check_cmd_queue
  **
  ** Description      Send UCI command to the transport
@@ -199,9 +240,12 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
         uwb_cb.rawCmdCbflag = true;
       }
 
-      /* Indicate command is pending */
-      uwb_cb.uci_cmd_window--;
-      uwb_cb.is_resp_pending = true;
+      if(pbf) {
+        uwb_cb.rawCmdCbflag = false;
+      } else {
+        uwb_cb.uci_cmd_window--;
+      }
+      uwb_cb.is_resp_pending = !pbf;
       uwb_cb.cmd_retry_count = 0;
 
       /* send to HAL */
@@ -241,6 +285,287 @@ void uwb_ucif_send_cmd(UWB_HDR* p_buf) {
 
 /*******************************************************************************
  **
+ ** Function         uwb_ucif_credit_ntf_timeout
+ **
+ ** Description      Handle a credit ntf timeout
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uwb_ucif_credit_ntf_timeout(void){
+  UCI_TRACE_I("uwb_ucif_credit_ntf_timeout");
+/* if enabling UWB, notify upper layer of failure */
+  if (uwb_cb.is_credit_ntf_pending && (uwb_cb.data_pkt_retry_count < UCI_CMD_MAX_RETRY_COUNT)) {
+    uwb_stop_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer); /*stop the pending timer */
+    uwb_ucif_retransmit_data(uwb_cb.pLast_data_buf);
+    uwb_cb.data_pkt_retry_count++;
+   } else {
+    uwb_cb.is_credit_ntf_pending = false;
+    uwb_cb.data_pkt_retry_count = 0;
+    uwb_ucif_event_status(UWB_UWBS_RESP_TIMEOUT_REVT, UWB_STATUS_FAILED);
+    uwb_ucif_uwb_recovery();
+  }
+}
+
+/*******************************************************************************
+**
+** Function         uwb_ucif_send_data_frame
+**
+** Description      This function is called to send UCI data packet to UWB subsystem as credits are available
+**
+** Returns          void
+**
+*******************************************************************************/
+
+void uwb_ucif_send_data_frame(UWB_HDR* p_data){
+  UCI_TRACE_I("uwb_ucif_send_data_frame()");
+  uint8_t* ps;
+  uint8_t* pTemp;
+
+  if (uwb_cb.uwb_state == UWB_STATE_W4_HAL_CLOSE ||
+    uwb_cb.uwb_state == UWB_STATE_NONE) {
+    UCI_TRACE_E("%s: HAL is not initialized", __func__);
+    return;
+  }
+
+  /* If no credit available */
+  /* then enqueue this command */
+  if (p_data) {
+    if ((data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].credit_available ==
+         0) ||
+        (data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx]
+             .tx_data_pkt_q.count) ||
+        (uwb_cb.uci_cmd_window == 0)) {
+          UCI_TRACE_D(
+            "Enqueuing p_Data");
+      phUwb_GKI_enqueue(
+          &data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].tx_data_pkt_q,
+          p_data);
+      if (p_data != NULL) {
+        UCI_TRACE_D(
+            "uwb_ucif_send_data_frame : making  p_data NULL.");
+        p_data = NULL;
+      }
+    }
+  }
+
+  if ((data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].credit_available) && (uwb_cb.uci_cmd_window > 0)) {
+    if (!p_data) {
+      UCI_TRACE_D(
+            "Dequeueing p_Data");
+      p_data = (UWB_HDR*)phUwb_GKI_dequeue(
+          &data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].tx_data_pkt_q);
+    }
+
+    if (p_data) {
+      /* save the message header to double check the response */
+      ps = (uint8_t*)(p_data + 1) + p_data->offset;
+      /* copying command to temp buff for retransmission */
+      uwb_cb.pLast_data_buf = (UWB_HDR*)last_data_buff;
+      uwb_cb.pLast_data_buf->offset = p_data->offset;
+      pTemp =
+          (uint8_t*)(uwb_cb.pLast_data_buf + 1) + uwb_cb.pLast_data_buf->offset;
+      uwb_cb.pLast_data_buf->len = p_data->len;
+      memcpy(pTemp, ps, p_data->len);
+      /* decrease the credits */
+      data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].credit_available = 0;
+      uwb_cb.is_credit_ntf_pending = true;
+      uwb_cb.uci_cmd_window--;
+      /* send to HAL */
+      HAL_WRITE(p_data);
+      /* start the credit timeout timer */
+      uwb_start_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer,
+                            (uint16_t)(UWB_TTYPE_UCI_WAIT_DATA_NTF),
+                            uwb_cb.uci_credit_ntf_timeout);
+    }
+  }
+}
+
+
+/*******************************************************************************
+**
+** Function         uwb_ucif_proc_data_credit_ntf
+**
+** Description      This function is called to process credits ntf
+**
+** Returns          void
+**
+*******************************************************************************/
+void uwb_ucif_proc_data_credit_ntf(uint8_t* p_buf, uint16_t len) {
+  uint32_t session_id;
+
+  /* Stop pending credit ntf timer */
+  if (uwb_cb.is_credit_ntf_pending) {
+    uwb_stop_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer);
+    uwb_cb.is_credit_ntf_pending = false;
+    uwb_cb.data_pkt_retry_count = 0;
+    uwb_cb.invalid_len_cmd_retry_cnt = 0;
+    uwb_cb.uci_cmd_window++;
+  }
+
+  if (len != 0) {
+    STREAM_TO_UINT32(session_id, p_buf);
+    STREAM_TO_UINT8(uwb_cb.data_credits, p_buf);
+    for (int i = 0; i < data_tx_cb.no_of_sessions; i++) {
+      if (session_id == data_tx_cb.tx_data_pkt[i].session_id) {
+        data_tx_cb.curr_session_idx = i;
+      }
+    }
+    data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].credit_available =
+        uwb_cb.data_credits;
+    if ((data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx]
+             .credit_available) &&
+        (data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx]
+             .tx_data_pkt_q.count)) {
+      uwb_ucif_send_data_frame(NULL);
+    } else {
+      for (int i = 0; i < data_tx_cb.no_of_sessions; i++) {
+        if ((data_tx_cb.tx_data_pkt[i].credit_available) &&
+            (data_tx_cb.tx_data_pkt[i].tx_data_pkt_q.count)) {
+          data_tx_cb.curr_session_idx = i;
+          break;
+        }
+      }
+      uwb_ucif_send_data_frame(NULL);
+    }
+  }
+}
+
+/*******************************************************************************
+**
+** Function         uwb_ucif_proc_data_transfer_status_ntf
+**
+** Description      This function is called to process data transfer status over UWB
+**
+** Returns          void
+**
+*******************************************************************************/
+void uwb_ucif_proc_data_transfer_status_ntf(uint8_t* p_buf, uint16_t len){
+  tUWB_DATA_TRANSFER_STATUS_NTF_REVT dataXferStatus;
+  tUWB_RESPONSE uwb_response;
+  if (len == 0) {
+    UCI_TRACE_E("%s: len is zero", __func__);
+    return;
+  }
+  if (uwb_cb.is_credit_ntf_pending == true) {
+    uwb_stop_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer);
+    uwb_cb.is_credit_ntf_pending = false;
+    uwb_cb.data_pkt_retry_count = 0;
+    uwb_cb.uci_cmd_window++;
+  }
+
+  if (uwb_cb.p_resp_cback == NULL) {
+    UCI_TRACE_E("%s: response callback is null", __func__);
+    return;
+  }
+  memset(&dataXferStatus, 0, sizeof(tUWB_DATA_TRANSFER_STATUS_NTF_REVT ));
+  STREAM_TO_UINT32(dataXferStatus.session_id, p_buf);
+  STREAM_TO_UINT8(dataXferStatus.sequence_num, p_buf);
+  STREAM_TO_UINT8(dataXferStatus.status, p_buf);
+
+  uwb_response.sData_xfer_status = dataXferStatus;
+
+  for (int i = 0; i < data_tx_cb.no_of_sessions; i++) {
+    if (dataXferStatus.session_id == data_tx_cb.tx_data_pkt[i].session_id) {
+      data_tx_cb.tx_data_pkt[i].credit_available = 1;
+      data_tx_cb.curr_session_idx = i;
+      break;
+    }
+  }
+
+  (*uwb_cb.p_resp_cback)(UWB_DATA_TRANSFER_STATUS_NTF_REVT, &uwb_response);
+
+  if ((data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx].credit_available) &&
+      (data_tx_cb.tx_data_pkt[data_tx_cb.curr_session_idx]
+           .tx_data_pkt_q.count)) {
+    uwb_ucif_send_data_frame(NULL);
+  }
+}
+
+/*******************************************************************************
+ **
+ ** Function         uci_ucif_proc_data_packet()
+ **
+ ** Description      This function is called to report received data
+ **
+ ** Returns          void
+ **
+ *******************************************************************************/
+void uci_ucif_proc_data_packet(uint8_t* p_buf, uint16_t len) {
+  tUWB_RESPONSE evt_data;
+
+  UCI_TRACE_D("%s: len = %d", __func__, len);
+
+  if (uwb_cb.p_resp_cback == NULL) {
+    UCI_TRACE_E("%s: response callback is null", __func__);
+    return;
+  }
+  STREAM_TO_UINT32(evt_data.sRcvd_data.session_id, p_buf);
+  STREAM_TO_UINT8(evt_data.sRcvd_data.status, p_buf);
+  STREAM_TO_UINT32(evt_data.sRcvd_data.sequence_num, p_buf);
+  STREAM_TO_ARRAY(evt_data.sRcvd_data.address, p_buf, EXTENDED_ADDRESS_LEN);
+  STREAM_TO_UINT8(evt_data.sRcvd_data.source_end_point, p_buf);
+  STREAM_TO_UINT8(evt_data.sRcvd_data.dest_end_point, p_buf);
+  STREAM_TO_UINT16(evt_data.sRcvd_data.data_len, p_buf);
+  STREAM_TO_ARRAY(evt_data.sRcvd_data.data, p_buf, evt_data.sRcvd_data.data_len);
+
+  (*uwb_cb.p_resp_cback)(UWB_DATA_RECV_REVT, &evt_data);
+}
+
+void chain_data_packet(UWB_HDR* p_msg) {
+   uint16_t payload_length = 0;
+   uint8_t mt, pbf, dpf, *p, *pp;
+   p = (uint8_t*)(p_msg + 1) + p_msg->offset;
+   pp = p;
+   if ((p != NULL) & (pp != NULL)) {
+     UCI_MSG_PRS_HDR0(pp, mt, pbf, dpf);
+     pp = pp + 3;
+     payload_length = p[NORMAL_MODE_LENGTH_OFFSET];
+     payload_length = (uint16_t)((payload_length << DATA_PACKET_LEN_SHIFT) |
+                                 p[NORMAL_MODE_LENGTH_OFFSET - 1]);
+     if (!uwb_cb.IsConformaceTestEnabled) {
+       if (pbf) {
+         if (!uwb_cb.is_first_frgmnt_done) {
+           chained_packet.gid = dpf;
+           memcpy(&chained_packet.buffer[chained_packet.offset], p, p_msg->len);
+           chained_packet.offset = p_msg->len;
+           uwb_cb.is_first_frgmnt_done = true;
+         } else {
+           memcpy(&chained_packet.buffer[chained_packet.offset], pp,
+                  payload_length);
+           chained_packet.offset =
+               (uint16_t)(chained_packet.offset + payload_length);
+         }
+       } else {
+         if (uwb_cb.is_first_frgmnt_done) {
+             memcpy(&chained_packet.buffer[chained_packet.offset], pp,
+                    payload_length);  // Append only payload to chained packet
+             chained_packet.offset =
+                 (uint16_t)(chained_packet.offset + payload_length);
+
+             // Update P & PP
+             p = &chained_packet
+                      .buffer[0];  // p -> points to complete UCI packet
+             pp = p + 2;           // Skip oid & gid bytes
+             payload_length =
+                 (uint16_t)(chained_packet.offset - UCI_MSG_HDR_SIZE);
+             UINT16_TO_STREAM(pp,
+                              payload_length);  // Update overall payload length
+                                                // into the chained packet
+         }
+         // Clear flags
+         chained_packet.offset = 0;
+         uwb_cb.is_first_frgmnt_done = false;
+         chained_packet.oid = 0xFF;
+         chained_packet.gid = 0xFF;
+       }
+     }
+     uci_ucif_proc_data_packet(pp, payload_length);
+  }
+}
+
+/*******************************************************************************
+ **
  ** Function         uwb_ucif_process_event
  **
  ** Description      This function is called to process the
@@ -252,71 +577,74 @@ void uwb_ucif_send_cmd(UWB_HDR* p_buf) {
 bool uwb_ucif_process_event(UWB_HDR* p_msg) {
   uint8_t mt, pbf, gid, oid, *p, *pp;
   bool free = true;
-  uint16_t payload_length;
+  uint16_t payload_length =0;
   uint8_t *p_old, old_gid, old_oid, old_mt;
-  static chained_uci_packet chained_packet;
+  uint8_t is_extended_length = 0;
 
   p = (uint8_t*)(p_msg + 1) + p_msg->offset;
   pp = p;
 
   if ((p != NULL) & (pp != NULL)) {
     UCI_MSG_PRS_HDR0(pp, mt, pbf, gid);
-    UCI_MSG_PRS_HDR1(pp, oid);
-    pp = pp + 2;  // Skip payload fields
-    UCI_TRACE_E("uwb_ucif_process_event enter gid:0x%x status:0x%x", p[0],
+    if (mt == UCI_MT_DATA) {
+      chain_data_packet(p_msg);
+    } else {
+      UCI_MSG_PRS_HDR1(pp, oid);
+      pp = pp + 2;  // Skip payload fields
+      UCI_TRACE_I("uwb_ucif_process_event enter gid:0x%x status:0x%x", p[0],
                 pp[0]);
-    payload_length = p[NORMAL_MODE_LENGTH_OFFSET];
-
-    if (!uwb_cb.IsConformaceTestEnabled) {
-      if (pbf) {
-        if (!chained_packet.is_first_frgmnt_done) {
-          chained_packet.oid = oid;
-          chained_packet.gid = gid;
-          memcpy(&chained_packet.buffer[chained_packet.offset], p,
-                 p_msg->len);  // Copy first fragment(uci packet with header)(p)
-          chained_packet.offset = p_msg->len;
-          chained_packet.is_first_frgmnt_done = true;
-        } else {
-          // if first fragment is copied, then copy only uci payload(pp) for
-          // subsequent fragments
-          if ((chained_packet.oid == oid) && (chained_packet.gid == gid)) {
-            memcpy(&chained_packet.buffer[chained_packet.offset], pp,
-                   payload_length);
-            chained_packet.offset =
-                (uint16_t)(chained_packet.offset + payload_length);
+      payload_length = p[NORMAL_MODE_LENGTH_OFFSET];
+      if (!uwb_cb.IsConformaceTestEnabled) {
+        if (pbf) {
+          if (!uwb_cb.is_first_frgmnt_done) {
+            chained_packet.oid = oid;
+            chained_packet.gid = gid;
+            memcpy(&chained_packet.buffer[chained_packet.offset], p,
+                   p_msg->len);  // Copy first fragment(uci packet with header)(p)
+            chained_packet.offset = p_msg->len;
+            uwb_cb.is_first_frgmnt_done = true;
           } else {
-            UCI_TRACE_E(
-                "uwb_ucif_process_event: unexpected chain packet: "
-                "chained_packed_gid: 0x%x, chained_packet_oid=0x%x, received "
-                "packet gid:0x%x, recived packet oid:0x%x",
-                chained_packet.gid, chained_packet.oid, gid, oid);
+            // if first fragment is copied, then copy only uci payload(pp) for
+            // subsequent fragments
+            if ((chained_packet.oid == oid) && (chained_packet.gid == gid)) {
+              memcpy(&chained_packet.buffer[chained_packet.offset], pp,
+                     payload_length);
+              chained_packet.offset =
+                  (uint16_t)(chained_packet.offset + payload_length);
+            } else {
+              UCI_TRACE_D(
+                  "uwb_ucif_process_event: unexpected chain packet: "
+                  "chained_packed_gid: 0x%x, chained_packet_oid=0x%x, received "
+                  "packet gid:0x%x, recived packet oid:0x%x",
+                  chained_packet.gid, chained_packet.oid, gid, oid);
+            }
           }
-        }
-        return (free);
-      } else {
-        if (chained_packet.is_first_frgmnt_done) {
-          if ((chained_packet.oid == oid) && (chained_packet.gid == gid)) {
-            memcpy(&chained_packet.buffer[chained_packet.offset], pp,
-                   payload_length);  // Append only payload to chained packet
-            chained_packet.offset =
-                (uint16_t)(chained_packet.offset + payload_length);
+          return (free);
+        } else {
+          if (uwb_cb.is_first_frgmnt_done) {
+            if ((chained_packet.oid == oid) && (chained_packet.gid == gid)) {
+              memcpy(&chained_packet.buffer[chained_packet.offset], pp,
+                     payload_length);  // Append only payload to chained packet
+              chained_packet.offset =
+                  (uint16_t)(chained_packet.offset + payload_length);
 
-            // Update P & PP
-            p = &chained_packet
-                     .buffer[0];  // p -> points to complete UCI packet
-            pp = p + 2;           // Skip oid & gid bytes
-            payload_length =
-                (uint16_t)(chained_packet.offset - UCI_MSG_HDR_SIZE);
-            UINT16_TO_STREAM(pp,
-                             payload_length);  // Update overall payload length
-                                               // into the chained packet
-
-            // Clear flags
-            chained_packet.offset = 0;
-            chained_packet.is_first_frgmnt_done = false;
-            chained_packet.oid = 0xFF;
-            chained_packet.gid = 0xFF;
+              // Update P & PP
+              p = &chained_packet
+                       .buffer[0];  // p -> points to complete UCI packet
+              pp = p + 2;           // Skip oid & gid bytes
+              payload_length =
+                  (uint16_t)(chained_packet.offset - UCI_MSG_HDR_SIZE);
+              UCI_TRACE_I("%s: payloadLength is %d", __func__, payload_length);
+              UINT16_TO_STREAM(pp,
+                               payload_length);  // Update overall payload length
+                                                 // into the chained packet
+            }
           }
+          // Clear flags
+          chained_packet.offset = 0;
+          chained_packet.oid = 0xFF;
+          chained_packet.gid = 0xFF;
+          uwb_cb.is_first_frgmnt_done = false;
         }
       }
     }
@@ -381,7 +709,7 @@ bool uwb_ucif_process_event(UWB_HDR* p_msg) {
           case UCI_GID_CORE:
             uci_proc_core_management_ntf(oid, pp, payload_length);
             break;
-          case UCI_GID_SESSION_MANAGE: /* 0010b UCI management group */
+          case UCI_GID_SESSION_MANAGE: /* 0001b UCI management group */
             uci_proc_session_management_ntf(oid, pp, payload_length);
             break;
           case UCI_GID_RANGE_MANAGE: /* 0011b UCI Range management group */
@@ -573,6 +901,24 @@ void uwb_ucif_session_management_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
       evt = UWB_SESSION_UPDATE_MULTICAST_LIST_REVT;
       evt_data.status = status;
       break;
+    case UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT:
+      evt_data.status = status;
+      evt = UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT;
+      evt_data.sConfigure_dt_anchor_rr_rdm_list.status = status;
+      evt_data.sConfigure_dt_anchor_rr_rdm_list.len = len;
+      if(len > 0){
+        STREAM_TO_ARRAY(evt_data.sConfigure_dt_anchor_rr_rdm_list.rng_round_indexs, p_buf, len);
+      }
+      break;
+    case UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT:
+      evt_data.status = status;
+      evt = UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT;
+      evt_data.sRange_round_index.status = status;
+      evt_data.sRange_round_index.len = len;
+      if(len > 0){
+        STREAM_TO_ARRAY(evt_data.sRange_round_index.rng_round_index, p_buf, len);
+      }
+      break;
     default:
       UCI_TRACE_E("unknown response event %x", event);
   }
@@ -711,6 +1057,7 @@ void uwb_ucif_get_range_count_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
   tUWB_RESPONSE evt_data;
   tUWB_RESPONSE_EVT evt = 0;
   tUWB_GET_RANGE_COUNT_REVT get_count;
+  get_count.count = 0x00;
   uint8_t* p = p_buf;
 
   if (len == 0) {
@@ -760,7 +1107,7 @@ void uwb_ucif_proc_core_device_status(uint8_t* p_buf, uint16_t len) {
   uwb_cb.device_state = status;
 
   (*uwb_cb.p_resp_cback)(UWB_DEVICE_STATUS_REVT, &uwb_response);
-  if (status == UWBS_STATUS_ERROR) {
+  if (status == UWBS_STATUS_ERROR || status == UWBS_STATUS_TIMEOUT) {
     uwb_stop_quick_timer(&uwb_cb.uci_wait_rsp_timer);
     uwb_ucif_uwb_recovery();
   }
@@ -845,6 +1192,16 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         "%s: MEASUREMENT_TYPE_ONEWAY Wrong number of measurements received:%d",
         __func__, sRange_data.no_of_measurements);
     return;
+   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA &&
+            sRange_data.no_of_measurements > MAX_NUM_OF_DLTDOA_MEASURES) {
+    UCI_TRACE_E(
+        "%s: MEASUREMENT_TYPE_DLTDOA  Wrong number of measurements received:%d",
+        __func__, sRange_data.no_of_measurements);
+    return;
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_OWR_WITH_AOA &&
+             sRange_data.no_of_measurements > MAX_NUM_OWR_AOA_MEASURES) {
+    UCI_TRACE_E("%s: MEASUREMENT_TYPE_OWR_WITH_AOA  Wrong number of measurements received:%d", __func__, sRange_data.no_of_measurements);
+    return;
   }
   if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_TWOWAY) {
     for (uint8_t i = 0; i < sRange_data.no_of_measurements; i++) {
@@ -877,13 +1234,82 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
       STREAM_TO_UINT16(twr_range_measr->aoa_dest_elevation, p);
       STREAM_TO_UINT8(twr_range_measr->aoa_dest_elevation_FOM, p);
       STREAM_TO_UINT8(twr_range_measr->slot_index, p);
+      STREAM_TO_UINT8(twr_range_measr->rssi, p);
       /* Read & Ignore RFU bytes
-         if mac address format is short, then 12 bytes
-         if mac address format is extended, then read 6 bytes */
+         if mac address format is short, then 11 bytes
+         if mac address format is extended, then read 5 bytes */
       if (sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
-        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 12);
+        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 11);
       } else {
-        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 6);
+        STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 5);
+      }
+    }
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA) {
+    for (uint8_t i = 0; i < sRange_data.no_of_measurements; i++) {
+      tUWB_DLTDOA_RANGING_MEASR *dltdoa_range_measr = (tUWB_DLTDOA_RANGING_MEASR*)&sRange_data.ranging_measures.dltdoa_range_measr[i];
+      uint16_t txTimeStampValue = 0;
+      uint16_t rxTimeStampValue = 0;
+      uint16_t anchorLocationValue = 0;
+      uint16_t activeRangingRoundValue = 0;
+
+      if(sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->mac_addr[0], p, MAC_SHORT_ADD_LEN);
+      } else if(sRange_data.mac_addr_mode_indicator == EXTENDED_MAC_ADDRESS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->mac_addr[0], p, MAC_EXT_ADD_LEN);
+      } else {
+        UCI_TRACE_E("%s: Invalid mac addressing indicator", __func__);
+        return;
+      }
+      STREAM_TO_UINT8(dltdoa_range_measr->status, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->message_type, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->message_control, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->block_index, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->round_index, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->nLos, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->aoa_azimuth, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->aoa_azimuth_FOM, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->aoa_elevation, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->aoa_elevation_FOM, p);
+      txTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_TX_TIMESTAMP_OFFSET ) & (TDOA_TX_TIMESTAMP_OFFSET_MASK));
+      if(txTimeStampValue == TDOA_TX_TIMESTAMP_40BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+      } else if(txTimeStampValue == TDOA_TX_TIMESTAMP_64BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+      } else {
+        UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
+        return;
+      }
+      rxTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_RX_TIMESTAMP_OFFSET ) & (TDOA_RX_TIMESTAMP_OFFSET_MASK));
+      if(rxTimeStampValue == TDOA_RX_TIMESTAMP_40BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+      } else if(rxTimeStampValue == TDOA_RX_TIMESTAMP_64BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+      } else {
+        UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
+        return;
+      }
+      STREAM_TO_UINT16(dltdoa_range_measr->cfo_anchor, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->cfo, p);
+      STREAM_TO_UINT32(dltdoa_range_measr->initiator_reply_time, p);
+      STREAM_TO_UINT32(dltdoa_range_measr->responder_reply_time, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->initiator_responder_TOF, p);
+      anchorLocationValue = ((dltdoa_range_measr->message_control & TDOA_ANCHOR_LOC_OFFSET ) & (TDOA_ANCHOR_LOC_OFFSET_MASK));
+      if(anchorLocationValue == TDOA_ANCHOR_LOC_NOT_INCLUDED) {
+        UCI_TRACE_D("%s: anchorLocation not included", __func__);
+      } else if(anchorLocationValue == TDOA_ANCHOR_LOC_IN_RELATIVE_SYSTEM) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->anchor_location[0], p, TDOA_ANCHOR_LOC_LEN_10BYTES);
+      } else if(anchorLocationValue == TDOA_ANCHOR_LOC_IN_WGS84_SYSTEM) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->anchor_location[0], p, TDOA_ANCHOR_LOC_LEN_12BYTES);
+      } else {
+        UCI_TRACE_E("%s: Invalid anchorLocationvalue value", __func__);
+        return;
+      }
+      activeRangingRoundValue = ((dltdoa_range_measr->message_control & TDOA_ACTIVE_RR_OFFSET)
+        & (TDOA_ACTIVE_RR_OFFSET_MASK)) >> TDOA_ACTIVE_RR_INDEX_POSITION;
+      if(activeRangingRoundValue != 0) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->active_ranging_round[0], p, activeRangingRoundValue);
+      } else {
+        UCI_TRACE_D("%s: activeRangingRound not included", __func__);
       }
     }
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ONEWAY) {
@@ -947,12 +1373,37 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
                       tdoa_range_measr->blink_payload_size);
       tdoa_range_measr->blink_payload_data = &blink_payload_buffer[i][0];
     }
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_OWR_WITH_AOA) {
+    tUWA_OWR_WITH_AOA_RANGING_MEASR* owr_aoa_range_measr =
+        (tUWA_OWR_WITH_AOA_RANGING_MEASR*)&sRange_data.ranging_measures
+            .owr_with_aoa_range_measr;
+    if (ranging_measures_length < OWR_WITH_AOA_MEASUREMENT_LENGTH) {
+      UCI_TRACE_E("%s: Invalid one way ranging_measures_length = %x", __func__,
+                  ranging_measures_length);
+      return;
+    }
+    ranging_measures_length -= OWR_WITH_AOA_MEASUREMENT_LENGTH;
+    if (sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
+      STREAM_TO_ARRAY(&owr_aoa_range_measr->mac_addr[0], p, MAC_SHORT_ADD_LEN);
+      ranging_measures_length -= MAC_SHORT_ADD_LEN;
+    } else if (sRange_data.mac_addr_mode_indicator == EXTENDED_MAC_ADDRESS) {
+      STREAM_TO_ARRAY(&owr_aoa_range_measr->mac_addr[0], p, MAC_EXT_ADD_LEN);
+      ranging_measures_length -= MAC_EXT_ADD_LEN;
+    } else {
+      UCI_TRACE_E("%s: Invalid mac addressing indicator", __func__);
+      return;
+    }
+    STREAM_TO_UINT8(owr_aoa_range_measr->status, p);
+    STREAM_TO_UINT8(owr_aoa_range_measr->nLos, p);
+    STREAM_TO_UINT8(owr_aoa_range_measr->frame_seq_num, p);
+    STREAM_TO_UINT16(owr_aoa_range_measr->block_index, p);
+    STREAM_TO_UINT16(owr_aoa_range_measr->aoa_azimuth, p);
+    STREAM_TO_UINT8(owr_aoa_range_measr->aoa_azimuth_FOM, p);
+    STREAM_TO_UINT16(owr_aoa_range_measr->aoa_elevation, p);
+    STREAM_TO_UINT8(owr_aoa_range_measr->aoa_elevation_FOM, p);
   } else {
-    UCI_TRACE_E("%s: Measurement type not matched", __func__);
+    UCI_TRACE_E("%s: Measurement type(%d) not matched", __func__, sRange_data.ranging_measure_type);
   }
-  uwb_response.sRange_data = sRange_data;
-
-  (*uwb_cb.p_resp_cback)(UWB_RANGE_DATA_REVT, &uwb_response);
 
   UCI_TRACE_I("%s: ranging_measures_length = %d range_data_ntf_len = %d", __func__,ranging_measures_length,range_data_ntf_len);
   if (ranging_measures_length >= VENDOR_SPEC_INFO_LEN) {
@@ -962,15 +1413,16 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         if (vendor_specific_length > MAX_VENDOR_INFO_LENGTH) {
             UCI_TRACE_E("%s: Invalid Range_data vendor_specific_length = %x",
                            __func__, vendor_specific_length);
-            return;
         }
 
-        uint8_t *range_data_with_vendor_info =  range_data_ntf_buffer;
-        uwb_response.sVendor_specific_ntf.len = range_data_ntf_len;
-        STREAM_TO_ARRAY(uwb_response.sVendor_specific_ntf.data, range_data_with_vendor_info, range_data_ntf_len);
-        (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &uwb_response);
+        STREAM_TO_ARRAY(sRange_data.vendor_specific_ntf.data, p, vendor_specific_length);
+        sRange_data.vendor_specific_ntf.len = vendor_specific_length;
      }
   }
+
+  uwb_response.sRange_data = sRange_data;
+
+  (*uwb_cb.p_resp_cback)(UWB_RANGE_DATA_REVT, &uwb_response);
 }
 
 /*******************************************************************************
