@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -131,6 +131,14 @@ void uci_proc_session_management_rsp(uint8_t op_code, uint8_t* p_buf,
       uwb_ucif_session_management_status(UWB_SESSION_UPDATE_MULTICAST_LIST_REVT,
                                          p_buf, len);
       break;
+    case UCI_MSG_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST:
+      uwb_ucif_session_management_status(UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT, p_buf, len);
+    break;
+    case UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_ANCHOR:
+    case UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_TAG:
+      uwb_ucif_session_management_status(UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT, p_buf,
+        len);
+    break;
     default:
       UCI_TRACE_E("%s: unknown opcode:0x%x", __func__, op_code);
       break;
