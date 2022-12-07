@@ -66,6 +66,7 @@ enum {
   UWA_DM_API_TEST_RX_EVT,
   UWA_DM_API_TEST_STOP_SESSION_EVT,
   /* UWB Data packet events */
+  UWA_DM_API_SEND_DATA_FRAME_EVT,
   UWA_DM_MAX_EVT
 };
 
@@ -207,6 +208,18 @@ typedef struct {
   uint8_t app_data[UCI_MAX_PAYLOAD_SIZE];
 } tUWA_DM_API_SEND_BLINK_DATA;
 
+/* data type for UWA_DM_API_SEND_DATA_FRAME_EVT */
+typedef struct {
+  UWB_HDR hdr;
+  uint32_t session_id;
+  uint8_t addr_len;
+  uint8_t p_addr[EXTENDED_ADDRESS_LEN];
+  uint8_t dest_end_point;
+  uint8_t sequence_num;
+  uint16_t data_len;
+  uint8_t* p_data;
+} tUWA_DM_API_SEND_DATA_FRAME;
+
 /* data type for UWA_DM_API_TEST_SET_CONFIG_EVT */
 typedef struct {
   UWB_HDR hdr;
@@ -293,6 +306,7 @@ typedef union {
   tUWA_DM_API_SEND_BLINK_DATA
       sSend_blink_data; /* UWA_DM_API_SEND_BLINK_DATA_EVT */
                         /*  data types for all UWB RF TEST events */
+  tUWA_DM_API_SEND_DATA_FRAME send_data_frame;      /* UWA_DM_API_SEND_DATA_FRAME_EVT */
   tUWA_DM_API_TEST_GET_CONFIG
       sTest_get_config; /* UWA_DM_API_TEST_GET_CONFIG_EVT       */
   tUWA_DM_API_TEST_SET_CONFIG
@@ -341,6 +355,7 @@ bool uwa_dm_act_get_device_capability(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_multicast_list_update(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_set_country_code(tUWA_DM_MSG* p_data);
 bool uwa_dm_act_send_blink_data(tUWA_DM_MSG* p_data);
+bool uwa_dm_act_send_data_frame(tUWA_DM_MSG* p_data);
 
 /* Action function prototypes for all RF test functionality */
 bool uwa_dm_act_test_set_config(tUWA_DM_MSG* p_data);

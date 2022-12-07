@@ -146,6 +146,10 @@ enum {
   UWA_DM_CONFORMANCE_NTF_EVT,            /* Conformance Test Ntf Event */
   UWA_DM_SET_COUNTRY_CODE_RSP_EVT,       /* Country code update resp event */
   UWA_VENDOR_SPECIFIC_UCI_NTF_EVT,       /* Proprietary Ntf Event */
+  UWA_DM_SEND_DATA_STATUS_EVT,           /* data status EVT */
+  UWA_DM_SEND_DATA_PACKET_RSP_EVT,       /* data reception status by UWBS */
+  UWA_DM_DATA_TRANSFER_STATUS_NTF_EVT,   /* data transfer status over UWB */
+  UWA_DM_DATA_RECV_EVT                   /* Recieved data over UWB */
 };
 
 /* UWA_DM callback events for UWB RF events */
@@ -282,9 +286,22 @@ typedef struct {
   uint8_t* blink_payload_data; /* Blink Payload Data */
 } tUWA_TDoA_RANGING_MEASR;
 
+typedef struct {
+  uint8_t mac_addr[8];
+  uint8_t status;
+  uint8_t nLos;
+  uint8_t frame_seq_num;
+  uint16_t block_index;
+  uint16_t aoa_azimuth;
+  uint8_t aoa_azimuth_FOM;
+  uint16_t aoa_elevation;
+  uint8_t aoa_elevation_FOM;
+} tUWA_OWR_WITH_AOA_RANGING_MEASR;
+
 typedef union {
   tUWA_TWR_RANGING_MEASR twr_range_measr[MAX_NUM_RESPONDERS];
   tUWA_TDoA_RANGING_MEASR tdoa_range_measr[MAX_NUM_OF_TDOA_MEASURES];
+  tUWA_OWR_WITH_AOA_RANGING_MEASR owr_with_aoa_range_measr;
 } tUWA_RANGING_MEASR;
 
 typedef struct {
@@ -332,6 +349,25 @@ typedef struct {
                                       exhausted */
 } tUWA_SEND_BLINK_DATA_NTF;
 
+/* the data type associated with UWB_DATA_TRANSFER_STATUS_NTF_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint8_t sequence_num;
+  uint8_t status;
+} tUWA_DATA_TRANSFER_STATUS_NTF_REVT;
+
+/* the data type associated with UWA_DM_DATA_RECV_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint8_t status;
+  uint32_t sequence_num;
+  uint8_t address[EXTENDED_ADDRESS_LEN];
+  uint8_t source_end_point;
+  uint8_t dest_end_point;
+  uint16_t data_len;
+  uint8_t data[UCI_MAX_DATA_SIZE];
+} tUWA_RX_DATA_REVT;
+
 /* the data type associated with UWB_CONFORMANCE_TEST_DATA */
 typedef struct {
   uint16_t length;
@@ -373,6 +409,8 @@ typedef union {
   tUWA_SESSION_UPDATE_MULTICAST_LIST_NTF
       sMulticast_list_ntf; /*UWA_DM_SESSION_MC_LIST_UPDATE_NTF_EVT*/
   tUWA_SEND_BLINK_DATA_NTF sBlink_data_ntf; /*UWA_DM_SEND_BLINK_DATA_NTF_EVT*/
+  tUWA_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status ; /*UWA_DATA_TRANSFER_STATUS_NTF_REVT*/
+  tUWA_RX_DATA_REVT sRcvd_data; /*UWA_DM_DATA_RECV_REVT */
   tUWA_CONFORMANCE_TEST_DATA sConformance_ntf; /* UWA_DM_CONFORMANCE_NTF_EVT */
   tUWA_VENDOR_SPECIFIC_NTF sVendor_specific_ntf; /*Vendor Specific ntf data */
   void* p_vs_evt_data;                         /* Vendor-specific evt data */
@@ -842,5 +880,23 @@ extern tUWA_STATUS UWA_TestStopSession(void);
 extern tUWA_STATUS UWA_SendRawCommand(uint16_t cmd_params_len,
                                       uint8_t* p_cmd_params,
                                       tUWA_RAW_CMD_CBACK* p_cback);
+
+/*******************************************************************************
+**
+** Function         UWA_SendUwbDataFrame
+**
+** Description      This function is called to send UWB data over UWB RF interafce  .
+**
+**                  data_len  - The data length
+**                  p_data    - pointer to data buffer
+**
+** Returns       UWA_STATUS_OK if data sucessfully accepeted by UWB subsystem
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+extern tUWA_STATUS UWA_SendUwbData(uint32_t session_id,
+                                   uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
+                                   uint16_t data_len,
+                                   uint8_t* p_data);
 
 #endif /* UWA_API_H */
