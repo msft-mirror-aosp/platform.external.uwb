@@ -199,9 +199,12 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
         uwb_cb.rawCmdCbflag = true;
       }
 
-      /* Indicate command is pending */
-      uwb_cb.uci_cmd_window--;
-      uwb_cb.is_resp_pending = true;
+      if(pbf) {
+        uwb_cb.rawCmdCbflag = false;
+      } else {
+        uwb_cb.uci_cmd_window--;
+      }
+      uwb_cb.is_resp_pending = !pbf;
       uwb_cb.cmd_retry_count = 0;
 
       /* send to HAL */
