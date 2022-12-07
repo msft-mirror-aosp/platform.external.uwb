@@ -606,7 +606,7 @@ uint8_t uci_snd_set_country_code_cmd(uint8_t *country_code) {
   UCI_MSG_BLD_HDR1(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE);
   UINT8_TO_STREAM(pp, 0x00);
   UINT8_TO_STREAM(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
-  ARRAY8_TO_STREAM(pp, country_code);
+  ARRAY8_TO_STREAM(pp, country_code, UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
   uwb_ucif_send_cmd(p);
 
   return (UCI_STATUS_OK);
