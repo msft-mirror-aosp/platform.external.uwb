@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -56,6 +56,11 @@ uint8_t uci_send_data_frame(uint32_t session_id,
                             uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
                             uint16_t data_len,
                             uint8_t* p_data);
+uint8_t uci_send_range_round_index_update_cmd(uint8_t dlTdoaRole,
+    uint32_t session_id, uint8_t number_of_active_rngIndex,
+    uint8_t rng_round_index_len, uint8_t* p_rng_round_index);
+uint8_t uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd(uint32_t session_id,
+                            uint8_t rr_rdm_count, uint8_t length, uint8_t* data);
 
 /*  APIs for UWB RF test functionality */
 uint8_t uci_snd_test_get_config_cmd(uint32_t session_id, uint8_t num_ids,
