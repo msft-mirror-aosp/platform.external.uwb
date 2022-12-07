@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -35,6 +35,19 @@
 
 #define NORMAL_MODE_LENGTH_OFFSET 0x03
 #define DATA_PACKET_LEN_SHIFT 0x08
+#define EXTENDED_MODE_LEN_OFFSET 0x02
+#define EXTENDED_MODE_LEN_SHIFT 0x08
+#define EXTND_LEN_INDICATOR_OFFSET 0x01
+#define EXTND_LEN_INDICATOR_OFFSET_MASK  0x80
+#define TDOA_TX_TIMESTAMP_OFFSET         0x00FF
+#define TDOA_TX_TIMESTAMP_OFFSET_MASK    0x06
+#define TDOA_RX_TIMESTAMP_OFFSET         0x00FF
+#define TDOA_RX_TIMESTAMP_OFFSET_MASK    0x18
+#define TDOA_ANCHOR_LOC_OFFSET           0x00FF
+#define TDOA_ANCHOR_LOC_OFFSET_MASK      0x60
+#define TDOA_ACTIVE_RR_OFFSET            0x0FF0
+#define TDOA_ACTIVE_RR_OFFSET_MASK       0x0780
+
 #define MAC_SHORT_ADD_LEN 2
 #define MAC_EXT_ADD_LEN 8
 #define PDOA_LEN 4
@@ -46,7 +59,19 @@
 #define RANGING_DATA_LENGTH 25
 
 #define VENDOR_SPEC_INFO_LEN 2
-#define OWR_WITH_AOA_MEASUREMENT_LENGTH  11
+#define OWR_WITH_AOA_MEASUREMENT_LENGTH    11
+#define TDOA_TIMESTAMP_LEN_40BITS          5
+#define TDOA_TIMESTAMP_LEN_64BITS          8
+#define TDOA_ANCHOR_LOC_LEN_10BYTES        10
+#define TDOA_ANCHOR_LOC_LEN_12BYTES        12
+#define TDOA_TX_TIMESTAMP_40BITS           0
+#define TDOA_TX_TIMESTAMP_64BITS           2
+#define TDOA_RX_TIMESTAMP_40BITS           0
+#define TDOA_RX_TIMESTAMP_64BITS           8
+#define TDOA_ANCHOR_LOC_NOT_INCLUDED       0
+#define TDOA_ANCHOR_LOC_IN_RELATIVE_SYSTEM 0x40
+#define TDOA_ANCHOR_LOC_IN_WGS84_SYSTEM    0x20
+#define TDOA_ACTIVE_RR_INDEX_POSITION      7
 
 uint8_t last_cmd_buff[UCI_MAX_PAYLOAD_SIZE];
 uint8_t last_data_buff[4096];
@@ -876,6 +901,24 @@ void uwb_ucif_session_management_status(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
       evt = UWB_SESSION_UPDATE_MULTICAST_LIST_REVT;
       evt_data.status = status;
       break;
+    case UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT:
+      evt_data.status = status;
+      evt = UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT;
+      evt_data.sConfigure_dt_anchor_rr_rdm_list.status = status;
+      evt_data.sConfigure_dt_anchor_rr_rdm_list.len = len;
+      if(len > 0){
+        STREAM_TO_ARRAY(evt_data.sConfigure_dt_anchor_rr_rdm_list.rng_round_indexs, p_buf, len);
+      }
+      break;
+    case UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT:
+      evt_data.status = status;
+      evt = UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT;
+      evt_data.sRange_round_index.status = status;
+      evt_data.sRange_round_index.len = len;
+      if(len > 0){
+        STREAM_TO_ARRAY(evt_data.sRange_round_index.rng_round_index, p_buf, len);
+      }
+      break;
     default:
       UCI_TRACE_E("unknown response event %x", event);
   }
@@ -1148,6 +1191,12 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         "%s: MEASUREMENT_TYPE_ONEWAY Wrong number of measurements received:%d",
         __func__, sRange_data.no_of_measurements);
     return;
+   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA &&
+            sRange_data.no_of_measurements > MAX_NUM_OF_DLTDOA_MEASURES) {
+    UCI_TRACE_E(
+        "%s: MEASUREMENT_TYPE_DLTDOA  Wrong number of measurements received:%d",
+        __func__, sRange_data.no_of_measurements);
+    return;
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_OWR_WITH_AOA &&
              sRange_data.no_of_measurements > MAX_NUM_OWR_AOA_MEASURES) {
     UCI_TRACE_E("%s: MEASUREMENT_TYPE_OWR_WITH_AOA  Wrong number of measurements received:%d", __func__, sRange_data.no_of_measurements);
@@ -1191,6 +1240,74 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 12);
       } else {
         STREAM_TO_ARRAY(&twr_range_measr->rfu[0], p, 6);
+      }
+    }
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA) {
+    for (uint8_t i = 0; i < sRange_data.no_of_measurements; i++) {
+      tUWB_DLTDOA_RANGING_MEASR *dltdoa_range_measr = (tUWB_DLTDOA_RANGING_MEASR*)&sRange_data.ranging_measures.dltdoa_range_measr[i];
+      uint16_t txTimeStampValue = 0;
+      uint16_t rxTimeStampValue = 0;
+      uint16_t anchorLocationValue = 0;
+      uint16_t activeRangingRoundValue = 0;
+
+      if(sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->mac_addr[0], p, MAC_SHORT_ADD_LEN);
+      } else if(sRange_data.mac_addr_mode_indicator == EXTENDED_MAC_ADDRESS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->mac_addr[0], p, MAC_EXT_ADD_LEN);
+      } else {
+        UCI_TRACE_E("%s: Invalid mac addressing indicator", __func__);
+        return;
+      }
+      STREAM_TO_UINT8(dltdoa_range_measr->status, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->message_type, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->message_control, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->block_index, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->round_index, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->nLos, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->aoa_azimuth, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->aoa_azimuth_FOM, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->aoa_elevation, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->aoa_elevation_FOM, p);
+      txTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_TX_TIMESTAMP_OFFSET ) & (TDOA_TX_TIMESTAMP_OFFSET_MASK));
+      if(txTimeStampValue == TDOA_TX_TIMESTAMP_40BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+      } else if(txTimeStampValue == TDOA_TX_TIMESTAMP_64BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+      } else {
+        UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
+        return;
+      }
+      rxTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_RX_TIMESTAMP_OFFSET ) & (TDOA_RX_TIMESTAMP_OFFSET_MASK));
+      if(rxTimeStampValue == TDOA_RX_TIMESTAMP_40BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+      } else if(rxTimeStampValue == TDOA_RX_TIMESTAMP_64BITS) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+      } else {
+        UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
+        return;
+      }
+      STREAM_TO_UINT16(dltdoa_range_measr->cfo_anchor, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->cfo, p);
+      STREAM_TO_UINT32(dltdoa_range_measr->initiator_reply_time, p);
+      STREAM_TO_UINT32(dltdoa_range_measr->responder_reply_time, p);
+      STREAM_TO_UINT16(dltdoa_range_measr->initiator_responder_TOF, p);
+      anchorLocationValue = ((dltdoa_range_measr->message_control & TDOA_ANCHOR_LOC_OFFSET ) & (TDOA_ANCHOR_LOC_OFFSET_MASK));
+      if(anchorLocationValue == TDOA_ANCHOR_LOC_NOT_INCLUDED) {
+        UCI_TRACE_D("%s: anchorLocation not included", __func__);
+      } else if(anchorLocationValue == TDOA_ANCHOR_LOC_IN_RELATIVE_SYSTEM) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->anchor_location[0], p, TDOA_ANCHOR_LOC_LEN_10BYTES);
+      } else if(anchorLocationValue == TDOA_ANCHOR_LOC_IN_WGS84_SYSTEM) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->anchor_location[0], p, TDOA_ANCHOR_LOC_LEN_12BYTES);
+      } else {
+        UCI_TRACE_E("%s: Invalid anchorLocationvalue value", __func__);
+        return;
+      }
+      activeRangingRoundValue = ((dltdoa_range_measr->message_control & TDOA_ACTIVE_RR_OFFSET)
+        & (TDOA_ACTIVE_RR_OFFSET_MASK)) >> TDOA_ACTIVE_RR_INDEX_POSITION;
+      if(activeRangingRoundValue != 0) {
+        STREAM_TO_ARRAY(&dltdoa_range_measr->active_ranging_round[0], p, activeRangingRoundValue);
+      } else {
+        UCI_TRACE_D("%s: activeRangingRound not included", __func__);
       }
     }
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ONEWAY) {
@@ -1294,7 +1411,7 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         if (vendor_specific_length > MAX_VENDOR_INFO_LENGTH) {
             UCI_TRACE_E("%s: Invalid Range_data vendor_specific_length = %x",
                            __func__, vendor_specific_length);
-        } else{
+        } else {
           STREAM_TO_ARRAY(sRange_data.vendor_specific_ntf.data, p, vendor_specific_length);
           sRange_data.vendor_specific_ntf.len = vendor_specific_length;
         }

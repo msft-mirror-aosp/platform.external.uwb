@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -357,6 +357,7 @@
  **************************************************/
 #define MEASUREMENT_TYPE_ONEWAY 0x00
 #define MEASUREMENT_TYPE_TWOWAY 0x01
+#define MEASUREMENT_TYPE_DLTDOA 0x02
 #define MEASUREMENT_TYPE_OWR_WITH_AOA 0x03
 
 #define EXTENDED_ADDRESS_LEN       0x08
@@ -365,6 +366,10 @@
 /* Maximum size of UCI DATA Message the UWBS can receive */
 #define MAX_DATA_MSG_SIZE                   0x00
 #define MAX_DATA_PKT_PAYLOAD_SIZE           0x01
+
+
+/* Maximum Length of RrRdmList*/
+#define MAX_RRRDM_LIST_LENGTH               0XFF
 
 /*************************************************
  * Mac Addressing Mode Indicator
@@ -377,6 +382,7 @@
 #define SHORT_ADDRESS_LEN 0x02
 #define EXTENDED_ADDRESS_LEN 0x08
 #define MAX_NUM_OF_TDOA_MEASURES 24
+#define MAX_NUM_OF_DLTDOA_MEASURES 10
 #define MAX_NUM_OWR_AOA_MEASURES   1
 #define UCI_MAX_DATA_SIZE 4196
 
