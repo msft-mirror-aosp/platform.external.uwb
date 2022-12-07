@@ -52,6 +52,10 @@ uint8_t uci_snd_range_start_cmd(uint32_t session_id);
 uint8_t uci_snd_range_stop_cmd(uint32_t session_id);
 uint8_t uci_snd_blink_data_cmd(uint32_t session_id, uint8_t repetition_count,
                                uint8_t app_data_len, uint8_t* app_data);
+uint8_t uci_send_data_frame(uint32_t session_id,
+                            uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
+                            uint16_t data_len,
+                            uint8_t* p_data);
 
 /*  APIs for UWB RF test functionality */
 uint8_t uci_snd_test_get_config_cmd(uint32_t session_id, uint8_t num_ids,
@@ -83,6 +87,9 @@ extern void uci_proc_test_management_rsp(uint8_t op_code, uint8_t* p_buf,
                                          uint16_t len);
 extern void uci_proc_raw_cmd_rsp(uint8_t* p_buf, uint16_t len);
 
+extern void uci_proc_data_control_ntf(uint8_t op_code, uint8_t* p_buf, uint16_t len);
+
+extern void uci_proc_app_data_management_ntf(uint8_t op_code, uint8_t* p_buf, uint16_t len);
 
 extern void uci_proc_vendor_specific_ntf(uint8_t gid, uint8_t* p_buf, uint16_t len);
 #endif /* UWB_UCI_MSGS_H */
