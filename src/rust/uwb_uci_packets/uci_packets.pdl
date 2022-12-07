@@ -307,7 +307,7 @@ enum MessageType: 3 {
 
 // UCI packet description in compliance with the FIRA UCI spec.
 // Only this packet should be sent/expected across the HAL interface.
-packet UciPacketHal; {
+packet UciControlPacketHal; {
     group_id: GroupId,
     packet_boundary_flag: PacketBoundaryFlag,
     message_type: MessageType,
@@ -320,31 +320,31 @@ packet UciPacketHal; {
 
 // This packet definition is used throughout the stack that holds a complete (i.e unfragmented) UCI
 // command/response/notification.
-// UciPacket needs to be converted to one or more UciPacketHal fragments before sending to the HAL.
-// One or more UciPacketHal fragments needs to be converted to UciPacket when receiving from the HAL.
+// UciControlPacket needs to be converted to one or more UciControlPacketHal fragments before sending to the HAL.
+// One or more UciControlPacketHal fragments needs to be converted to UciControlPacket when receiving from the HAL.
 // TODO(b/202760099): Handle fragmentation more cleanly in the PDL.
-packet UciPacket {
+packet UciControlPacket {
     group_id: GroupId,
-     // This field is different from |UciPacketHal| to provide a placeholder for PBF flag.
+     // This field is different from |UciControlPacketHal| to provide a placeholder for PBF flag.
     _reserved_: 1,
     message_type: MessageType,
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
-     // This field is different from |UciPacketHal| to allow holding large unfragmented packet.
+     // This field is different from |UciControlPacketHal| to allow holding large unfragmented packet.
     _size_(_payload_): 32,
     _payload_,
 }
 
-packet UciCommand : UciPacket (message_type = COMMAND) {
+packet UciCommand : UciControlPacket (message_type = COMMAND) {
     _payload_,
 }
 
-packet UciResponse : UciPacket (message_type = RESPONSE) {
+packet UciResponse : UciControlPacket (message_type = RESPONSE) {
     _payload_,
 }
 
-packet UciNotification : UciPacket (message_type = NOTIFICATION) {
+packet UciNotification : UciControlPacket (message_type = NOTIFICATION) {
     _payload_,
 }
 

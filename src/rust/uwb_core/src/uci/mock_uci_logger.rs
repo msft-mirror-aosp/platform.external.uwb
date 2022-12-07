@@ -15,7 +15,7 @@
 use std::convert::TryFrom;
 
 use tokio::sync::mpsc;
-use uwb_uci_packets::UciPacketPacket;
+use uwb_uci_packets::UciControlPacketPacket;
 
 use crate::error::{Error, Result};
 use crate::uci::uci_logger::UciLogger;
@@ -57,7 +57,7 @@ impl UciLogger for MockUciLogger {
         let _ = self.log_sender.send(UciLogEvent::HalOpen(result));
     }
 
-    fn log_uci_packet(&mut self, packet: UciPacketPacket) {
+    fn log_uci_packet(&mut self, packet: UciControlPacketPacket) {
         let _ = self.log_sender.send(UciLogEvent::Packet(packet.into()));
     }
 }
