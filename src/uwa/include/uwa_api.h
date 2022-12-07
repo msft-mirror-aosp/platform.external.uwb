@@ -192,7 +192,7 @@ typedef struct {
   uint16_t phy_version;
   uint16_t uciTest_version;
   uint8_t vendor_info_len;
-  uint8_t vendor_info[UCI_VENDOR_INFO_MAX_SIZE];
+  uint8_t vendor_info[UCI_MAX_FRAGMENT_BUFF_SIZE];
 } tUWA_GET_DEVICE_INFO_REVT;
 
 /* Data for UWA_DM_CORE_SET_CONFIG_RSP_EVT */
