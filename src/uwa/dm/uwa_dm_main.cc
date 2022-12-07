@@ -71,7 +71,9 @@ const tUWA_DM_ACTION uwa_dm_action[] = {
     uwa_dm_act_test_per_rx,       /* UWA_DM_API_TEST_PER_RX_EVT     */
     uwa_dm_act_test_uwb_loopback, /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT */
     uwa_dm_act_test_rx,           /* UWA_DM_API_TEST_RX_EVT */
-    uwa_dm_act_test_stop_session  /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
+    uwa_dm_act_test_stop_session, /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
+    /* API events for Data tranfer handling */
+    uwa_dm_act_send_data_frame    /* UWA_DM_API_SEND_DATA_FRAME_EVT */
 };
 
 /*****************************************************************************
