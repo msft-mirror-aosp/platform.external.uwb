@@ -763,7 +763,7 @@ void uwb_ucif_proc_core_device_status(uint8_t* p_buf, uint16_t len) {
   uwb_cb.device_state = status;
 
   (*uwb_cb.p_resp_cback)(UWB_DEVICE_STATUS_REVT, &uwb_response);
-  if (status == UWBS_STATUS_ERROR) {
+  if (status == UWBS_STATUS_ERROR || status == UWBS_STATUS_TIMEOUT) {
     uwb_stop_quick_timer(&uwb_cb.uci_wait_rsp_timer);
     uwb_ucif_uwb_recovery();
   }
