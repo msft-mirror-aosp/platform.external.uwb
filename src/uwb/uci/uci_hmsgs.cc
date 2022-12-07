@@ -539,7 +539,7 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
   UINT8_TO_STREAM(pp, action);
   UINT8_TO_STREAM(pp, noOfControlees);
   for (uint8_t i = 0; i < noOfControlees; i++) {
-    UINT16_TO_BE_STREAM(pp, shortAddressList[i]);
+    UINT16_TO_STREAM(pp, shortAddressList[i]);
     UINT32_TO_STREAM(pp, subSessionIdList[i]);
   }
 
