@@ -286,6 +286,12 @@ typedef struct {
   uint8_t* blink_payload_data; /* Blink Payload Data */
 } tUWA_TDoA_RANGING_MEASR;
 
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWA_VENDOR_SPECIFIC_NTF;
+
 typedef struct {
   uint8_t mac_addr[8];
   uint8_t status;
@@ -316,6 +322,7 @@ typedef struct {
   uint8_t reserved[8];
   uint8_t no_of_measurements;
   tUWA_RANGING_MEASR ranging_measures;
+  tUWA_VENDOR_SPECIFIC_NTF vendor_specific_ntf;
 } tUWA_RANGE_DATA_NTF;
 
 /* the data type associated with UWB_GET_RANGE_COUNT_REVT */
@@ -374,12 +381,6 @@ typedef struct {
   uint8_t data[CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH];
 } tUWA_CONFORMANCE_TEST_DATA;
 
-/* the data type associated with vendor notification */
-typedef struct {
-  uint16_t len;
-  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
-}tUWA_VENDOR_SPECIFIC_NTF;
-
 /* Union of all DM callback structures */
 typedef union {
   tUWA_STATUS status;                /* UWA_DM_ENABLE_EVT        */
@@ -412,7 +413,7 @@ typedef union {
   tUWA_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status ; /*UWA_DATA_TRANSFER_STATUS_NTF_REVT*/
   tUWA_RX_DATA_REVT sRcvd_data; /*UWA_DM_DATA_RECV_REVT */
   tUWA_CONFORMANCE_TEST_DATA sConformance_ntf; /* UWA_DM_CONFORMANCE_NTF_EVT */
-  tUWA_VENDOR_SPECIFIC_NTF sVendor_specific_ntf; /*Vendor Specific ntf data */
+  tUWA_VENDOR_SPECIFIC_NTF vendor_specific_ntf; /*Vendor Specific ntf data */
   void* p_vs_evt_data;                         /* Vendor-specific evt data */
 } tUWA_DM_CBACK_DATA;
 

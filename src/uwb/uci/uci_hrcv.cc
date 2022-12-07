@@ -299,9 +299,9 @@ void uci_proc_vendor_specific_ntf(uint8_t gid, uint8_t* p_buf, uint16_t len) {
     if (uwb_cb.p_resp_cback == NULL) {
       UCI_TRACE_E("ext response callback is null");
     } else {
-      evt_data.sVendor_specific_ntf.len = len;
-      if (evt_data.sVendor_specific_ntf.len > 0) {
-      STREAM_TO_ARRAY(evt_data.sVendor_specific_ntf.data, p_buf,
+      evt_data.vendor_specific_ntf.len = len;
+      if (evt_data.vendor_specific_ntf.len > 0) {
+      STREAM_TO_ARRAY(evt_data.vendor_specific_ntf.data, p_buf,
                     len);
       }
       (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &evt_data);
