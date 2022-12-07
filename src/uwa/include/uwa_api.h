@@ -273,20 +273,17 @@ typedef struct {
 
 typedef struct {
   uint8_t mac_addr[8];
+  uint8_t message_control;
   uint8_t frame_type;
   uint8_t nLos; /* non line of sight */
   uint16_t aoa_azimuth;
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
-  uint64_t timeStamp;
-  uint32_t blink_frame_number; /* blink frame number received from tag/master
-                                  anchor */
-  uint8_t rfu[12];
-  uint8_t device_info_size;    /* Size of Device Specific Information */
-  uint8_t* device_info;        /* Device Specific Information */
-  uint8_t blink_payload_size;  /* Size of Blink Payload Data */
-  uint8_t* blink_payload_data; /* Blink Payload Data */
+  uint32_t frame_number;
+  uint8_t rxTimeStamp[8];
+  uint8_t ulTdoa_device_id[8];
+  uint8_t txTimeStamp[8];
 } tUWA_TDoA_RANGING_MEASR;
 
 /* the data type associated with vendor notification */
