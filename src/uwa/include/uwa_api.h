@@ -267,7 +267,8 @@ typedef struct {
   uint16_t aoa_dest_elevation;
   uint8_t aoa_dest_elevation_FOM;
   uint8_t slot_index;
-  uint8_t rfu[12];
+  uint8_t rssi;
+  uint8_t rfu[11];
 } tUWA_TWR_RANGING_MEASR;
 
 typedef struct {
