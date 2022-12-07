@@ -386,6 +386,32 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
       (*uwa_dm_cb.p_dm_cback)(UWA_DM_SEND_BLINK_DATA_NTF_EVT, &dm_cback_data);
     } break;
 
+    case UWB_SEND_DATA_STATUS_EVT:
+    {
+      dm_cback_data.status = p_data->status;
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_SEND_DATA_STATUS_EVT, &dm_cback_data);
+    }
+    break;
+
+    case UWB_DATA_TRANSFER_STATUS_NTF_REVT:
+    {
+      tUWA_DATA_TRANSFER_STATUS_NTF_REVT* p_data_transmit = &dm_cback_data.sData_xfer_status;
+      p_data_transmit->session_id = p_data->sData_xfer_status.session_id;
+      p_data_transmit->sequence_num =  p_data->sData_xfer_status.sequence_num;
+      p_data_transmit->status = p_data->sData_xfer_status.status;
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_DATA_TRANSFER_STATUS_NTF_EVT, &dm_cback_data);
+    }
+    break;
+
+    case UWB_DATA_RECV_REVT:
+    {
+       tUWA_RX_DATA_REVT* p_rcv_data = &dm_cback_data.sRcvd_data;
+       memset(p_rcv_data, 0, sizeof(tUWA_RX_DATA_REVT));
+       memcpy((uint8_t*)p_rcv_data, (uint8_t*)&p_data->sRcvd_data, sizeof(tUWA_RX_DATA_REVT));
+       (*uwa_dm_cb.p_dm_cback)(UWA_DM_DATA_RECV_EVT, &dm_cback_data);
+    }
+    break;
+
     case UWB_CONFORMANCE_TEST_DATA: /* conformance test notification */
     {
       tUWA_CONFORMANCE_TEST_DATA* p_sConformance_data_ntf =
@@ -909,6 +935,36 @@ bool uwa_dm_act_send_raw_cmd(tUWA_DM_MSG* p_data) {
 
 /*******************************************************************************
 **
+** Function         uwa_dm_act_send_data_frame
+**
+** Description      send data frame over UWB
+**
+** Returns          FALSE (message buffer is NOT freed by caller)
+**
+*******************************************************************************/
+bool uwa_dm_act_send_data_frame(tUWA_DM_MSG* p_data){
+  tUWB_STATUS status;
+
+  if(p_data == NULL) {
+    UCI_TRACE_E("uwa_dm_act_test_stop_session(): p_data is NULL)");
+    return false;
+  } else {
+  status = UWB_SendData(
+        p_data->send_data_frame.session_id,
+        p_data->send_data_frame.p_addr, p_data->send_data_frame.dest_end_point,
+        p_data->send_data_frame.sequence_num, p_data->send_data_frame.data_len,
+        p_data->send_data_frame.p_data);
+  }
+  if(status == UWB_STATUS_OK) {
+    UCI_TRACE_D("uwa_dm_act_send_data_frame(): success , status=0x%X",status);
+  } else {
+    UCI_TRACE_E("uwa_dm_act_send_data_frame(): failed , status=0x%X",status);
+  }
+  return true;
+}
+
+/*******************************************************************************
+**
 ** Function         uwa_dm_act_get_range_count
 **
 ** Description      Send the get range count command to the ranging count
@@ -1345,6 +1401,15 @@ std::string uwa_dm_uwb_revt_2_str(tUWB_RESPONSE_EVT event) {
 
     case UWB_BLINK_DATA_TX_NTF_REVT:
       return "UWB_BLINK_DATA_TX_NTF_REVT";
+
+    case UWB_DATA_RECV_REVT:
+      return "UWB_DATA_RECV_REVT";
+
+    case UWB_DATA_TRANSFER_STATUS_NTF_REVT:
+      return "UWB_DATA_TRANSFER_STATUS_NTF_REVT";
+
+    case UWB_SEND_DATA_STATUS_EVT:
+      return "UWB_SEND_DATA_STATUS_EVT";
 
     case UWB_CONFORMANCE_TEST_DATA:
       return "UWB_CONFORMANCE_TEST_DATA";

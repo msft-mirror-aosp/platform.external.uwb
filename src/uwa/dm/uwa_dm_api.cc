@@ -929,3 +929,42 @@ tUWA_STATUS UWA_SendRawCommand(uint16_t cmd_params_len, uint8_t* p_cmd_params,
 
   return UWA_STATUS_FAILED;
 }
+
+/*******************************************************************************
+**
+** Function         UWA_SendUwbDataFrame
+**
+** Description      This function is called to send UWB data over UWB RF interafce  .
+**
+** Returns          UWA_STATUS_OK if data sucessfully accepeted by UWB subsystem
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+tUWA_STATUS UWA_SendUwbData(uint32_t session_id,
+                            uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
+                            uint16_t data_len,
+                            uint8_t* p_data) {
+  tUWA_DM_API_SEND_DATA_FRAME* p_msg;
+  UCI_TRACE_I("UWA_SendUwbDataFrame: data_len = %d", data_len);
+  if ((data_len == 0) || (p_data == nullptr) || (p_addr == nullptr))
+    return (UWA_STATUS_FAILED);
+
+  p_msg = (tUWA_DM_API_SEND_DATA_FRAME*)phUwb_GKI_getbuf(sizeof(tUWA_DM_API_SEND_DATA_FRAME) + data_len);
+  if (p_msg != nullptr) {
+    p_msg->hdr.event = UWA_DM_API_SEND_DATA_FRAME_EVT;
+    p_msg->session_id = session_id;
+    memcpy(p_msg->p_addr, p_addr, EXTENDED_ADDRESS_LEN);
+    p_msg->dest_end_point = dest_end_point;
+    p_msg->sequence_num = sequence_num;
+    p_msg->data_len = data_len;
+
+    p_msg->p_data = (uint8_t*)(p_msg + 1);
+    memcpy(p_msg->p_data, p_data, data_len);
+
+    uwa_sys_sendmsg(p_msg);
+
+    return (UWA_STATUS_OK);
+  }
+  return UWA_STATUS_FAILED;
+
+}

@@ -141,7 +141,10 @@ enum {
   UWB_BLINK_DATA_TX_NTF_REVT, /* 31 Blink Data Tx ntf                   */
   UWB_CONFORMANCE_TEST_DATA,  /* 32 Conformance test data ntf           */
   UWB_SET_COUNTRY_CODE_REVT,  /* 33 Set country code resp */
-  UWB_VENDOR_SPECIFIC_UCI_NTF_EVT   /* 34 Proprietary ntf */
+  UWB_VENDOR_SPECIFIC_UCI_NTF_EVT,   /* 34 Proprietary ntf */
+  UWB_SEND_DATA_STATUS_EVT,   /* 35 UWB data reception status by UWBS   */
+  UWB_DATA_TRANSFER_STATUS_NTF_REVT, /* 36 UWB data transfer status over UWB   */
+  UWB_DATA_RECV_REVT         /* 37  received data over UWB */
 };
 typedef uint16_t tUWB_RESPONSE_EVT;
 
@@ -282,9 +285,22 @@ typedef struct {
   uint8_t* blink_payload_data; /* Blink Payload Data */
 } tUWB_TDoA_RANGING_MEASR;
 
+typedef struct {
+  uint8_t mac_addr[8];
+  uint8_t status;
+  uint8_t nLos;
+  uint8_t frame_seq_num;
+  uint16_t block_index;
+  uint16_t aoa_azimuth;
+  uint8_t aoa_azimuth_FOM;
+  uint16_t aoa_elevation;
+  uint8_t aoa_elevation_FOM;
+} tUWB_OWR_WITH_AOA_RANGING_MEASR;
+
 typedef union {
   tUWB_TWR_RANGING_MEASR twr_range_measr[MAX_NUM_RESPONDERS];
   tUWB_TDoA_RANGING_MEASR tdoa_range_measr[MAX_NUM_OF_TDOA_MEASURES];
+  tUWB_OWR_WITH_AOA_RANGING_MEASR owr_with_aoa_range_measr;
 } tUWB_RANGING_MEASR;
 
 /* the data type associated with UWB_RANGE_DATA_REVT */
@@ -343,6 +359,25 @@ typedef struct {
   uint8_t repetition_count_status; /* repetition count status */
 } tUWB_SEND_BLINK_DATA_NTF_REVT;
 
+/* the data type associated with UWB_DATA_TRANSFER_STATUS_NTF_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint32_t sequence_num;
+  uint8_t status;
+}tUWB_DATA_TRANSFER_STATUS_NTF_REVT;
+
+/* the data type associated with UWB_DATA_RECV_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint8_t status;
+  uint32_t sequence_num;
+  uint8_t address[EXTENDED_ADDRESS_LEN];
+  uint8_t source_end_point;
+  uint8_t dest_end_point;
+  uint16_t data_len;
+  uint8_t data[UCI_MAX_DATA_SIZE];
+}tUWB_RX_DATA_REVT;
+
 typedef struct {
   tUWB_STATUS status; /* The event status.                */
 } tUWB_SET_COUNTRY_CODE_REVT;
@@ -369,6 +404,8 @@ typedef union {
   tUWB_SEND_BLINK_DATA_NTF_REVT sSend_blink_data_ntf;
   tUWB_CONFORMANCE_TEST_DATA sConformance_test_data;
   tUWB_VENDOR_SPECIFIC_REVT sVendor_specific_ntf;
+  tUWB_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status;
+  tUWB_RX_DATA_REVT sRcvd_data;
 } tUWB_RESPONSE;
 
 /* Data types associated with all RF test Events */
@@ -794,6 +831,21 @@ extern tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback);
 
 /*******************************************************************************
 **
+** Function         UWB_SendData
+**
+** Description      This function is called to send the data packet over UWB.
+**
+** Parameters       p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
+                         uint8_t dest_end_point, uint8_t sequence_num,
+                         uint16_t data_len, uint8_t* p_data);
+
+/*******************************************************************************
+**
 ** Function         UWB_EnableConformanceTest
 **
 ** Description      This function is called to set MCTT/PCTT mode.
@@ -805,6 +857,32 @@ extern tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback);
 **
 *******************************************************************************/
 void UWB_EnableConformanceTest(uint8_t enable);
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxMsgSize
+**
+** Description      This function is called to set max msg size supported for data Tranfer
+**
+** Parameters       maxMsgSize - max msg size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxMsgSize(uint16_t maxMsgSize);
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxDataPktPayloadSize
+**
+** Description      This function is called to set max data packet size at one time supported for data Tranfer
+**
+** Parameters       maxDataPktPayloadSize - max data packet size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxDataPktPayloadSize(uint16_t maxDataPktPayloadSize);
 
 /*******************************************************************************
 **
