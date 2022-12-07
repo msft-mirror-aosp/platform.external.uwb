@@ -1413,10 +1413,10 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         if (vendor_specific_length > MAX_VENDOR_INFO_LENGTH) {
             UCI_TRACE_E("%s: Invalid Range_data vendor_specific_length = %x",
                            __func__, vendor_specific_length);
-        } else {
-          STREAM_TO_ARRAY(sRange_data.vendor_specific_ntf.data, p, vendor_specific_length);
-          sRange_data.vendor_specific_ntf.len = vendor_specific_length;
         }
+
+        STREAM_TO_ARRAY(sRange_data.vendor_specific_ntf.data, p, vendor_specific_length);
+        sRange_data.vendor_specific_ntf.len = vendor_specific_length;
      }
   }
 
