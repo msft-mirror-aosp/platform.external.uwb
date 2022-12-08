@@ -395,10 +395,10 @@ mod tests {
         }
     }
 
-    fn into_raw_messages<T: Into<uwb_uci_packets::UciPacketPacket>>(
+    fn into_raw_messages<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
-        let packets: Vec<uwb_uci_packets::UciPacketHalPacket> = builder.into().into();
+        let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
         packets.into_iter().map(|packet| packet.into()).collect()
     }
 
