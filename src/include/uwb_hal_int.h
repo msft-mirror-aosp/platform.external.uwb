@@ -32,7 +32,9 @@
 enum {
   HAL_UWB_OPEN_CPLT_EVT = 0x00,
   HAL_UWB_CLOSE_CPLT_EVT = 0x01,
-  HAL_UWB_ERROR_EVT = 0x02
+  HAL_UWB_INIT_CPLT_EVT = 0x02,
+  HAL_UWB_ERROR_EVT = 0x03,
+  HAL_UWB_HW_RESET = 0x04
 };
 
 typedef uint8_t uwb_event_t;
