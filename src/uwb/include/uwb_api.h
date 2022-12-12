@@ -104,7 +104,7 @@ typedef uint8_t tUWB_STATUS;
 // RFU size for tdoa Ranging
 
 #define TDOA_RANGE_MEASR_RFU 12
-#define TWR_RANGE_MEASR_RFU 12
+#define TWR_RANGE_MEASR_RFU 11
 
 #define CONFORMANCE_TEST_MAX_UCI_PKT_LENGTH 260
 
@@ -141,7 +141,14 @@ enum {
   UWB_BLINK_DATA_TX_NTF_REVT, /* 31 Blink Data Tx ntf                   */
   UWB_CONFORMANCE_TEST_DATA,  /* 32 Conformance test data ntf           */
   UWB_SET_COUNTRY_CODE_REVT,  /* 33 Set country code resp */
-  UWB_VENDOR_SPECIFIC_UCI_NTF_EVT   /* 34 Proprietary ntf */
+  UWB_VENDOR_SPECIFIC_UCI_NTF_EVT,   /* 34 Proprietary ntf */
+  UWB_SEND_DATA_STATUS_EVT,   /* 35 UWB data reception status by UWBS   */
+  UWB_DATA_TRANSFER_STATUS_NTF_REVT, /* 36 UWB data transfer status over UWB   */
+  UWB_DATA_RECV_REVT,         /* 37  received data over UWB */
+  UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT, /* 38 DL TDoA Configure DT Anchor
+                                                     RR RDM List Response */
+  UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT /* 39 DL-TDoA Update Ranging Index
+                                                     status Response */
 };
 typedef uint16_t tUWB_RESPONSE_EVT;
 
@@ -261,31 +268,79 @@ typedef struct {
   uint16_t aoa_dest_elevation;
   uint8_t aoa_dest_elevation_FOM;
   uint8_t slot_index;
+  uint8_t rssi;
   uint8_t rfu[TWR_RANGE_MEASR_RFU];
 } tUWB_TWR_RANGING_MEASR;
 
 typedef struct {
   uint8_t mac_addr[8];
+  uint8_t message_control;
   uint8_t frame_type;
   uint8_t nLos; /* non line of sight */
   uint16_t aoa_azimuth;
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
-  uint64_t timeStamp;          /* Time stamp */
-  uint32_t blink_frame_number; /* blink frame number received from tag/master
-                                  anchor */
-  uint8_t rfu[TDOA_RANGE_MEASR_RFU];
-  uint8_t device_info_size;    /* Size of Device Specific Information */
-  uint8_t* device_info;        /* Device Specific Information */
-  uint8_t blink_payload_size;  /* Size of Blink Payload Data */
-  uint8_t* blink_payload_data; /* Blink Payload Data */
+  uint32_t frame_number; /* Number received in the payload of the Blink UTM  */
+  uint8_t rxTimeStamp[8]; /* Local RX timestamp of the received UWB RFRAME  */
+  uint8_t ulTdoa_device_id[8]; /* Device ID of the sender of the received UTM  */
+  uint8_t txTimeStamp[8]; /* TX timestamp of the UWB RFRAME   */
 } tUWB_TDoA_RANGING_MEASR;
+
+
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWB_VENDOR_SPECIFIC_NTF;
+
+typedef struct {
+  uint8_t mac_addr[8];
+  uint8_t status;
+  uint8_t message_type;
+  uint16_t message_control;
+  uint16_t block_index;
+  uint8_t round_index;
+  uint8_t nLos;
+  uint16_t aoa_azimuth;
+  uint8_t aoa_azimuth_FOM;
+  uint16_t aoa_elevation;
+  uint8_t aoa_elevation_FOM;
+  uint8_t txTimeStamp[8];
+  uint8_t rxTimeStamp[8];
+  uint16_t cfo_anchor;
+  uint16_t cfo;
+  uint32_t initiator_reply_time;
+  uint32_t responder_reply_time;
+  uint16_t initiator_responder_TOF;
+  uint8_t anchor_location[12];
+  uint8_t active_ranging_round[15];
+} tUWB_DLTDOA_RANGING_MEASR
+
+typedef struct {
+  uint8_t mac_addr[8];
+  uint8_t status;
+  uint8_t nLos;
+  uint8_t frame_seq_num;
+  uint16_t block_index;
+  uint16_t aoa_azimuth;
+  uint8_t aoa_azimuth_FOM;
+  uint16_t aoa_elevation;
+  uint8_t aoa_elevation_FOM;
+} tUWB_OWR_WITH_AOA_RANGING_MEASR;
 
 typedef union {
   tUWB_TWR_RANGING_MEASR twr_range_measr[MAX_NUM_RESPONDERS];
   tUWB_TDoA_RANGING_MEASR tdoa_range_measr[MAX_NUM_OF_TDOA_MEASURES];
+  tUWB_DLTDOA_RANGING_MEASR dltdoa_range_measr[MAX_NUM_OF_DLTDOA_MEASURES];
+  tUWB_OWR_WITH_AOA_RANGING_MEASR owr_with_aoa_range_measr;
 } tUWB_RANGING_MEASR;
+
+/* the data type associated with vendor notification */
+typedef struct {
+  uint16_t len;
+  uint8_t data[UCI_VENDOR_INFO_MAX_SIZE];
+}tUWB_VENDOR_SPECIFIC_NTF;
 
 /* the data type associated with UWB_RANGE_DATA_REVT */
 typedef struct {
@@ -300,6 +355,7 @@ typedef struct {
   uint8_t reserved[8];
   uint8_t no_of_measurements;
   tUWB_RANGING_MEASR ranging_measures;
+  tUWB_VENDOR_SPECIFIC_NTF vendor_specific_ntf;
 } tUWB_RANGE_DATA_REVT;
 
 /* the data type associated with UWB_CONFORMANCE_TEST_DATA */
@@ -343,6 +399,40 @@ typedef struct {
   uint8_t repetition_count_status; /* repetition count status */
 } tUWB_SEND_BLINK_DATA_NTF_REVT;
 
+/* the data type associated with UWB_DATA_TRANSFER_STATUS_NTF_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint32_t sequence_num;
+  uint8_t status;
+}tUWB_DATA_TRANSFER_STATUS_NTF_REVT;
+
+/* the data type associated with UWB_DATA_RECV_REVT */
+typedef struct {
+  uint32_t session_id;
+  uint8_t status;
+  uint32_t sequence_num;
+  uint8_t address[EXTENDED_ADDRESS_LEN];
+  uint8_t source_end_point;
+  uint8_t dest_end_point;
+  uint16_t data_len;
+  uint8_t data[UCI_MAX_DATA_SIZE];
+}tUWB_RX_DATA_REVT;
+
+
+/* the data type associated with UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT */
+typedef struct {
+  uint8_t status;
+  uint16_t len;
+  uint8_t rng_round_indexs[255];
+}tUWB_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_REVT;
+
+/* the data type associated with UWB_DATA_RECV_REVT */
+typedef struct {
+  uint8_t status;
+  uint16_t len;
+  uint8_t rng_round_index[255];
+}tUWB_UPDATE_RANGE_ROUND_INDEX_REVT;
+
 typedef struct {
   tUWB_STATUS status; /* The event status.                */
 } tUWB_SET_COUNTRY_CODE_REVT;
@@ -368,7 +458,11 @@ typedef union {
   tUWB_SET_COUNTRY_CODE_REVT sSet_country_code_status;
   tUWB_SEND_BLINK_DATA_NTF_REVT sSend_blink_data_ntf;
   tUWB_CONFORMANCE_TEST_DATA sConformance_test_data;
-  tUWB_VENDOR_SPECIFIC_REVT sVendor_specific_ntf;
+  tUWB_VENDOR_SPECIFIC_REVT vendor_specific_ntf;
+  tUWB_DATA_TRANSFER_STATUS_NTF_REVT sData_xfer_status;
+  tUWB_RX_DATA_REVT sRcvd_data;
+  tUWB_UPDATE_RANGE_ROUND_INDEX_REVT sRange_round_index;
+  tUWB_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_REVT sConfigure_dt_anchor_rr_rdm_list;
 } tUWB_RESPONSE;
 
 /* Data types associated with all RF test Events */
@@ -794,6 +888,55 @@ extern tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback);
 
 /*******************************************************************************
 **
+** Function         UWB_SendData
+**
+** Description      This function is called to send the data packet over UWB.
+**
+** Parameters       p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
+                         uint8_t dest_end_point, uint8_t sequence_num,
+                         uint16_t data_len, uint8_t* p_data);
+/*******************************************************************************
+**
+** Function         UWB_ConfigureDTAnchorForRrRdmList
+**
+** Description      This function is called to Configure DT anchor RR RDM List.
+**
+** Parameter        session_id  - Session id To which Rangng index need to update
+**                  rr_rdm_count - Number Of rr_rdm
+**                  length - length of data buffer
+**                  p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+extern tUWB_STATUS UWB_ConfigureDTAnchorForRrRdmList(uint32_t session_id, uint8_t rr_rdm_count,
+                                                     uint8_t length, uint8_t* p_data);
+
+/*******************************************************************************
+**
+** Function         UWB_UpdateRangingRoundIndex
+**
+** Description      This function is called to Update Active Ranging Index.
+**
+** Parameter        dlTdoaRole - 0x00(Anchor) or 0x01(Tag)
+**                  session_id  - Session id To which Rangng index need to update
+**                  number_of_active_rngIndex - NUmber Of Ranging index to be updated
+**                  rng_round_index_len - Range Round Index Len
+**                  p_rng_round_index  -  pointer to Ranging Index buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_UpdateRangingRoundIndex(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_rng_index,
+                                    uint8_t rng_round_index_len, uint8_t* p_rng_round_index);
+
+/*******************************************************************************
+**
 ** Function         UWB_EnableConformanceTest
 **
 ** Description      This function is called to set MCTT/PCTT mode.
@@ -805,6 +948,32 @@ extern tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback);
 **
 *******************************************************************************/
 void UWB_EnableConformanceTest(uint8_t enable);
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxMsgSize
+**
+** Description      This function is called to set max msg size supported for data Tranfer
+**
+** Parameters       maxMsgSize - max msg size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxMsgSize(uint16_t maxMsgSize);
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxDataPktPayloadSize
+**
+** Description      This function is called to set max data packet size at one time supported for data Tranfer
+**
+** Parameters       maxDataPktPayloadSize - max data packet size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxDataPktPayloadSize(uint16_t maxDataPktPayloadSize);
 
 /*******************************************************************************
 **
