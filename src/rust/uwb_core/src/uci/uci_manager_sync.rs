@@ -139,6 +139,7 @@ impl UciManagerSync {
             mpsc::unbounded_channel::<SessionNotification>();
         let (vendor_notification_sender, vendor_notification_receiver) =
             mpsc::unbounded_channel::<RawUciMessage>();
+        // TODO(b/261762781):Add a similar channel for Data Packet Rx
         runtime_handle.block_on(async {
             uci_manager_impl.set_core_notification_sender(core_notification_sender).await;
             uci_manager_impl.set_session_notification_sender(session_notification_sender).await;

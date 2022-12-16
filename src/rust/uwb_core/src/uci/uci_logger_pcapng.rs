@@ -42,6 +42,7 @@ impl UciLoggerPcapng {
 }
 
 impl UciLogger for UciLoggerPcapng {
+    // TODO(b/261762781): Add Pcapng logging for UciDataPacketPacket also?
     fn log_uci_packet(&mut self, packet: UciControlPacketPacket) {
         let block_bytes = match EnhancedPacketBlockBuilder::new()
             .interface_id(self.interface_id)
