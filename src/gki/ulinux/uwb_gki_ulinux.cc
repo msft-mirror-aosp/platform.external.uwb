@@ -1,7 +1,7 @@
 /******************************************************************************
  *
  *  Copyright (C) 1999-2012 Broadcom Corporation
- *  Copyright 2019 NXP
+ *  Copyright 2019,2022 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -647,9 +647,7 @@ void phUwb_GKI_enable(void) {
 *******************************************************************************/
 
 void phUwb_GKI_disable(void) {
-  UCI_TRACE_I("GKI_disable");
   pthread_mutex_lock(&gki_cb.os.GKI_mutex);
-  UCI_TRACE_I("Leaving GKI_disable");
   return;
 }
 

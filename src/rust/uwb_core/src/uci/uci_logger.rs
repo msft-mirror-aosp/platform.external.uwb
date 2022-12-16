@@ -18,7 +18,7 @@ use std::convert::TryFrom;
 use uwb_uci_packets::{
     AppConfigTlv, AppConfigTlvType, SessionCommandChild, SessionGetAppConfigRspBuilder,
     SessionResponseChild, SessionSetAppConfigCmdBuilder, UciCommandChild, UciCommandPacket,
-    UciPacketPacket, UciResponseChild, UciResponsePacket,
+    UciControlPacketPacket, UciResponseChild, UciResponsePacket,
 };
 
 use crate::error::{Error, Result};
@@ -51,7 +51,8 @@ impl TryFrom<String> for UciLoggerMode {
 /// Trait definition for the thread-safe uci logger
 pub trait UciLogger: 'static + Send + Sync {
     /// Logs Uci Packet.
-    fn log_uci_packet(&mut self, packet: UciPacketPacket);
+    /// TODO(b/261762781): Add logging for UciDataPacketPacket also.
+    fn log_uci_packet(&mut self, packet: UciControlPacketPacket);
     /// Logs hal open event.
     fn log_hal_open(&mut self, result: Result<()>);
     /// Logs hal close event.
@@ -139,29 +140,31 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
         }
     }
 
-    pub fn log_uci_response_or_notification(&mut self, packet: &UciPacketPacket) {
+    pub fn log_uci_response_or_notification(&mut self, packet: &UciControlPacketPacket) {
         match self.mode {
             UciLoggerMode::Disabled => (),
             UciLoggerMode::Unfiltered => self.logger.log_uci_packet(packet.clone()),
             UciLoggerMode::Filtered => match packet.clone().specialize() {
-                uwb_uci_packets::UciPacketChild::UciResponse(packet) => {
+                uwb_uci_packets::UciControlPacketChild::UciResponse(packet) => {
                     self.logger.log_uci_packet(filter_uci_response(packet).into())
                 }
-                uwb_uci_packets::UciPacketChild::UciNotification(packet) => {
+                uwb_uci_packets::UciControlPacketChild::UciNotification(packet) => {
                     self.logger.log_uci_packet(packet.into())
                 }
                 _ => (),
             },
         }
     }
+
+    // TODO(b/261762781): Add a fn log_uci_data() to log a UciDataPacketPacket.
 }
 
-/// A null UciLogger implementation that does nothing.
+/// A placeholder UciLogger implementation that does nothing.
 #[derive(Default)]
-pub struct UciLoggerNull {}
+pub struct NopUciLogger {}
 
-impl UciLogger for UciLoggerNull {
-    fn log_uci_packet(&mut self, _packet: UciPacketPacket) {}
+impl UciLogger for NopUciLogger {
+    fn log_uci_packet(&mut self, _packet: UciControlPacketPacket) {}
 
     fn log_hal_open(&mut self, _result: Result<()>) {}
 
@@ -207,7 +210,7 @@ mod tests {
 
     #[test]
     fn test_log_response_filter() -> Result<()> {
-        let unfiltered_rsp: UciPacketPacket = SessionGetAppConfigRspBuilder {
+        let unfiltered_rsp: UciControlPacketPacket = SessionGetAppConfigRspBuilder {
             status: StatusCode::UciStatusOk,
             tlvs: vec![
                 AppConfigTlv { cfg_id: AppConfigTlvType::StaticStsIv, v: vec![0, 1, 2] },

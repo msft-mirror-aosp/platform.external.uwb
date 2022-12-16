@@ -26,7 +26,7 @@ pub(super) type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
 /// The application configuration parameters of the UWB session. It is used to generate the
 /// parameters for the SESSION_SET_APP_CONFIG_CMD, or converted from the result of the
 /// SESSION_GET_APP_CONFIG_CMD.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppConfigParams {
     Fira(FiraAppConfigParams),
     Ccc(CccAppConfigParams),

@@ -103,7 +103,7 @@ mod tests {
     use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::service::uwb_service_callback_builder::UwbServiceCallbackSendBuilder;
     use crate::uci::mock_uci_hal::MockUciHal;
-    use crate::uci::uci_logger_factory::UciLoggerFactoryNull;
+    use crate::uci::uci_logger_factory::NopUciLoggerFactory;
 
     #[test]
     fn test_build_fail() {
@@ -111,7 +111,7 @@ mod tests {
             UwbServiceCallbackSendBuilder<MockUwbServiceCallback>,
             MockUwbServiceCallback,
             MockUciHal,
-            UciLoggerFactoryNull,
+            NopUciLoggerFactory,
         >::new()
         .build();
         assert!(result.is_none());
@@ -125,7 +125,7 @@ mod tests {
             .runtime_handle(runtime.handle().to_owned())
             .callback_builder(UwbServiceCallbackSendBuilder::new(callback))
             .uci_hal(MockUciHal::new())
-            .uci_logger_factory(UciLoggerFactoryNull::default())
+            .uci_logger_factory(NopUciLoggerFactory::default())
             .build();
         assert!(result.is_some());
     }
