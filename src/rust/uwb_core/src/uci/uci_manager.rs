@@ -59,6 +59,8 @@ pub(crate) trait UciManager: 'static + Send + Sync + Clone {
         &mut self,
         vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     );
+    // TODO(b/261762781): Define a new data_rx_notf_sender and associated handling, to
+    // receive incoming data packets.
 
     // Open the UCI HAL.
     // All the UCI commands should be called after the open_hal() completes successfully.
@@ -450,7 +452,7 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
 
     // Set to true when |hal| is opened successfully.
     is_hal_opened: bool,
-    // Receive the response and the notification from |hal|. Only used when |hal| is opened
+    // Receive response, notification and data packets from |hal|. Only used when |hal| is opened
     // successfully.
     packet_receiver: mpsc::UnboundedReceiver<UciHalPacket>,
     // Defrag the UCI packets.
@@ -531,8 +533,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                             warn!("UciHal dropped the packet_sender unexpectedly.");
                             self.on_hal_closed();
                         },
-                        Some(packet) => {
-                            if let Some(packet) = self.defrager.defragment_packet(&packet) {
+                        Some(rx_packet) => {
+                            // TODO(b/261762781): Check message type and call different defragment
+                            // fn for the Rx data packets. Inside it, call a new handle_data_rx().
+                            if let Some(packet) =
+                                self.defrager.defragment_packet(&rx_packet) {
                                 self.logger.log_uci_response_or_notification(&packet);
 
                                 // Handle response to raw UCI cmd. We want to send it back as
@@ -837,6 +842,8 @@ mod tests {
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
+    // TODO(b/261886903): Check if this should be in a common library file as same function
+    // is defined in uci_hal_android.rs also.
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
