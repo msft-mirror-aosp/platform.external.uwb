@@ -28,10 +28,12 @@ use crate::params::uci_packets::{
     CountryCode, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, GroupId,
     MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
     SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UciControlPacketPacket,
-    UpdateMulticastListAction,
+    UciDataPacketPacket, UpdateMulticastListAction,
 };
 use crate::uci::message::UciMessage;
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
+use crate::uci::notification::{
+    CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
+};
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
@@ -59,8 +61,10 @@ pub(crate) trait UciManager: 'static + Send + Sync + Clone {
         &mut self,
         vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     );
-    // TODO(b/261762781): Define a new data_rx_notf_sender and associated handling, to
-    // receive incoming data packets.
+    async fn set_data_rcv_notification_sender(
+        &mut self,
+        data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    );
 
     // Open the UCI HAL.
     // All the UCI commands should be called after the open_hal() completes successfully.
@@ -184,6 +188,14 @@ impl UciManager for UciManagerImpl {
     ) {
         let _ =
             self.send_cmd(UciManagerCmd::SetVendorNotificationSender { vendor_notf_sender }).await;
+    }
+    async fn set_data_rcv_notification_sender(
+        &mut self,
+        data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    ) {
+        let _ = self
+            .send_cmd(UciManagerCmd::SetDataRcvNotificationSender { data_rcv_notf_sender })
+            .await;
     }
 
     async fn open_hal(&self) -> Result<()> {
@@ -479,6 +491,7 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
+    data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -506,6 +519,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             core_notf_sender: mpsc::unbounded_channel().0,
             session_notf_sender: mpsc::unbounded_channel().0,
             vendor_notf_sender: mpsc::unbounded_channel().0,
+            data_rcv_notf_sender: mpsc::unbounded_channel().0,
         }
     }
 
@@ -535,7 +549,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         },
                         Some(rx_packet) => {
                             // TODO(b/261762781): Check message type and call different defragment
-                            // fn for the Rx data packets. Inside it, call a new handle_data_rx().
+                            // fn for the Rx data packets. Inside it, call handle_data_rcv().
                             if let Some(packet) =
                                 self.defrager.defragment_packet(&rx_packet) {
                                 self.logger.log_uci_response_or_notification(&packet);
@@ -614,6 +628,10 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciManagerCmd::SetVendorNotificationSender { vendor_notf_sender } => {
                 self.vendor_notf_sender = vendor_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::SetDataRcvNotificationSender { data_rcv_notf_sender } => {
+                self.data_rcv_notf_sender = data_rcv_notf_sender;
                 let _ = result_sender.send(Ok(UciResponse::SetNotification));
             }
             UciManagerCmd::OpenHal => {
@@ -769,6 +787,19 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
+    // TODO(b/261762781): Call when Defragmenter receives a complete DATA_RCV packet.
+    #[allow(dead_code)]
+    fn handle_data_rcv(&mut self, packet: UciDataPacketPacket) {
+        match packet.try_into() {
+            Ok(data_rcv) => {
+                let _ = self.data_rcv_notf_sender.send(data_rcv);
+            }
+            Err(e) => {
+                error!("Unable to parse incoming Data packet, error {:?}", e);
+            }
+        }
+    }
+
     fn on_hal_open(&mut self, packet_receiver: mpsc::UnboundedReceiver<UciHalPacket>) {
         self.is_hal_opened = true;
         self.packet_receiver = packet_receiver;
@@ -817,13 +848,28 @@ impl Retryer {
 
 #[derive(Debug)]
 enum UciManagerCmd {
-    SetLoggerMode { logger_mode: UciLoggerMode },
-    SetCoreNotificationSender { core_notf_sender: mpsc::UnboundedSender<CoreNotification> },
-    SetSessionNotificationSender { session_notf_sender: mpsc::UnboundedSender<SessionNotification> },
-    SetVendorNotificationSender { vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage> },
+    SetLoggerMode {
+        logger_mode: UciLoggerMode,
+    },
+    SetCoreNotificationSender {
+        core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
+    },
+    SetSessionNotificationSender {
+        session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
+    },
+    SetVendorNotificationSender {
+        vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
+    },
+    SetDataRcvNotificationSender {
+        data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    },
     OpenHal,
-    CloseHal { force: bool },
-    SendUciCommand { cmd: UciCommand },
+    CloseHal {
+        force: bool,
+    },
+    SendUciCommand {
+        cmd: UciCommand,
+    },
 }
 
 #[cfg(test)]
