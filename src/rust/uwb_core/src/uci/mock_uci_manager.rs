@@ -28,7 +28,9 @@ use crate::params::uci_packets::{
     PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
     SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
-use crate::uci::notification::{CoreNotification, SessionNotification, UciNotification};
+use crate::uci::notification::{
+    CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
+};
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
 use uwb_uci_packets::ControleesV2;
@@ -40,6 +42,7 @@ pub(crate) struct MockUciManager {
     core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
+    data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
 }
 
 #[allow(dead_code)]
@@ -51,6 +54,7 @@ impl MockUciManager {
             core_notf_sender: mpsc::unbounded_channel().0,
             session_notf_sender: mpsc::unbounded_channel().0,
             vendor_notf_sender: mpsc::unbounded_channel().0,
+            data_rcv_notf_sender: mpsc::unbounded_channel().0,
         }
     }
 
@@ -342,6 +346,12 @@ impl UciManager for MockUciManager {
         vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     ) {
         self.vendor_notf_sender = vendor_notf_sender;
+    }
+    async fn set_data_rcv_notification_sender(
+        &mut self,
+        data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    ) {
+        self.data_rcv_notf_sender = data_rcv_notf_sender;
     }
 
     async fn open_hal(&self) -> Result<()> {

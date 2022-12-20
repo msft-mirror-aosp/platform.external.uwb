@@ -30,7 +30,7 @@ use crate::params::{
     SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
-use crate::uci::notification::{CoreNotification, SessionNotification};
+use crate::uci::notification::{CoreNotification, DataRcvNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
@@ -51,6 +51,12 @@ pub trait NotificationManager: 'static {
 
     /// Callback for RawUciMessage.
     fn on_vendor_notification(&mut self, vendor_notification: RawUciMessage) -> Result<()>;
+
+    /// Callback for DataRcvNotification.
+    fn on_data_rcv_notification(
+        &mut self,
+        data_rcv_notification: DataRcvNotification,
+    ) -> Result<()>;
 }
 
 /// Builder for NotificationManager. Builder is sent between threads.
@@ -63,6 +69,7 @@ struct NotificationDriver<U: NotificationManager> {
     core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
     session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
     vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
+    data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
     notification_manager: U,
 }
 impl<U: NotificationManager> NotificationDriver<U> {
@@ -70,12 +77,14 @@ impl<U: NotificationManager> NotificationDriver<U> {
         core_notification_receiver: mpsc::UnboundedReceiver<CoreNotification>,
         session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
         vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
+        data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
         notification_manager: U,
     ) -> Self {
         Self {
             core_notification_receiver,
             session_notification_receiver,
             vendor_notification_receiver,
+            data_rcv_notification_receiver,
             notification_manager,
         }
     }
@@ -95,6 +104,11 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 Some(ntf) = self.vendor_notification_receiver.recv() =>{
                     self.notification_manager.on_vendor_notification(ntf).unwrap_or_else(|e|{
                         error!("NotificationDriver: RawUciMessage callback error: {:?}",e);
+                });
+                }
+                Some(data) = self.data_rcv_notification_receiver.recv() =>{
+                    self.notification_manager.on_data_rcv_notification(data).unwrap_or_else(|e|{
+                        error!("NotificationDriver: OnDataRcv callback error: {:?}",e);
                 });
                 }
                 else =>{
@@ -139,11 +153,14 @@ impl UciManagerSync {
             mpsc::unbounded_channel::<SessionNotification>();
         let (vendor_notification_sender, vendor_notification_receiver) =
             mpsc::unbounded_channel::<RawUciMessage>();
+        let (data_rcv_notification_sender, data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<DataRcvNotification>();
         // TODO(b/261762781):Add a similar channel for Data Packet Rx
         runtime_handle.block_on(async {
             uci_manager_impl.set_core_notification_sender(core_notification_sender).await;
             uci_manager_impl.set_session_notification_sender(session_notification_sender).await;
             uci_manager_impl.set_vendor_notification_sender(vendor_notification_sender).await;
+            uci_manager_impl.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
         });
         // The potentially !Send NotificationManager is created in a separate thread.
         let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
@@ -175,6 +192,7 @@ impl UciManagerSync {
                 core_notification_receiver,
                 session_notification_receiver,
                 vendor_notification_receiver,
+                data_rcv_notification_receiver,
                 notification_manager,
             );
             local.spawn_local(async move {
@@ -378,6 +396,12 @@ mod tests {
             Ok(())
         }
         fn on_vendor_notification(&mut self, _vendor_notification: RawUciMessage) -> Result<()> {
+            Ok(())
+        }
+        fn on_data_rcv_notification(
+            &mut self,
+            _data_rcv_notification: DataRcvNotification,
+        ) -> Result<()> {
             Ok(())
         }
     }
