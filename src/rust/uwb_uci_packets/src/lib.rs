@@ -250,6 +250,22 @@ impl From<GroupIdOrDataPacketFormat> for GroupId {
     }
 }
 
+impl From<DataPacketFormat> for GroupIdOrDataPacketFormat {
+    fn from(dpf: DataPacketFormat) -> Self {
+        GroupIdOrDataPacketFormat::from_u8(dpf.to_u8().unwrap()).unwrap()
+    }
+}
+
+// The GroupIdOrDataPacketFormat enum has more values defined (for the GroupId bits) than the
+// DataPacketFormat enum. Hence this is implemented as TryFrom() instead of From().
+impl TryFrom<GroupIdOrDataPacketFormat> for DataPacketFormat {
+    type Error = Error;
+
+    fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self> {
+        DataPacketFormat::from_u8(gid_or_dpf.to_u8().unwrap()).ok_or(Error::InvalidPacketError)
+    }
+}
+
 // Container for UCI packet header fields.
 struct UciControlPacketHeader {
     message_type: MessageType,
@@ -345,11 +361,52 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciControlPacketPacket {
     }
 }
 
+// UCI Data packet functions.
+fn is_uci_data_rcv_packet(message_type: MessageType, data_packet_format: DataPacketFormat) -> bool {
+    message_type == MessageType::Data && data_packet_format == DataPacketFormat::DataRcv
+}
+
+fn try_into_data_payload(packet: UciPacketHalPacket) -> Result<Bytes> {
+    if is_uci_data_rcv_packet(
+        packet.get_message_type(),
+        packet.get_group_id_or_data_packet_format().try_into()?,
+    ) {
+        Ok(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
+    } else {
+        error!("Received unexpected data packet fragment: {:?}", packet);
+        Err(Error::InvalidPacketError)
+    }
+}
+
+// Helper to convert from vector of |UciPacketHalPacket| to |UciDataPacketPacket|. An example
+// usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
 impl TryFrom<Vec<UciPacketHalPacket>> for UciDataPacketPacket {
     type Error = Error;
 
     fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
-        todo!("b/261762781: Implement de-fragmentation for Uci Data packets")
+        if packets.is_empty() {
+            return Err(Error::InvalidPacketError);
+        }
+
+        // Create the reassembled payload.
+        let mut payload_buf = Bytes::new();
+        for packet in packets {
+            // Ensure that the fragment is a Data Rcv packet.
+            // Get payload by stripping the header.
+            payload_buf = [payload_buf, try_into_data_payload(packet)?].concat().into();
+        }
+
+        // Create assembled |UciDataPacketPacket| and convert to bytes again since we need to
+        // reparse the packet after defragmentation to get the appropriate message.
+        UciDataPacketPacket::parse(
+            &UciDataPacketBuilder {
+                message_type: MessageType::Data,
+                data_packet_format: DataPacketFormat::DataRcv,
+                payload: Some(payload_buf.into()),
+            }
+            .build()
+            .to_bytes(),
+        )
     }
 }
 
@@ -425,8 +482,13 @@ pub struct PacketDefrager {
     data_fragment_cache: Vec<UciPacketHalPacket>,
 }
 
+pub enum UciDefragPacket {
+    Control(UciControlPacketPacket),
+    Data(UciDataPacketPacket),
+}
+
 impl PacketDefrager {
-    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciControlPacketPacket> {
+    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciDefragPacket> {
         let packet = UciPacketHalPacket::parse(msg)
             .or_else(|e| {
                 error!("Failed to parse packet: {:?}", e);
@@ -435,24 +497,42 @@ impl PacketDefrager {
             .ok()?;
 
         let pbf = packet.get_packet_boundary_flag();
+
+        // TODO(b/261762781): The current implementation allows for the possibility that we receive
+        // interleaved Control/Data HAL packets, and so uses separate caches for them. In the
+        // future, if we determine that interleaving is not possible, this can be simplified.
         if is_uci_control_packet(packet.get_message_type()) {
-            // Add the incoming fragment to the packet cache.
+            // Add the incoming fragment to the control packet cache.
             self.control_fragment_cache.push(packet);
             if pbf == PacketBoundaryFlag::NotComplete {
                 // Wait for remaining fragments.
                 return None;
             }
-            // All fragments received, defragment the packet.
+
+            // All fragments received, defragment the control packet.
             match self.control_fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
-                Ok(packet) => Some(packet),
+                Ok(packet) => Some(UciDefragPacket::Control(packet)),
                 Err(e) => {
-                    error!("Failed to defragment packet: {:?}", e);
+                    error!("Failed to defragment control packet: {:?}", e);
                     None
                 }
             }
         } else {
-            // TODO(b/261762781): Implement de-fragmentation for Uci Data packets
-            None
+            // Add the incoming fragment to the data packet cache.
+            self.data_fragment_cache.push(packet);
+            if pbf == PacketBoundaryFlag::NotComplete {
+                // Wait for remaining fragments.
+                return None;
+            }
+
+            // All fragments received, defragment the data packet.
+            match self.data_fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
+                Ok(packet) => Some(UciDefragPacket::Data(packet)),
+                Err(e) => {
+                    error!("Failed to defragment data packet: {:?}", e);
+                    None
+                }
+            }
         }
     }
 }
