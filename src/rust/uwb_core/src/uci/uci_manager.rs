@@ -39,6 +39,7 @@ use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
+use uwb_uci_packets::UciDefragPacket;
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -540,49 +541,10 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     }
                 }
 
-                // Handle the UCI response or notification from HAL. Only when HAL is opened.
+                // Handle the UCI response, notification or data packet from HAL. Only when HAL
+                // is opened.
                 packet = self.packet_receiver.recv(), if self.is_hal_opened => {
-                    match packet {
-                        None => {
-                            warn!("UciHal dropped the packet_sender unexpectedly.");
-                            self.on_hal_closed();
-                        },
-                        Some(rx_packet) => {
-                            // TODO(b/261762781): Check message type and call different defragment
-                            // fn for the Rx data packets. Inside it, call handle_data_rcv().
-                            if let Some(packet) =
-                                self.defrager.defragment_packet(&rx_packet) {
-                                self.logger.log_uci_response_or_notification(&packet);
-
-                                // Handle response to raw UCI cmd. We want to send it back as
-                                // raw UCI message instead of standard response message.
-                                if let Some(raw_cmd) = &self.last_raw_cmd {
-                                    if packet.get_message_type() == MessageType::Response {
-                                        let resp = if raw_cmd.is_same_signature(&packet) {
-                                            UciResponse::RawUciCmd(Ok(RawUciMessage::from(packet)))
-                                        } else {
-                                            UciResponse::RawUciCmd(Err(Error::Unknown))
-                                        };
-                                        self.handle_response(resp).await;
-                                        self.last_raw_cmd = None;
-                                        continue;
-                                    }
-                                }
-
-                                match packet.try_into() {
-                                    Ok(UciMessage::Response(resp)) => {
-                                        self.handle_response(resp).await;
-                                    }
-                                    Ok(UciMessage::Notification(notf)) => {
-                                        self.handle_notification(notf).await;
-                                    }
-                                    Err(e)=> {
-                                        error!("Failed to parse received message: {:?}", e);
-                                    }
-                                }
-                            }
-                        },
-                    }
+                    self.handle_hal_packet(packet).await;
                 }
 
                 // Timeout waiting for the response of the UCI command.
@@ -734,6 +696,57 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         result
     }
 
+    async fn handle_hal_packet(&mut self, packet: Option<UciHalPacket>) {
+        let defrag_packet = match packet {
+            Some(rx_packet) => self.defrager.defragment_packet(&rx_packet),
+            None => {
+                warn!("UciHal dropped the packet_sender unexpectedly.");
+                self.on_hal_closed();
+                return;
+            }
+        };
+        let defrag_packet = match defrag_packet {
+            Some(p) => p,
+            None => return,
+        };
+
+        match defrag_packet {
+            UciDefragPacket::Control(packet) => {
+                self.logger.log_uci_response_or_notification(&packet);
+                // Handle response to raw UCI cmd. We want to send it back as
+                // raw UCI message instead of standard response message.
+                if let Some(raw_cmd) = &self.last_raw_cmd {
+                    if packet.get_message_type() == MessageType::Response {
+                        let resp = if raw_cmd.is_same_signature(&packet) {
+                            UciResponse::RawUciCmd(Ok(RawUciMessage::from(packet)))
+                        } else {
+                            UciResponse::RawUciCmd(Err(Error::Unknown))
+                        };
+                        self.handle_response(resp).await;
+                        self.last_raw_cmd = None;
+                        return;
+                    }
+                }
+
+                match packet.try_into() {
+                    Ok(UciMessage::Response(resp)) => {
+                        self.handle_response(resp).await;
+                    }
+                    Ok(UciMessage::Notification(notf)) => {
+                        self.handle_notification(notf).await;
+                    }
+                    Err(e) => {
+                        error!("Failed to parse received message: {:?}", e);
+                    }
+                }
+            }
+            UciDefragPacket::Data(packet) => {
+                // TODO(b/261762781): Log the data packet (size)
+                self.handle_data_rcv(packet);
+            }
+        }
+    }
+
     async fn handle_response(&mut self, resp: UciResponse) {
         if resp.need_retry() {
             self.retry_command().await;
@@ -787,8 +800,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
-    // TODO(b/261762781): Call when Defragmenter receives a complete DATA_RCV packet.
-    #[allow(dead_code)]
     fn handle_data_rcv(&mut self, packet: UciDataPacketPacket) {
         match packet.try_into() {
             Ok(data_rcv) => {
