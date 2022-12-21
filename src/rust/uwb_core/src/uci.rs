@@ -35,8 +35,8 @@ pub mod uci_manager_sync;
 pub(crate) mod mock_uci_hal;
 #[cfg(test)]
 pub(crate) mod mock_uci_logger;
-#[cfg(test)]
-pub(crate) mod mock_uci_manager;
+#[cfg(any(test, feature = "mock-utils"))]
+pub mod mock_uci_manager;
 
 // Re-export the public elements.
 pub use command::UciCommand;
@@ -46,3 +46,4 @@ pub use notification::{
 };
 pub use uci_hal::{NopUciHal, UciHal, UciHalPacket};
 pub use uci_logger_factory::{NopUciLoggerFactory, UciLoggerFactory};
+pub use uci_manager::UciManagerImpl;
