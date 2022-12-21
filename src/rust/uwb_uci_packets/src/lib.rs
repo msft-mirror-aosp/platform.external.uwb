@@ -30,7 +30,7 @@ const MAX_PAYLOAD_LEN: usize = 255;
 // TODO: Use a PDL struct to represent the headers and avoid hardcoding
 // lengths below.
 // Real UCI packet header len.
-const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
+pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
 const UCI_PACKET_HEADER_LEN: usize = 7;
 
