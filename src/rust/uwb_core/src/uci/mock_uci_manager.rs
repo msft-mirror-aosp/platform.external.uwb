@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This module offers a mocked version of UciManager for testing.
+//!
+//! The mocked version of UciManager mimics the behavior of the UCI manager and
+//! stacks below it, such that tests can be run on a target without the UWB
+//! hardware.
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
