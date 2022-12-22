@@ -35,10 +35,6 @@
 
 #define NORMAL_MODE_LENGTH_OFFSET 0x03
 #define DATA_PACKET_LEN_SHIFT 0x08
-#define EXTENDED_MODE_LEN_OFFSET 0x02
-#define EXTENDED_MODE_LEN_SHIFT 0x08
-#define EXTND_LEN_INDICATOR_OFFSET 0x01
-#define EXTND_LEN_INDICATOR_OFFSET_MASK  0x80
 #define TDOA_TX_TIMESTAMP_OFFSET         0x00FF
 #define TDOA_TX_TIMESTAMP_OFFSET_MASK    0x06
 #define TDOA_RX_TIMESTAMP_OFFSET         0x00FF
@@ -260,12 +256,9 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
         uwb_cb.rawCmdCbflag = true;
       }
 
-      if(pbf) {
-        uwb_cb.rawCmdCbflag = false;
-      } else {
-        uwb_cb.uci_cmd_window--;
-      }
-      uwb_cb.is_resp_pending = !pbf;
+       /* Indicate command is pending */
+      uwb_cb.uci_cmd_window--;
+      uwb_cb.is_resp_pending = true;
       uwb_cb.cmd_retry_count = 0;
 
       /* send to HAL */
