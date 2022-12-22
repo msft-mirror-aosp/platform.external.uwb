@@ -1291,20 +1291,21 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_azimuth_FOM, p);
       STREAM_TO_UINT16(dltdoa_range_measr->aoa_elevation, p);
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_elevation_FOM, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->rssi, p);
       txTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_TX_TIMESTAMP_OFFSET ) & (TDOA_TX_TIMESTAMP_OFFSET_MASK));
       if(txTimeStampValue == TDOA_TX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->txTimeStamp, p);
       } else if(txTimeStampValue == TDOA_TX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->txTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
         return;
       }
       rxTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_RX_TIMESTAMP_OFFSET ) & (TDOA_RX_TIMESTAMP_OFFSET_MASK));
       if(rxTimeStampValue == TDOA_RX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->rxTimeStamp, p);
       } else if(rxTimeStampValue == TDOA_RX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->rxTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
         return;
