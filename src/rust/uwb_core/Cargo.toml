@@ -25,3 +25,4 @@ tempfile = "3"
 
 [features]
 proto = ["dep:protobuf"]
+mock-util = []
