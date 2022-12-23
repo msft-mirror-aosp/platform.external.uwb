@@ -36,8 +36,7 @@ use crate::uci::uci_manager::UciManager;
 use uwb_uci_packets::ControleesV2;
 
 #[derive(Clone)]
-/// Mock version of UciManager for testing.
-pub struct MockUciManager {
+pub(crate) struct MockUciManager {
     expected_calls: Arc<Mutex<VecDeque<ExpectedCall>>>,
     expect_call_consumed: Arc<Notify>,
     core_notf_sender: mpsc::UnboundedSender<CoreNotification>,
@@ -48,7 +47,6 @@ pub struct MockUciManager {
 
 #[allow(dead_code)]
 impl MockUciManager {
-    /// Constructor.
     pub fn new() -> Self {
         Self {
             expected_calls: Default::default(),
@@ -60,9 +58,6 @@ impl MockUciManager {
         }
     }
 
-    /// Wait until expected calls are done.
-    ///
-    /// Returns false if calls are pending after 1 second.
     pub async fn wait_expected_calls_done(&mut self) -> bool {
         while !self.expected_calls.lock().unwrap().is_empty() {
             if timeout(Duration::from_secs(1), self.expect_call_consumed.notified()).await.is_err()
@@ -73,16 +68,10 @@ impl MockUciManager {
         true
     }
 
-    /// Prepare Mock to expect for open_hal.
-    ///
-    /// MockUciManager expects call, returns out as response, followed by notfs sent.
     pub fn expect_open_hal(&mut self, notfs: Vec<UciNotification>, out: Result<()>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
-    /// Prepare Mock to expect for close_call.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_close_hal(&mut self, expected_force: bool, out: Result<()>) {
         self.expected_calls
             .lock()
@@ -90,9 +79,6 @@ impl MockUciManager {
             .push_back(ExpectedCall::CloseHal { expected_force, out });
     }
 
-    /// Prepare Mock to expect device_reset.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_device_reset(&mut self, expected_reset_config: ResetConfig, out: Result<()>) {
         self.expected_calls
             .lock()
@@ -100,23 +86,14 @@ impl MockUciManager {
             .push_back(ExpectedCall::DeviceReset { expected_reset_config, out });
     }
 
-    /// Prepare Mock to expect core_get_device_info.
-    ///
-    /// MockUciManager expects call, returns out as response.
     pub fn expect_core_get_device_info(&mut self, out: Result<GetDeviceInfoResponse>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreGetDeviceInfo { out });
     }
 
-    /// Prepare Mock to expect core_get_caps_info.
-    ///
-    /// MockUciManager expects call, returns out as response.
     pub fn expect_core_get_caps_info(&mut self, out: Result<Vec<CapTlv>>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreGetCapsInfo { out });
     }
 
-    /// Prepare Mock to expect core_set_config.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_core_set_config(
         &mut self,
         expected_config_tlvs: Vec<DeviceConfigTlv>,
@@ -128,9 +105,6 @@ impl MockUciManager {
             .push_back(ExpectedCall::CoreSetConfig { expected_config_tlvs, out });
     }
 
-    /// Prepare Mock to expect core_get_config.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_core_get_config(
         &mut self,
         expected_config_ids: Vec<DeviceConfigId>,
@@ -142,10 +116,6 @@ impl MockUciManager {
             .push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
     }
 
-    /// Prepare Mock to expect session_init.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_session_init(
         &mut self,
         expected_session_id: SessionId,
@@ -161,10 +131,6 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect session_deinit.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_session_deinit(
         &mut self,
         expected_session_id: SessionId,
@@ -178,10 +144,6 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect session_set_app_config.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_session_set_app_config(
         &mut self,
         expected_session_id: SessionId,
@@ -197,9 +159,6 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect session_get_app_config.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_session_get_app_config(
         &mut self,
         expected_session_id: SessionId,
@@ -213,16 +172,10 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect session_get_count.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_session_get_count(&mut self, out: Result<u8>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionGetCount { out });
     }
 
-    /// Prepare Mock to expect session_get_state.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_session_get_state(
         &mut self,
         expected_session_id: SessionId,
@@ -234,10 +187,6 @@ impl MockUciManager {
             .push_back(ExpectedCall::SessionGetState { expected_session_id, out });
     }
 
-    /// Prepare Mock to expect update_controller_multicast_list.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_session_update_controller_multicast_list(
         &mut self,
         expected_session_id: SessionId,
@@ -257,10 +206,6 @@ impl MockUciManager {
         );
     }
 
-    /// Prepare Mock to expect update_controller_multicast_list_v2.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_session_update_controller_multicast_list_v2(
         &mut self,
         expected_session_id: SessionId,
@@ -280,9 +225,6 @@ impl MockUciManager {
         );
     }
 
-    /// Prepare Mock to expect session_update_active_rounds_dt_tag.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_session_update_active_rounds_dt_tag(
         &mut self,
         expected_session_id: u32,
@@ -298,10 +240,6 @@ impl MockUciManager {
         );
     }
 
-    /// Prepare Mock to expect range_start.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_range_start(
         &mut self,
         expected_session_id: SessionId,
@@ -315,10 +253,6 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect range_stop.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
     pub fn expect_range_stop(
         &mut self,
         expected_session_id: SessionId,
@@ -332,9 +266,6 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect range_get_ranging_count.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_range_get_ranging_count(
         &mut self,
         expected_session_id: SessionId,
@@ -346,9 +277,6 @@ impl MockUciManager {
             .push_back(ExpectedCall::RangeGetRangingCount { expected_session_id, out });
     }
 
-    /// Prepare Mock to expect android_set_country_code.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_android_set_country_code(
         &mut self,
         expected_country_code: CountryCode,
@@ -360,16 +288,10 @@ impl MockUciManager {
             .push_back(ExpectedCall::AndroidSetCountryCode { expected_country_code, out });
     }
 
-    /// Prepare Mock to expect android_set_country_code.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_android_get_power_stats(&mut self, out: Result<PowerStats>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::AndroidGetPowerStats { out });
     }
 
-    /// Prepare Mock to expect raw_uci_cmd.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_raw_uci_cmd(
         &mut self,
         expected_gid: u32,
@@ -385,7 +307,6 @@ impl MockUciManager {
         });
     }
 
-    /// Call Mock to send notifications.
     fn send_notifications(&self, notfs: Vec<UciNotification>) {
         for notf in notfs.into_iter() {
             match notf {
@@ -400,12 +321,6 @@ impl MockUciManager {
                 }
             }
         }
-    }
-}
-
-impl Default for MockUciManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

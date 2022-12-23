@@ -15,9 +15,8 @@
 //! This module offers a synchornized interface at UCI level.
 //!
 //! The module is designed with the replacement for Android UCI JNI adaptation in mind. The handling
-//! of UciNotifications is different in UciManager and UciManagerSyncImpl as the sync version has
-//! its behavior aligned with the Android JNI UCI, and routes the UciNotifications to
-//! NotificationManager.
+//! of UciNotifications is different in UciManager and UciManagerSync as the sync version has its
+//! behavior aligned with the Android JNI UCI, and routes the UciNotifications to NotificationManager.
 
 use log::{debug, error};
 use tokio::runtime::{Builder as RuntimeBuilder, Handle};
@@ -31,15 +30,14 @@ use crate::params::{
     SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
-#[cfg(any(test, feature = "mock-utils"))]
-use crate::uci::mock_uci_manager::MockUciManager;
 use crate::uci::notification::{CoreNotification, DataRcvNotification, SessionNotification};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
 use uwb_uci_packets::ControleesV2;
 
-/// The NotificationManager processes UciNotification relayed from UciManagerSync in a sync fashion.
+/// The NotificationManager trait is needed to process UciNotification relayed from UciManagerSync.
+///
 /// The UciManagerSync assumes the NotificationManager takes the responsibility to properly handle
 /// the notifications, including tracking the state of HAL. UciManagerSync and lower levels only
 /// redirect and categorize the notifications. The notifications are processed through callbacks.
@@ -62,11 +60,9 @@ pub trait NotificationManager: 'static {
 }
 
 /// Builder for NotificationManager. Builder is sent between threads.
-pub trait NotificationManagerBuilder: 'static + Send + Sync {
-    /// Type of NotificationManager built.
-    type NotificationManager: NotificationManager;
+pub trait NotificationManagerBuilder<T: NotificationManager>: 'static + Send + Sync {
     /// Builds NotificationManager. The build operation Consumes Builder.
-    fn build(self) -> Option<Self::NotificationManager>;
+    fn build(self) -> Option<T>;
 }
 
 struct NotificationDriver<U: NotificationManager> {
@@ -123,24 +119,34 @@ impl<U: NotificationManager> NotificationDriver<U> {
         }
     }
 }
-
-/// The UciManagerSync provides a synchornized version of UciManager.
+/// The UciManagerSync provides a synchornized version of UciManager using the runtime supplied
+/// at its initialization.
 ///
-/// Note the processing of UciNotification is different:
-/// set_X_notification_sender methods are removed. Instead, the method
-/// redirect_notification(NotificationManagerBuilder) is introduced to avoid the
-/// exposure of async tokio::mpsc.
-pub struct UciManagerSync<U: UciManager> {
+/// Note the processing of UciNotification is different: they are handled by NotificationManager
+/// provided at construction, and the async version set_X_notification_sender methods are removed.
+pub struct UciManagerSync {
     runtime_handle: Handle,
-    uci_manager: U,
+    uci_manager_impl: UciManagerImpl,
 }
-impl<U: UciManager> UciManagerSync<U> {
-    /// Redirects notification to a new NotificationManager using the notification_manager_builder.
-    /// The NotificationManager will live on a separate thread.
-    pub fn redirect_notification<T: NotificationManagerBuilder>(
-        &mut self,
-        notification_manager_builder: T,
-    ) -> Result<()> {
+impl UciManagerSync {
+    /// UciHal and NotificationManagerBuilder required at construction as they are required before
+    /// open_hal is called. runtime_handle must be a Handle to a multithread runtime that outlives
+    /// UciManagerSync.
+    pub fn new<T, U, V, W>(
+        hal: T,
+        notification_manager_builder: V,
+        logger: W,
+        runtime_handle: Handle,
+    ) -> Result<Self>
+    where
+        T: UciHal,
+        U: NotificationManager,
+        V: NotificationManagerBuilder<U>,
+        W: UciLogger,
+    {
+        // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
+        let mut uci_manager_impl = runtime_handle
+            .block_on(async { UciManagerImpl::new(hal, logger, UciLoggerMode::Disabled) });
         let (core_notification_sender, core_notification_receiver) =
             mpsc::unbounded_channel::<CoreNotification>();
         let (session_notification_sender, session_notification_receiver) =
@@ -150,11 +156,11 @@ impl<U: UciManager> UciManagerSync<U> {
         let (data_rcv_notification_sender, data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<DataRcvNotification>();
         // TODO(b/261762781):Add a similar channel for Data Packet Rx
-        self.runtime_handle.to_owned().block_on(async {
-            self.uci_manager.set_core_notification_sender(core_notification_sender).await;
-            self.uci_manager.set_session_notification_sender(session_notification_sender).await;
-            self.uci_manager.set_vendor_notification_sender(vendor_notification_sender).await;
-            self.uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+        runtime_handle.block_on(async {
+            uci_manager_impl.set_core_notification_sender(core_notification_sender).await;
+            uci_manager_impl.set_session_notification_sender(session_notification_sender).await;
+            uci_manager_impl.set_vendor_notification_sender(vendor_notification_sender).await;
+            uci_manager_impl.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
         });
         // The potentially !Send NotificationManager is created in a separate thread.
         let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
@@ -195,39 +201,39 @@ impl<U: UciManager> UciManagerSync<U> {
             notification_runtime.block_on(local);
         });
         match driver_status_receiver.blocking_recv() {
-            Some(true) => Ok(()),
+            Some(true) => Ok(Self { runtime_handle, uci_manager_impl }),
             _ => Err(Error::Unknown),
         }
     }
 
-    /// Set logger mode.
+    /// Set UCI logger mode
     pub fn set_logger_mode(&self, logger_mode: UciLoggerMode) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.set_logger_mode(logger_mode))
+        self.runtime_handle.block_on(self.uci_manager_impl.set_logger_mode(logger_mode))
     }
     /// Start UCI HAL and blocking until UCI commands can be sent.
     pub fn open_hal(&self) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.open_hal())
+        self.runtime_handle.block_on(self.uci_manager_impl.open_hal())
     }
 
     /// Stop the UCI HAL.
     pub fn close_hal(&self, force: bool) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.close_hal(force))
+        self.runtime_handle.block_on(self.uci_manager_impl.close_hal(force))
     }
 
     // Methods for sending UCI commands. Functions are blocked until UCI response is received.
     /// Send UCI command for device reset.
     pub fn device_reset(&self, reset_config: ResetConfig) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.device_reset(reset_config))
+        self.runtime_handle.block_on(self.uci_manager_impl.device_reset(reset_config))
     }
 
     /// Send UCI command for getting device info.
     pub fn core_get_device_info(&self) -> Result<GetDeviceInfoResponse> {
-        self.runtime_handle.block_on(self.uci_manager.core_get_device_info())
+        self.runtime_handle.block_on(self.uci_manager_impl.core_get_device_info())
     }
 
     /// Send UCI command for getting capability info
     pub fn core_get_caps_info(&self) -> Result<Vec<CapTlv>> {
-        self.runtime_handle.block_on(self.uci_manager.core_get_caps_info())
+        self.runtime_handle.block_on(self.uci_manager_impl.core_get_caps_info())
     }
 
     /// Send UCI command for setting core configuration.
@@ -235,22 +241,22 @@ impl<U: UciManager> UciManagerSync<U> {
         &self,
         config_tlvs: Vec<DeviceConfigTlv>,
     ) -> Result<CoreSetConfigResponse> {
-        self.runtime_handle.block_on(self.uci_manager.core_set_config(config_tlvs))
+        self.runtime_handle.block_on(self.uci_manager_impl.core_set_config(config_tlvs))
     }
 
     /// Send UCI command for getting core configuration.
     pub fn core_get_config(&self, config_ids: Vec<DeviceConfigId>) -> Result<Vec<DeviceConfigTlv>> {
-        self.runtime_handle.block_on(self.uci_manager.core_get_config(config_ids))
+        self.runtime_handle.block_on(self.uci_manager_impl.core_get_config(config_ids))
     }
 
     /// Send UCI command for initiating session.
     pub fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.session_init(session_id, session_type))
+        self.runtime_handle.block_on(self.uci_manager_impl.session_init(session_id, session_type))
     }
 
     /// Send UCI command for deinitiating session.
     pub fn session_deinit(&self, session_id: SessionId) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.session_deinit(session_id))
+        self.runtime_handle.block_on(self.uci_manager_impl.session_deinit(session_id))
     }
 
     /// Send UCI command for setting app config.
@@ -260,7 +266,7 @@ impl<U: UciManager> UciManagerSync<U> {
         config_tlvs: Vec<AppConfigTlv>,
     ) -> Result<SetAppConfigResponse> {
         self.runtime_handle
-            .block_on(self.uci_manager.session_set_app_config(session_id, config_tlvs))
+            .block_on(self.uci_manager_impl.session_set_app_config(session_id, config_tlvs))
     }
 
     /// Send UCI command for getting app config.
@@ -270,17 +276,17 @@ impl<U: UciManager> UciManagerSync<U> {
         config_ids: Vec<AppConfigTlvType>,
     ) -> Result<Vec<AppConfigTlv>> {
         self.runtime_handle
-            .block_on(self.uci_manager.session_get_app_config(session_id, config_ids))
+            .block_on(self.uci_manager_impl.session_get_app_config(session_id, config_ids))
     }
 
     /// Send UCI command for getting count of sessions.
     pub fn session_get_count(&self) -> Result<u8> {
-        self.runtime_handle.block_on(self.uci_manager.session_get_count())
+        self.runtime_handle.block_on(self.uci_manager_impl.session_get_count())
     }
 
     /// Send UCI command for getting state of session.
     pub fn session_get_state(&self, session_id: SessionId) -> Result<SessionState> {
-        self.runtime_handle.block_on(self.uci_manager.session_get_state(session_id))
+        self.runtime_handle.block_on(self.uci_manager_impl.session_get_state(session_id))
     }
 
     /// Send UCI command for updating multicast list for multicast session.
@@ -291,7 +297,7 @@ impl<U: UciManager> UciManagerSync<U> {
         controlees: Vec<Controlee>,
     ) -> Result<()> {
         self.runtime_handle.block_on(
-            self.uci_manager
+            self.uci_manager_impl
                 .session_update_controller_multicast_list(session_id, action, controlees),
         )
     }
@@ -304,7 +310,7 @@ impl<U: UciManager> UciManagerSync<U> {
         controlees: ControleesV2,
     ) -> Result<()> {
         self.runtime_handle.block_on(
-            self.uci_manager
+            self.uci_manager_impl
                 .session_update_controller_multicast_list_v2(session_id, action, controlees),
         )
     }
@@ -316,82 +322,39 @@ impl<U: UciManager> UciManagerSync<U> {
         ranging_round_indexes: Vec<u8>,
     ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
         self.runtime_handle.block_on(
-            self.uci_manager.session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
+            self.uci_manager_impl
+                .session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
         )
     }
 
     /// Send UCI command for starting ranging of the session.
     pub fn range_start(&self, session_id: SessionId) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.range_start(session_id))
+        self.runtime_handle.block_on(self.uci_manager_impl.range_start(session_id))
     }
 
     /// Send UCI command for stopping ranging of the session.
     pub fn range_stop(&self, session_id: SessionId) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.range_stop(session_id))
+        self.runtime_handle.block_on(self.uci_manager_impl.range_stop(session_id))
     }
 
     /// Send UCI command for getting ranging count.
     pub fn range_get_ranging_count(&self, session_id: SessionId) -> Result<usize> {
-        self.runtime_handle.block_on(self.uci_manager.range_get_ranging_count(session_id))
+        self.runtime_handle.block_on(self.uci_manager_impl.range_get_ranging_count(session_id))
     }
 
     /// Set the country code. Android-specific method.
     pub fn android_set_country_code(&self, country_code: CountryCode) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.android_set_country_code(country_code))
+        self.runtime_handle.block_on(self.uci_manager_impl.android_set_country_code(country_code))
     }
 
     /// Get the power statistics. Android-specific method.
     pub fn android_get_power_stats(&self) -> Result<PowerStats> {
-        self.runtime_handle.block_on(self.uci_manager.android_get_power_stats())
+        self.runtime_handle.block_on(self.uci_manager_impl.android_get_power_stats())
     }
 
     /// Send a raw UCI command.
     pub fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
-        self.runtime_handle.block_on(self.uci_manager.raw_uci_cmd(gid, oid, payload))
-    }
-}
-
-impl UciManagerSync<UciManagerImpl> {
-    /// Constructor.
-    ///
-    /// UciHal and NotificationManagerBuilder required at construction as they are required before
-    /// open_hal is called. runtime_handle must be a Handle to a multithread runtime that outlives
-    /// UciManagerSyncImpl.
-    ///
-    /// Implementation note: An explicit decision is made to not use UciManagerImpl as a parameter.
-    /// UciManagerImpl::new() appears to be sync, but needs an async context to be called, but the
-    /// user is unlikely to be aware of this technicality.
-    pub fn new<H, B, L>(
-        hal: H,
-        notification_manager_builder: B,
-        logger: L,
-        runtime_handle: Handle,
-    ) -> Result<Self>
-    where
-        H: UciHal,
-        B: NotificationManagerBuilder,
-        L: UciLogger,
-    {
-        // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
-        let uci_manager = runtime_handle
-            .block_on(async { UciManagerImpl::new(hal, logger, UciLoggerMode::Disabled) });
-        let mut uci_manager_sync = UciManagerSync { runtime_handle, uci_manager };
-        uci_manager_sync.redirect_notification(notification_manager_builder)?;
-        Ok(uci_manager_sync)
-    }
-}
-
-#[cfg(any(test, feature = "mock-utils"))]
-impl UciManagerSync<MockUciManager> {
-    /// Constructor for mock version.
-    pub fn new_mock<T: NotificationManagerBuilder>(
-        uci_manager: MockUciManager,
-        runtime_handle: Handle,
-        notification_manager_builder: T,
-    ) -> Result<Self> {
-        let mut uci_manager_sync = UciManagerSync { uci_manager, runtime_handle };
-        uci_manager_sync.redirect_notification(notification_manager_builder)?;
-        Ok(uci_manager_sync)
+        self.runtime_handle.block_on(self.uci_manager_impl.raw_uci_cmd(gid, oid, payload))
     }
 }
 
@@ -403,98 +366,86 @@ mod tests {
     use std::rc::Rc;
 
     use tokio::runtime::Builder;
-    use uwb_uci_packets::DeviceState::DeviceStateReady;
+    use uwb_uci_packets::DeviceState;
 
-    use crate::params::uci_packets::GetDeviceInfoResponse;
-    use crate::uci::mock_uci_manager::MockUciManager;
-    use crate::uci::{CoreNotification, UciNotification};
+    use crate::error::Error;
+    use crate::uci::mock_uci_hal::MockUciHal;
+    use crate::uci::uci_hal::UciHalPacket;
+    use crate::uci::uci_logger::NopUciLogger;
 
-    /// Mock NotificationManager forwarding notifications received.
-    /// The nonsend_counter is deliberately !send to check UciManagerSync::redirect_notification.
     struct MockNotificationManager {
-        notf_sender: mpsc::UnboundedSender<UciNotification>,
+        device_state_sender: mpsc::UnboundedSender<DeviceState>,
         // nonsend_counter is an example of a !Send property.
         nonsend_counter: Rc<RefCell<usize>>,
     }
-
     impl NotificationManager for MockNotificationManager {
         fn on_core_notification(&mut self, core_notification: CoreNotification) -> Result<()> {
-            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
-            self.notf_sender
-                .send(UciNotification::Core(core_notification))
-                .map_err(|_| Error::Unknown)
+            match core_notification {
+                CoreNotification::DeviceStatus(device_state) => {
+                    self.nonsend_counter.replace_with(|&mut prev| prev + 1);
+                    self.device_state_sender.send(device_state).map_err(|_| Error::Unknown)?;
+                }
+                CoreNotification::GenericError(_) => {}
+            };
+            Ok(())
         }
         fn on_session_notification(
             &mut self,
-            session_notification: SessionNotification,
+            _session_notification: SessionNotification,
         ) -> Result<()> {
-            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
-            self.notf_sender
-                .send(UciNotification::Session(session_notification))
-                .map_err(|_| Error::Unknown)
+            Ok(())
         }
-        fn on_vendor_notification(&mut self, vendor_notification: RawUciMessage) -> Result<()> {
-            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
-            self.notf_sender
-                .send(UciNotification::Vendor(vendor_notification))
-                .map_err(|_| Error::Unknown)
+        fn on_vendor_notification(&mut self, _vendor_notification: RawUciMessage) -> Result<()> {
+            Ok(())
         }
-        fn on_data_rcv_notification(&mut self, _data_rcv_notf: DataRcvNotification) -> Result<()> {
-            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
+        fn on_data_rcv_notification(
+            &mut self,
+            _data_rcv_notification: DataRcvNotification,
+        ) -> Result<()> {
             Ok(())
         }
     }
 
-    /// Builder for MockNotificationManager.
     struct MockNotificationManagerBuilder {
-        notf_sender: mpsc::UnboundedSender<UciNotification>,
+        device_state_sender: mpsc::UnboundedSender<DeviceState>,
         // initial_count is an example for a parameter undetermined at compile time.
+        initial_count: usize,
     }
-
-    impl MockNotificationManagerBuilder {
-        /// Constructor for builder.
-        fn new(notf_sender: mpsc::UnboundedSender<UciNotification>) -> Self {
-            Self { notf_sender }
-        }
-    }
-
-    impl NotificationManagerBuilder for MockNotificationManagerBuilder {
-        type NotificationManager = MockNotificationManager;
-
-        fn build(self) -> Option<Self::NotificationManager> {
+    impl NotificationManagerBuilder<MockNotificationManager> for MockNotificationManagerBuilder {
+        fn build(self) -> Option<MockNotificationManager> {
             Some(MockNotificationManager {
-                notf_sender: self.notf_sender,
-                nonsend_counter: Rc::new(RefCell::new(0)),
+                device_state_sender: self.device_state_sender,
+                nonsend_counter: Rc::new(RefCell::new(self.initial_count)),
             })
         }
     }
 
+    fn into_raw_messages<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
+        builder: T,
+    ) -> Vec<UciHalPacket> {
+        let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
+        packets.into_iter().map(|packet| packet.into()).collect()
+    }
+
     #[test]
-    /// Tests that the Command, Response, and Notification pipeline are functional.
-    fn test_sync_uci_basic_sequence() {
+    fn test_sync_uci_open_hal() {
+        let mut hal = MockUciHal::new();
+        let notf = into_raw_messages(uwb_uci_packets::DeviceStatusNtfBuilder {
+            device_state: uwb_uci_packets::DeviceState::DeviceStateReady,
+        });
+        hal.expected_open(Some(notf), Ok(()));
         let test_rt = Builder::new_multi_thread().enable_all().build().unwrap();
-        let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel::<UciNotification>();
-        let mut uci_manager_impl = MockUciManager::new();
-        uci_manager_impl.expect_open_hal(
-            vec![UciNotification::Core(CoreNotification::DeviceStatus(DeviceStateReady))],
-            Ok(()),
-        );
-        uci_manager_impl.expect_core_get_device_info(Ok(GetDeviceInfoResponse {
-            uci_version: 0,
-            mac_version: 0,
-            phy_version: 0,
-            uci_test_version: 0,
-            vendor_spec_info: vec![],
-        }));
-        let uci_manager_sync = UciManagerSync::new_mock(
-            uci_manager_impl,
+        let (device_state_sender, mut device_state_receiver) =
+            mpsc::unbounded_channel::<DeviceState>();
+        let uci_manager_sync = UciManagerSync::new(
+            hal,
+            MockNotificationManagerBuilder { device_state_sender, initial_count: 0 },
+            NopUciLogger::default(),
             test_rt.handle().to_owned(),
-            MockNotificationManagerBuilder::new(notf_sender),
         )
         .unwrap();
         assert!(uci_manager_sync.open_hal().is_ok());
-        let device_state = test_rt.block_on(async { notf_receiver.recv().await });
-        assert!(device_state.is_some());
-        assert!(uci_manager_sync.core_get_device_info().is_ok());
+        let device_state = test_rt.block_on(async { device_state_receiver.recv().await });
+        assert_eq!(device_state, Some(DeviceState::DeviceStateReady));
     }
 }

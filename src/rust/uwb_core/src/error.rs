@@ -51,7 +51,7 @@ pub enum Error {
     Unknown,
 
     /// The result of the mock method is not assigned
-    #[cfg(any(test, feature = "mock-utils"))]
+    #[cfg(test)]
     #[error("The result of the mock method is not assigned")]
     MockUndefined,
 }
