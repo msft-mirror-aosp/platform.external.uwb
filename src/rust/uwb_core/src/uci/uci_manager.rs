@@ -746,7 +746,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 }
             }
             UciDefragPacket::Data(packet) => {
-                // TODO(b/261762781): Log the data packet (size)
+                self.logger.log_uci_data(&packet);
                 self.handle_data_rcv(packet);
             }
         }
