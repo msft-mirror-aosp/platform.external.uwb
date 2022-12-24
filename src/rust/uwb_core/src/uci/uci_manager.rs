@@ -47,7 +47,7 @@ const MAX_RETRY_COUNT: usize = 3;
 /// The UciManager organizes the state machine of the UWB HAL, and provides the interface which
 /// abstracts the UCI commands, responses, and notifications.
 #[async_trait]
-pub(crate) trait UciManager: 'static + Send + Sync + Clone {
+pub trait UciManager: 'static + Send + Sync + Clone {
     async fn set_logger_mode(&self, logger_mode: UciLoggerMode) -> Result<()>;
     // Set the sendor of the UCI notificaions.
     async fn set_core_notification_sender(
@@ -134,12 +134,17 @@ pub(crate) trait UciManager: 'static + Send + Sync + Clone {
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
 /// delegates the requests to UciManagerActor.
 #[derive(Clone)]
-pub(crate) struct UciManagerImpl {
+pub struct UciManagerImpl {
     cmd_sender: mpsc::UnboundedSender<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
 }
 
 impl UciManagerImpl {
-    pub fn new<T: UciHal, U: UciLogger>(hal: T, logger: U, logger_mode: UciLoggerMode) -> Self {
+    /// Constructor. Need to be called in an async context.
+    pub(crate) fn new<T: UciHal, U: UciLogger>(
+        hal: T,
+        logger: U,
+        logger_mode: UciLoggerMode,
+    ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
         let mut actor = UciManagerActor::new(hal, logger, logger_mode, cmd_receiver);
         tokio::spawn(async move { actor.run().await });
@@ -741,7 +746,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 }
             }
             UciDefragPacket::Data(packet) => {
-                // TODO(b/261762781): Log the data packet (size)
+                self.logger.log_uci_data(&packet);
                 self.handle_data_rcv(packet);
             }
         }
