@@ -503,12 +503,12 @@ mod tests {
                 .unwrap();
             let mut logger_0 = file_manager.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let mut logger_1 = file_manager.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
@@ -541,12 +541,12 @@ mod tests {
                 .unwrap();
             let mut logger_0 = file_manager_140.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let mut logger_1 = file_manager_140.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
@@ -595,12 +595,12 @@ mod tests {
                 .unwrap();
             let mut logger_0 = file_manager_144.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             let mut logger_1 = file_manager_144.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
@@ -641,12 +641,12 @@ mod tests {
                 .unwrap();
             let mut logger_0 = file_manager_96.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             let mut logger_1 = file_manager_96.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
         }
     }
 }
