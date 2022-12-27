@@ -761,40 +761,28 @@ test SessionUpdateActiveRoundsDtTagRsp {
     "\x41\x09\x00\x03\x00\x00\x00\x01\x01\x01",
 }
 
-enum MessageControl: 8 {
-    SUB_SESSION_KEY_NOT_CONFIGURED = 0x0,
-    SHORT_SUB_SESSION_KEY_CONFIGURED = 0x8,
-    LONG_SUB_SESSION_KEY_CONFIGURED = 0x9,
-}
-
 struct Controlee {
     short_address: 16,
     subsession_id: 32,
 }
 
-struct Controlee_V2_0_0_Byte_Version {
-    short_address: 16,
-    subsession_id: 32,
-    message_control: MessageControl,
-}
-
 struct Controlee_V2_0_16_Byte_Version {
     short_address: 16,
     subsession_id: 32,
-    message_control: MessageControl,
     subsession_key: 8[16],
 }
 
 struct Controlee_V2_0_32_Byte_Version {
     short_address: 16,
     subsession_id: 32,
-    message_control: MessageControl,
     subsession_key: 8[32],
 }
 
 enum UpdateMulticastListAction: 8 {
-    ADD_CONTROLEE = 0,
-    REMOVE_CONTROLEE = 1,
+    ADD_CONTROLEE = 0x00,
+    REMOVE_CONTROLEE = 0x01,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY = 0x02,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 0x03,
 }
 
 packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
@@ -806,11 +794,6 @@ packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) {
 struct SessionUpdateControllerMulticastListCmdPayload {
     _count_(controlees): 8,
     controlees: Controlee[],
-}
-
-struct SessionUpdateControllerMulticastListCmd_2_0_0_Byte_Payload {
-    _count_(controlees): 8,
-    controlees: Controlee_V2_0_0_Byte_Version[],
 }
 
 struct SessionUpdateControllerMulticastListCmd_2_0_16_Byte_Payload {
