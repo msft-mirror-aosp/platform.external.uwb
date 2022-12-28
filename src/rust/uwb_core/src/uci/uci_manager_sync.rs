@@ -26,10 +26,10 @@ use tokio::task;
 
 use crate::error::{Error, Result};
 use crate::params::{
-    AppConfigTlv, AppConfigTlvType, CapTlv, Controlee, CoreSetConfigResponse, CountryCode,
-    DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
-    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, UpdateMulticastListAction,
+    AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
+    DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
+    SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
+    UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -37,7 +37,7 @@ use crate::uci::notification::{CoreNotification, DataRcvNotification, SessionNot
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
-use uwb_uci_packets::ControleesV2;
+use uwb_uci_packets::Controlees;
 
 /// The NotificationManager processes UciNotification relayed from UciManagerSync in a sync fashion.
 /// The UciManagerSync assumes the NotificationManager takes the responsibility to properly handle
@@ -288,24 +288,11 @@ impl<U: UciManager> UciManagerSync<U> {
         &self,
         session_id: SessionId,
         action: UpdateMulticastListAction,
-        controlees: Vec<Controlee>,
+        controlees: Controlees,
     ) -> Result<()> {
         self.runtime_handle.block_on(
             self.uci_manager
                 .session_update_controller_multicast_list(session_id, action, controlees),
-        )
-    }
-
-    /// Send UCI command for updating multicast list for multicast session (Provisioned STS).
-    pub fn session_update_controller_multicast_list_v2(
-        &self,
-        session_id: SessionId,
-        action: UpdateMulticastListAction,
-        controlees: ControleesV2,
-    ) -> Result<()> {
-        self.runtime_handle.block_on(
-            self.uci_manager
-                .session_update_controller_multicast_list_v2(session_id, action, controlees),
         )
     }
 
