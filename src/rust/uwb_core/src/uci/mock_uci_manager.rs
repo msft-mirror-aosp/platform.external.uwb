@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::collections::VecDeque;
-use std::iter::zip;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,7 +22,7 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlee,
+    app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
     SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
@@ -33,7 +32,6 @@ use crate::uci::notification::{
 };
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
-use uwb_uci_packets::ControleesV2;
 
 #[derive(Clone)]
 /// Mock version of UciManager for testing.
@@ -242,35 +240,12 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
-        expected_controlees: Vec<Controlee>,
+        expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
             ExpectedCall::SessionUpdateControllerMulticastList {
-                expected_session_id,
-                expected_action,
-                expected_controlees,
-                notfs,
-                out,
-            },
-        );
-    }
-
-    /// Prepare Mock to expect update_controller_multicast_list_v2.
-    ///
-    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
-    /// sent.
-    pub fn expect_session_update_controller_multicast_list_v2(
-        &mut self,
-        expected_session_id: SessionId,
-        expected_action: UpdateMulticastListAction,
-        expected_controlees: ControleesV2,
-        notfs: Vec<UciNotification>,
-        out: Result<()>,
-    ) {
-        self.expected_calls.lock().unwrap().push_back(
-            ExpectedCall::SessionUpdateControllerMulticastListV2 {
                 expected_session_id,
                 expected_action,
                 expected_controlees,
@@ -682,43 +657,11 @@ impl UciManager for MockUciManager {
         &self,
         session_id: SessionId,
         action: UpdateMulticastListAction,
-        controlees: Vec<Controlee>,
+        controlees: Controlees,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::SessionUpdateControllerMulticastList {
-                expected_session_id,
-                expected_action,
-                expected_controlees,
-                notfs,
-                out,
-            }) if expected_session_id == session_id
-                && expected_action == action
-                && zip(&expected_controlees, &controlees).all(|(a, b)| {
-                    a.short_address == b.short_address && a.subsession_id == b.subsession_id
-                }) =>
-            {
-                self.expect_call_consumed.notify_one();
-                self.send_notifications(notfs);
-                out
-            }
-            Some(call) => {
-                expected_calls.push_front(call);
-                Err(Error::MockUndefined)
-            }
-            None => Err(Error::MockUndefined),
-        }
-    }
-
-    async fn session_update_controller_multicast_list_v2(
-        &self,
-        session_id: SessionId,
-        action: UpdateMulticastListAction,
-        controlees: ControleesV2,
-    ) -> Result<()> {
-        let mut expected_calls = self.expected_calls.lock().unwrap();
-        match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionUpdateControllerMulticastListV2 {
                 expected_session_id,
                 expected_action,
                 expected_controlees,
@@ -928,14 +871,7 @@ enum ExpectedCall {
     SessionUpdateControllerMulticastList {
         expected_session_id: SessionId,
         expected_action: UpdateMulticastListAction,
-        expected_controlees: Vec<Controlee>,
-        notfs: Vec<UciNotification>,
-        out: Result<()>,
-    },
-    SessionUpdateControllerMulticastListV2 {
-        expected_session_id: SessionId,
-        expected_action: UpdateMulticastListAction,
-        expected_controlees: ControleesV2,
+        expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
         out: Result<()>,
     },
