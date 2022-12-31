@@ -21,8 +21,8 @@ use std::iter::FromIterator;
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, ControleesV2, DataRcvStatusCode, DeviceConfigId,
-    DeviceConfigStatus, DeviceConfigTlv, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    Controlee, ControleeStatus, Controlees, DataRcvStatusCode, DeviceConfigId, DeviceConfigStatus,
+    DeviceConfigTlv, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
     ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
     FiraComponent, GroupId, MessageType, MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats,
     RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
