@@ -19,6 +19,27 @@ enum GroupId : 4 {
     VENDOR_RESERVED_F = 0x0f,
 }
 
+enum DataPacketFormat: 4 {
+    DATA_SND = 0x01,
+    DATA_RCV = 0x02,
+}
+
+// Define a merged enum across GroupId & DataPacketFormat as they are at the same bits in
+// |UciPacketHal|.
+enum GroupIdOrDataPacketFormat : 4 {
+    CORE = 0x00,
+    SESSION_CONFIG_OR_DATA_SND = 0x01,
+    RANGING_SESSION_CONTROL_OR_DATA_RCV = 0x02,
+    DATA_CONTROL = 0x03,
+    TEST = 0x0d,
+    VENDOR_RESERVED_9 = 0x09,
+    VENDOR_RESERVED_A = 0x0a,
+    VENDOR_RESERVED_B = 0x0b,
+    VENDOR_ANDROID    = 0x0c,
+    VENDOR_RESERVED_E = 0x0e,
+    VENDOR_RESERVED_F = 0x0f,
+}
+
 enum CoreOpCode : 6 {
     CORE_DEVICE_RESET = 0x00,
     CORE_DEVICE_STATUS_NTF = 0x01,
@@ -108,6 +129,27 @@ enum StatusCode : 8 {
     // Vendor Specific Status Codes
     UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
     UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
+}
+
+// This needs a separate type as the Status code values in an OWR for AOA
+// Measurement has different values.
+enum OwrAoaStatusCode : 8 {
+    UCI_STATUS_SUCCESS = 0x00,
+    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT = 0x01,
+}
+
+// This needs a separate StatusCode as the Status code values in the DATA_RCV packet have
+// different values from the generic StatusCode above.
+enum DataRcvStatusCode : 8 {
+    UCI_STATUS_SUCCESS = 0x00,
+    UCI_STATUS_ERROR = 0x01,
+    UCI_STATUS_UNKNOWN = 0x02,
+}
+
+enum FiraComponent : 8 {
+    UWBS = 0x00,
+    HOST = 0x01,
+    SECURE_COMPONENT = 0x02,
 }
 
 enum ResetConfig : 8 {
@@ -214,6 +256,8 @@ enum CapTlvType : 8 {
     SUPPORTED_HPRF_PARAMETER_SETS = 0x0F,
     SUPPORTED_AOA = 0x10,
     SUPPORTED_EXTENDED_MAC_ADDRESS = 0x11,
+    SUPPORTED_MAX_MESSAGE_SIZE = 0x12,
+    SUPPORTED_MAX_DATA_PACKET_PAYLOAD_SIZE = 0x13,
     SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
     SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
     SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
@@ -291,6 +335,7 @@ enum SessionType: 8 {
 }
 
 enum MessageType: 3 {
+    DATA = 0x00,
     COMMAND = 0x01,
     RESPONSE = 0x02,
     NOTIFICATION = 0x03,
@@ -298,10 +343,14 @@ enum MessageType: 3 {
 
 // UCI packet description in compliance with the FIRA UCI spec.
 // Only this packet should be sent/expected across the HAL interface.
-packet UciPacketHal; {
-    group_id: GroupId,
+packet UciPacketHal {
+    group_id_or_data_packet_format: GroupIdOrDataPacketFormat,
     packet_boundary_flag: PacketBoundaryFlag,
     message_type: MessageType,
+    _body_
+}
+
+packet UciControlPacketHal: UciPacketHal {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
@@ -309,33 +358,82 @@ packet UciPacketHal; {
     _payload_,
 }
 
-// This packet definition is used throughout the stack that holds a complete (i.e unfragmented) UCI
-// command/response/notification.
-// UciPacket needs to be converted to one or more UciPacketHal fragments before sending to the HAL.
-// One or more UciPacketHal fragments needs to be converted to UciPacket when receiving from the HAL.
+packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
+    _reserved_: 8,
+    _size_(_payload_): 16,
+    _payload_,
+}
+
+// This control packet definition is used throughout the stack that holds a complete
+// (i.e unfragmented) UCI command/response/notification.
+//
+// UciControlPacket needs to be converted to one or more UciControlPacketHal fragments before
+// sending to the HAL. One or more UciControlPacketHal fragments needs to be converted to
+// UciControlPacket when receiving from the HAL.
+//
 // TODO(b/202760099): Handle fragmentation more cleanly in the PDL.
-packet UciPacket {
+packet UciControlPacket {
     group_id: GroupId,
-     // This field is different from |UciPacketHal| to provide a placeholder for PBF flag.
+    // This field is different from |UciControlPacketHal| to provide a placeholder for PBF flag.
     _reserved_: 1,
     message_type: MessageType,
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
-     // This field is different from |UciPacketHal| to allow holding large unfragmented packet.
+     // This field is different from |UciControlPacketHal| to allow holding a large unfragmented
+     // packet.
     _size_(_payload_): 32,
     _payload_,
 }
 
-packet UciCommand : UciPacket (message_type = COMMAND) {
+// This data packet definition is used throughout the stack that holds a complete
+// (i.e unfragmented) UCI data packet.
+//
+// UciDataPacket needs to be converted to one or more UciDataPacketHal fragments before sending to
+// the HAL. One or more UciDataPacketHal fragments needs to be converted to UciDataPacket when
+// receiving from the HAL.
+//
+// TODO(b/202760099): Handle fragmentation more cleanly in the PDL.
+packet UciDataPacket {
+    data_packet_format: DataPacketFormat,
+    // This field is different from |UciDataPacketHal| to provide a placeholder for PBF flag.
+    _reserved_: 1,
+    message_type: MessageType,
+    _reserved_: 8,
+     // This field is different from |UciDataPacketHal| to allow holding large unfragmented packet.
+    _size_(_payload_): 32,
     _payload_,
 }
 
-packet UciResponse : UciPacket (message_type = RESPONSE) {
+packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND) {
+    session_id: 32,
+    dest_mac_address: 64,
+    dest_fira_component: FiraComponent,
+    uci_sequence_number: 8,
+    _size_(data): 32,
+    data: 8[]
+}
+
+packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV) {
+    session_id: 32,
+    status: DataRcvStatusCode,
+    uci_sequence_number: 32,
+    source_mac_address: 64,
+    source_fira_component: FiraComponent,
+    dest_fira_component: FiraComponent,
+    _size_(data): 32,
+    data: 8[]
+}
+
+packet UciCommand : UciControlPacket (message_type = COMMAND) {
     _payload_,
 }
 
-packet UciNotification : UciPacket (message_type = NOTIFICATION) {
+packet UciResponse : UciControlPacket (message_type = RESPONSE) {
+    _payload_,
+}
+
+packet UciNotification : UciControlPacket (message_type = NOTIFICATION) {
     _payload_,
 }
 
@@ -386,6 +484,8 @@ packet AndroidResponse : UciResponse (group_id = VENDOR_ANDROID) {
 packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
     _body_,
 }
+
+// TODO(b/261886903): Define the DATA_CREDIT_NTF and DATA_STATUS_NTF packets.
 
 // TODO: b/202760099: Use the correspnding opcode enum instead of the raw value in the |opcode| field.
 packet DeviceResetCmd : CoreCommand (opcode = 0x0) { //CORE_DEVICE_RESET
@@ -661,40 +761,28 @@ test SessionUpdateActiveRoundsDtTagRsp {
     "\x41\x09\x00\x03\x00\x00\x00\x01\x01\x01",
 }
 
-enum MessageControl: 8 {
-    SUB_SESSION_KEY_NOT_CONFIGURED = 0x0,
-    SHORT_SUB_SESSION_KEY_CONFIGURED = 0x8,
-    LONG_SUB_SESSION_KEY_CONFIGURED = 0x9,
-}
-
 struct Controlee {
     short_address: 16,
     subsession_id: 32,
 }
 
-struct Controlee_V2_0_0_Byte_Version {
-    short_address: 16,
-    subsession_id: 32,
-    message_control: MessageControl,
-}
-
 struct Controlee_V2_0_16_Byte_Version {
     short_address: 16,
     subsession_id: 32,
-    message_control: MessageControl,
     subsession_key: 8[16],
 }
 
 struct Controlee_V2_0_32_Byte_Version {
     short_address: 16,
     subsession_id: 32,
-    message_control: MessageControl,
     subsession_key: 8[32],
 }
 
 enum UpdateMulticastListAction: 8 {
-    ADD_CONTROLEE = 0,
-    REMOVE_CONTROLEE = 1,
+    ADD_CONTROLEE = 0x00,
+    REMOVE_CONTROLEE = 0x01,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY = 0x02,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 0x03,
 }
 
 packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
@@ -706,11 +794,6 @@ packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) {
 struct SessionUpdateControllerMulticastListCmdPayload {
     _count_(controlees): 8,
     controlees: Controlee[],
-}
-
-struct SessionUpdateControllerMulticastListCmd_2_0_0_Byte_Payload {
-    _count_(controlees): 8,
-    controlees: Controlee_V2_0_0_Byte_Version[],
 }
 
 struct SessionUpdateControllerMulticastListCmd_2_0_16_Byte_Payload {
@@ -801,10 +884,35 @@ struct ExtendedAddressTwoWayRangingMeasurement {
     _reserved_: 40,
 }
 
+struct ShortAddressOwrAoaRangingMeasurement {
+    mac_address: 16,
+    status: OwrAoaStatusCode,
+    nlos: 8,
+    frame_sequence_number: 8,
+    block_index: 16,
+    aoa_azimuth: 16,
+    aoa_azimuth_fom: 8,
+    aoa_elevation: 16,
+    aoa_elevation_fom: 8,
+}
+
+struct ExtendedAddressOwrAoaRangingMeasurement {
+    mac_address: 64,
+    status: OwrAoaStatusCode,
+    nlos: 8,
+    frame_sequence_number: 8,
+    block_index: 16,
+    aoa_azimuth: 16,
+    aoa_azimuth_fom: 8,
+    aoa_elevation: 16,
+    aoa_elevation_fom: 8,
+}
+
 enum RangingMeasurementType : 8 {
     ONE_WAY = 0x0,
     TWO_WAY = 0x1,
     DL_TDOA = 0x02,
+    OWR_AOA = 0x03,
 }
 
 packet RangeDataNtf : RangingNotification (opcode = 0x0) { //RANGE_START
@@ -835,6 +943,36 @@ packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = 
 
 test ExtendedMacTwoWayRangeDataNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+}
+
+packet ShortMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
+    no_of_ranging_measurements : 8,
+    _payload_,
+}
+
+packet ExtendedMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
+    no_of_ranging_measurements : 8,
+    _payload_,
+}
+
+packet ShortMacOwrAoaRangeDataNtf : RangeDataNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
+    _count_(owr_aoa_ranging_measurements) : 8,
+    owr_aoa_ranging_measurements : ShortAddressOwrAoaRangingMeasurement[],
+}
+
+test ShortMacOwrAoaRangeDataNtf {
+    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x26\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xaa\xbb\x00\x00\x01\x01\x00\x03\x04\x60\x05\x06\x50",
+}
+
+packet ExtendedMacOwrAoaRangeDataNtf : RangeDataNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = EXTENDED_ADDRESS) {
+    _count_(owr_aoa_ranging_measurements) : 8,
+    owr_aoa_ranging_measurements : ExtendedAddressOwrAoaRangingMeasurement[],
+}
+
+test ExtendedMacOwrAoaRangeDataNtf {
+    "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+    "\x62\x00\x00\x2c\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\xaa\xbb\xcc\xdd\x01\x02\x03\x04\x00\x00\x01\x01\x00\x03\x04\x60\x05\x06\x50",
 }
 
 packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP

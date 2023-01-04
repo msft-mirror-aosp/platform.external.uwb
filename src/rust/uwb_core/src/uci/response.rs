@@ -20,7 +20,7 @@ use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, StatusCode, UciPacketPacket,
+    SetAppConfigResponse, StatusCode, UciControlPacketPacket,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -240,6 +240,6 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
 fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
     let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
     let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
-    let packet: UciPacketPacket = evt.into();
+    let packet: UciControlPacketPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
