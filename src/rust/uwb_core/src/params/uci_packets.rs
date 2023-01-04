@@ -21,13 +21,15 @@ use std::iter::FromIterator;
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
-    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
-    OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
-    ShortAddressTwoWayRangingMeasurement, StatusCode, UciPacketPacket, UpdateMulticastListAction,
+    Controlee, ControleeStatus, Controlees, DataRcvStatusCode, DeviceConfigId, DeviceConfigStatus,
+    DeviceConfigTlv, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    FiraComponent, GroupId, MessageType, MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats,
+    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
+pub(crate) use uwb_uci_packets::{UciControlPacketPacket, UciDataPacketPacket};
 
 use crate::error::Error;
 
@@ -200,8 +202,8 @@ pub struct RawUciMessage {
     pub payload: Vec<u8>,
 }
 
-impl From<UciPacketPacket> for RawUciMessage {
-    fn from(packet: UciPacketPacket) -> Self {
+impl From<UciControlPacketPacket> for RawUciMessage {
+    fn from(packet: UciControlPacketPacket) -> Self {
         Self {
             gid: packet.get_group_id() as u32,
             oid: packet.get_opcode() as u32,

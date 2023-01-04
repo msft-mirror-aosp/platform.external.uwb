@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -35,6 +35,7 @@
 ** Declarations
 ****************************************************************************/
 tUWB_CB uwb_cb;
+tDATA_TX_CB data_tx_cb;
 
 /*******************************************************************************
 **
@@ -159,6 +160,7 @@ void uwb_set_state(tUWB_STATE uwb_state) {
 void uwb_gen_cleanup(void) {
   /* clear any pending CMD/RSP */
   uwb_main_flush_cmd_queue();
+  uwb_main_flush_data_queue();
 }
 
 /*******************************************************************************
@@ -190,6 +192,10 @@ void uwb_main_handle_hal_evt(tUWB_HAL_EVT_MSG* p_msg) {
           uwb_main_notify_enable_status(UWB_STATUS_FAILED);
         }
       }
+      break;
+
+    case HAL_UWB_INIT_CPLT_EVT: /* only for failure case */
+      uwb_set_state(UWB_STATE_NONE);
       break;
 
     case HAL_UWB_ERROR_EVT:
@@ -247,6 +253,34 @@ void uwb_main_flush_cmd_queue(void) {
 
 /*******************************************************************************
 **
+** Function         uwb_main_flush_data_queue
+**
+** Description      This function is called when setting power off sleep state.
+**
+** Returns          void
+**
+*******************************************************************************/
+void uwb_main_flush_data_queue(void) {
+  UWB_HDR* p_msg;
+
+  UCI_TRACE_I(__func__);
+
+  /* Stop command-pending timer */
+  uwb_stop_quick_timer(&uwb_cb.uci_wait_credit_ntf_timer);
+  uwb_cb.is_credit_ntf_pending = false;
+  uwb_cb.data_pkt_retry_count = 0;
+
+  /* dequeue and free buffer */
+  for (int i = 0; i < data_tx_cb.no_of_sessions; i++) {
+    while ((p_msg = (UWB_HDR*)phUwb_GKI_dequeue(&data_tx_cb.tx_data_pkt[i].tx_data_pkt_q)) !=
+           NULL) {
+      phUwb_GKI_freebuf(p_msg);
+    }
+  }
+}
+
+/*******************************************************************************
+**
 ** Function         uwb_main_post_hal_evt
 **
 ** Description      This function posts HAL event to UWB_TASK
@@ -298,6 +332,10 @@ static void uwb_main_hal_cback(uint8_t event, tUWB_STATUS status) {
           uwb_main_post_hal_evt(event, status);
         }
       }
+      break;
+
+    case HAL_UWB_INIT_CPLT_EVT:
+     UCI_TRACE_D("uwb_main_hal_cback HAL Init complete %x", event);
       break;
 
     case HAL_UWB_CLOSE_CPLT_EVT:
@@ -435,9 +473,20 @@ void UWB_Init(tHAL_UWB_CONTEXT* p_hal_entry_cntxt) {
       ((UWB_CMD_CMPL_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000);
   uwb_cb.pLast_cmd_buf = NULL;
   uwb_cb.is_resp_pending = false;
+  uwb_cb.is_credit_ntf_pending = false;
+  data_tx_cb.max_data_pkt_payload_size = 255;
+  data_tx_cb.max_msg_size = 255;
+  data_tx_cb.no_of_sessions = 0;
   uwb_cb.cmd_retry_count = 0;
   uwb_cb.is_recovery_in_progress = false;
   uwb_cb.IsConformaceTestEnabled = false;
+  uwb_cb.uci_credit_ntf_timeout = ((UWB_CMD_CMPL_TIMEOUT * QUICK_TIMER_TICKS_PER_SEC) / 1000); // currently used same timeout value as cmd timeout
+  uwb_cb.data_credits = 1;
+  /* initialize the segment handling context  */
+  chained_packet.offset = 0;
+  uwb_cb.is_first_frgmnt_done = false;
+  chained_packet.oid = 0xFF;
+  chained_packet.gid = 0xFF;
 }
 
 /*******************************************************************************
@@ -954,6 +1003,61 @@ tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback) {
 
 /*******************************************************************************
 **
+** Function         UWB_SendData
+**
+** Description      This function is called to send the data packet over UWB.
+**
+** Parameters       p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
+                         uint8_t dest_end_point, uint8_t sequence_num,
+                         uint16_t data_len, uint8_t* p_data) {
+  return uci_send_data_frame(session_id, addr_len, p_addr, dest_end_point, sequence_num, data_len, p_data);
+}
+
+/*******************************************************************************
+**
+** Function         UWB_UpdateRangingRoundIndex
+**
+** Description      This function is called to Update Active Ranging Index.
+**
+** Parameter        dlTdoaRole - 0x00(Anchor) or 0x01(Tag)
+**                  session_id  - Session id To which Rangng index need to update
+**                  number_of_active_rngIndex - NUmber Of Ranging index to be updated
+**                  rng_round_index_len - Range Round Index Len
+**                  p_rng_round_index  -  pointer to Ranging Index buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_UpdateRangingRoundIndex(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_rng_index,
+                                    uint8_t rng_round_index_len, uint8_t* p_rng_round_index) {
+  return uci_send_range_round_index_update_cmd(dlTdoaRole, session_id, number_of_rng_index, rng_round_index_len, p_rng_round_index);
+}
+
+/*******************************************************************************
+**
+** Function         UWB_ConfigureDTAnchorForRrRdmList
+**
+** Description      This function is called to Configure DT anchor RR RDM List.
+**
+** Parameter        session_id  - Session id To which Rangng index need to update
+**                  rr_rdm_count - Number Of rr_rdm
+**                  length - length of data buffer
+**                  p_data - The data  buffer
+**
+** Returns          tUWB_STATUS
+**
+*******************************************************************************/
+tUWB_STATUS UWB_ConfigureDTAnchorForRrRdmList(uint32_t session_id, uint8_t rr_rdm_count, uint8_t length, uint8_t* p_data) {
+  return uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd(session_id, rr_rdm_count, length, p_data);
+}
+
+/*******************************************************************************
+**
 ** Function         UWB_EnableConformanceTest
 **
 ** Description      This function is called to set MCTT/PCTT mode.
@@ -966,6 +1070,41 @@ tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback) {
 *******************************************************************************/
 void UWB_EnableConformanceTest(uint8_t enable) {
   uwb_cb.IsConformaceTestEnabled = enable;
+}
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxMsgSize
+**
+** Description      This function is called to set max msg size supported for data Tranfer
+**
+** Parameters       maxMsgSize - max msg size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxMsgSize(uint16_t maxMsgSize){
+  data_tx_cb.max_msg_size = maxMsgSize;
+        UCI_TRACE_D(
+            "UWB_SetDataXferCapMaxMsgSize %d ",data_tx_cb.max_msg_size);
+}
+
+/*******************************************************************************
+**
+** Function         UWB_SetDataXferCapMaxDataPktPayloadSize
+**
+** Description      This function is called to set max data packet size at one time supported for data Tranfer
+**
+** Parameters       maxDataPktPayloadSize - max data packet size value
+**
+** Returns          None
+**
+*******************************************************************************/
+void UWB_SetDataXferCapMaxDataPktPayloadSize(uint16_t maxDataPktPayloadSize)
+{
+  data_tx_cb.max_data_pkt_payload_size = maxDataPktPayloadSize;
+        UCI_TRACE_D(
+            "UWB_SetDataXferCapMaxDataPktPayloadSize %d ",data_tx_cb.max_data_pkt_payload_size);
 }
 
 /*******************************************************************************
