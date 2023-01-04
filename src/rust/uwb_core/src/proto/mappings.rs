@@ -28,8 +28,9 @@ use crate::params::fira_app_config_params::{
     ScheduledMode, StsConfig, StsLength, TxAdaptivePayloadPower, UwbAddress, UwbChannel,
 };
 use crate::params::uci_packets::{
-    Controlee, DeviceState, ExtendedAddressTwoWayRangingMeasurement, PowerStats,
-    RangingMeasurementType, ReasonCode, SessionState, SessionType,
+    Controlee, DeviceState, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, OwrAoaStatusCode, PowerStats, RangingMeasurementType,
+    ReasonCode, SessionState, SessionType, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 use crate::params::AppConfigParams;
@@ -39,10 +40,10 @@ use crate::proto::bindings::{
     DeviceType as ProtoDeviceType, FiraAppConfigParams as ProtoFiraAppConfigParams,
     HoppingMode as ProtoHoppingMode, KeyRotation as ProtoKeyRotation,
     MacAddressMode as ProtoMacAddressMode, MacFcsType as ProtoMacFcsType,
-    MultiNodeMode as ProtoMultiNodeMode, PowerStats as ProtoPowerStats,
-    PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
-    PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
-    RangingMeasurement as ProtoRangingMeasurement,
+    MultiNodeMode as ProtoMultiNodeMode, OwrAoaStatusCode as ProtoOwrAoaStatusCode,
+    PowerStats as ProtoPowerStats, PreambleDuration as ProtoPreambleDuration,
+    PrfMode as ProtoPrfMode, PsduDataRate as ProtoPsduDataRate,
+    RangeDataNtfConfig as ProtoRangeDataNtfConfig, RangingMeasurement as ProtoRangingMeasurement,
     RangingMeasurementType as ProtoRangingMeasurementType,
     RangingRoundControl as ProtoRangingRoundControl, RangingRoundUsage as ProtoRangingRoundUsage,
     RangingTimeStruct as ProtoRangingTimeStruct, ReasonCode as ProtoReasonCode,
@@ -143,6 +144,12 @@ enum_mapping! {
 }
 
 enum_mapping! {
+    ProtoOwrAoaStatusCode => OwrAoaStatusCode,
+    UCI_STATUS_SUCCESS => UciStatusSuccess,
+    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT => UciStatusInterFrameIntervalTimeout,
+}
+
+enum_mapping! {
     ProtoDeviceState => DeviceState,
     DEVICE_STATE_READY => DeviceStateReady,
     DEVICE_STATE_ACTIVE => DeviceStateActive,
@@ -182,6 +189,7 @@ enum_mapping! {
     ONE_WAY => OneWay,
     TWO_WAY => TwoWay,
     DL_TDOA => DlTdoa,
+    OWR_AOA => OwrAoa,
 }
 
 enum_mapping! {
@@ -341,6 +349,8 @@ enum_mapping! {
     ProtoUpdateMulticastListAction => UpdateMulticastListAction,
     ADD_CONTROLEE => AddControlee,
     REMOVE_CONTROLEE => RemoveControlee,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY => AddControleeWithShortSubSessionKey,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY => AddControleeWithLongSubSessionKey,
 }
 
 impl<T> From<Result<T>> for ProtoStatus {
@@ -402,6 +412,38 @@ impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
+impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+    fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
+        let mut result = Self::new();
+        result.set_mac_address(item.mac_address.into());
+        result.set_owr_aoa_status_code(item.status.into());
+        result.set_nlos(item.nlos.into());
+        result.set_block_index(item.block_index.into());
+        result.set_frame_sequence_number(item.frame_sequence_number.into());
+        result.set_aoa_azimuth(item.aoa_azimuth.into());
+        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
+        result.set_aoa_elevation(item.aoa_elevation.into());
+        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
+        result
+    }
+}
+
+impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+    fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
+        let mut result = Self::new();
+        result.set_mac_address(item.mac_address);
+        result.set_owr_aoa_status_code(item.status.into());
+        result.set_nlos(item.nlos.into());
+        result.set_block_index(item.block_index.into());
+        result.set_frame_sequence_number(item.frame_sequence_number.into());
+        result.set_aoa_azimuth(item.aoa_azimuth.into());
+        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
+        result.set_aoa_elevation(item.aoa_elevation.into());
+        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
+        result
+    }
+}
+
 impl From<SessionRangeData> for ProtoSessionRangeData {
     fn from(item: SessionRangeData) -> Self {
         let mut result = Self::new();
@@ -418,8 +460,20 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
 
 fn to_proto_ranging_measurements(item: RangingMeasurements) -> Vec<ProtoRangingMeasurement> {
     match item {
-        RangingMeasurements::Short(arr) => arr.into_iter().map(|item| item.into()).collect(),
-        RangingMeasurements::Extended(arr) => arr.into_iter().map(|item| item.into()).collect(),
+        RangingMeasurements::ShortAddressTwoWay(arr) => {
+            arr.into_iter().map(|item| item.into()).collect()
+        }
+        RangingMeasurements::ExtendedAddressTwoWay(arr) => {
+            arr.into_iter().map(|item| item.into()).collect()
+        }
+        RangingMeasurements::ShortAddressOwrAoa(arr) => {
+            arr.into_iter().map(|item| item.into()).collect()
+        }
+        RangingMeasurements::ExtendedAddressOwrAoa(arr) => {
+            arr.into_iter().map(|item| item.into()).collect()
+        }
+        // TODO(b/260499366): Add support for DlTDoA.
+        _ => todo!(),
     }
 }
 
