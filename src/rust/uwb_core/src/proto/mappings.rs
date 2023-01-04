@@ -349,6 +349,8 @@ enum_mapping! {
     ProtoUpdateMulticastListAction => UpdateMulticastListAction,
     ADD_CONTROLEE => AddControlee,
     REMOVE_CONTROLEE => RemoveControlee,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY => AddControleeWithShortSubSessionKey,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY => AddControleeWithLongSubSessionKey,
 }
 
 impl<T> From<Result<T>> for ProtoStatus {

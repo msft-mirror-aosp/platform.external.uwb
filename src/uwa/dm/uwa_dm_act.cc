@@ -2,7 +2,7 @@
 /******************************************************************************
  *
  *  Copyright (C) 1999-2014 Broadcom Corporation
- *  Copyright 2018-2020 NXP
+ *  Copyright 2018-2022 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -359,6 +359,32 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
                               &dm_cback_data);
     } break;
 
+    case UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT:
+      {
+        dm_cback_data.status = p_data->status;
+        tUWA_UPDATE_RANGE_ROUND_INDEX_REVT* p_resp_data = &dm_cback_data.sRange_round_index;
+        p_resp_data->status = p_data->sRange_round_index.status;
+        p_resp_data->len = p_data->sRange_round_index.len;
+        if(p_resp_data->len > 0){
+          memcpy(p_resp_data->rng_round_index, p_data->sRange_round_index.rng_round_index, p_data->sRange_round_index.len);
+        }
+      }
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT, &dm_cback_data);
+      break;
+
+    case UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT:
+      {
+        dm_cback_data.status = p_data->status;
+        tUWA_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_REVT* p_resp_data = &dm_cback_data.sConfigure_dt_anchor_rr_rdm_list;
+        p_resp_data->status = p_data->sConfigure_dt_anchor_rr_rdm_list.status;
+        p_resp_data->len = p_data->sConfigure_dt_anchor_rr_rdm_list.len;
+        if(p_resp_data->len > 0){
+          memcpy(p_resp_data->rng_round_indexs, p_data->sConfigure_dt_anchor_rr_rdm_list.rng_round_indexs, p_data->sConfigure_dt_anchor_rr_rdm_list.len);
+        }
+      }
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT, &dm_cback_data);
+      break;
+
     case UWB_SET_COUNTRY_CODE_REVT: /* set country code response*/
       if (p_data->status != UWB_STATUS_OK) {
         UCI_TRACE_E(" Set country code request failed");
@@ -386,6 +412,32 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
       (*uwa_dm_cb.p_dm_cback)(UWA_DM_SEND_BLINK_DATA_NTF_EVT, &dm_cback_data);
     } break;
 
+    case UWB_SEND_DATA_STATUS_EVT:
+    {
+      dm_cback_data.status = p_data->status;
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_SEND_DATA_STATUS_EVT, &dm_cback_data);
+    }
+    break;
+
+    case UWB_DATA_TRANSFER_STATUS_NTF_REVT:
+    {
+      tUWA_DATA_TRANSFER_STATUS_NTF_REVT* p_data_transmit = &dm_cback_data.sData_xfer_status;
+      p_data_transmit->session_id = p_data->sData_xfer_status.session_id;
+      p_data_transmit->sequence_num =  p_data->sData_xfer_status.sequence_num;
+      p_data_transmit->status = p_data->sData_xfer_status.status;
+      (*uwa_dm_cb.p_dm_cback)(UWA_DM_DATA_TRANSFER_STATUS_NTF_EVT, &dm_cback_data);
+    }
+    break;
+
+    case UWB_DATA_RECV_REVT:
+    {
+       tUWA_RX_DATA_REVT* p_rcv_data = &dm_cback_data.sRcvd_data;
+       memset(p_rcv_data, 0, sizeof(tUWA_RX_DATA_REVT));
+       memcpy((uint8_t*)p_rcv_data, (uint8_t*)&p_data->sRcvd_data, sizeof(tUWA_RX_DATA_REVT));
+       (*uwa_dm_cb.p_dm_cback)(UWA_DM_DATA_RECV_EVT, &dm_cback_data);
+    }
+    break;
+
     case UWB_CONFORMANCE_TEST_DATA: /* conformance test notification */
     {
       tUWA_CONFORMANCE_TEST_DATA* p_sConformance_data_ntf =
@@ -403,8 +455,8 @@ static void uwa_dm_uwb_response_cback(tUWB_RESPONSE_EVT event,
     } break;
     case UWB_VENDOR_SPECIFIC_UCI_NTF_EVT:
     {
-      dm_cback_data.sVendor_specific_ntf.len = p_data->sVendor_specific_ntf.len;
-      memcpy((uint8_t*)dm_cback_data.sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.data, p_data->sVendor_specific_ntf.len);
+      dm_cback_data.vendor_specific_ntf.len = p_data->vendor_specific_ntf.len;
+      memcpy((uint8_t*)dm_cback_data.vendor_specific_ntf.data, p_data->vendor_specific_ntf.data, p_data->vendor_specific_ntf.len);
       (*uwa_dm_cb.p_dm_cback)(UWA_VENDOR_SPECIFIC_UCI_NTF_EVT, &dm_cback_data);
     } break;
     default:
@@ -909,6 +961,63 @@ bool uwa_dm_act_send_raw_cmd(tUWA_DM_MSG* p_data) {
 
 /*******************************************************************************
 **
+** Function         uwa_dm_act_send_data_frame
+**
+** Description      send data frame over UWB
+**
+** Returns          FALSE (message buffer is NOT freed by caller)
+**
+*******************************************************************************/
+bool uwa_dm_act_send_data_frame(tUWA_DM_MSG* p_data){
+  tUWB_STATUS status;
+
+  if(p_data == NULL) {
+    UCI_TRACE_E("uwa_dm_act_test_stop_session(): p_data is NULL)");
+    return false;
+  } else {
+  status = UWB_SendData(
+        p_data->send_data_frame.session_id,
+        p_data->send_data_frame.p_addr, p_data->send_data_frame.dest_end_point,
+        p_data->send_data_frame.sequence_num, p_data->send_data_frame.data_len,
+        p_data->send_data_frame.p_data);
+  }
+  if(status == UWB_STATUS_OK) {
+    UCI_TRACE_D("uwa_dm_act_send_data_frame(): success , status=0x%X",status);
+  } else {
+    UCI_TRACE_E("uwa_dm_act_send_data_frame(): failed , status=0x%X",status);
+  }
+  return true;
+}
+
+/*******************************************************************************
+**
+** Function         uwa_dm_act_update_active_range_round_index
+**
+** Description      Update Active Ranging Index Command
+**
+** Returns          FALSE (message buffer is NOT freed by caller)
+**
+*******************************************************************************/
+bool uwa_dm_act_update_active_range_round_index(tUWA_DM_MSG* p_data){
+  tUWB_STATUS status;
+
+  if(p_data == NULL) {
+    UCI_TRACE_E("uwa_dm_act_update_active_range_round_index(): p_data is NULL)");
+    return false;
+  } else {
+    status = UWB_UpdateRangingRoundIndex(p_data->update_rng_index.dlTdoaRole, p_data->update_rng_index.session_id, p_data->update_rng_index.number_of_rng_index,
+                          p_data->update_rng_index.length, p_data->update_rng_index.p_rng_index);
+  }
+  if(status == UWB_STATUS_OK) {
+    UCI_TRACE_D("uwa_dm_act_update_active_range_round_index(): success , status=0x%X",status);
+  } else {
+    UCI_TRACE_E("uwa_dm_act_update_active_range_round_index(): failed , status=0x%X",status);
+  }
+  return true;
+}
+
+/*******************************************************************************
+**
 ** Function         uwa_dm_act_get_range_count
 **
 ** Description      Send the get range count command to the ranging count
@@ -1013,6 +1122,32 @@ bool uwa_dm_act_multicast_list_update(tUWA_DM_MSG* p_data) {
     } else {
       UCI_TRACE_E("uwa_dm_act_multicast_list_update(): failed ,status=0x%X",
                   status);
+    }
+  }
+  return true;
+}
+
+/*******************************************************************************
+**
+** Function         uwa_dm_act_configure_dt_anchor_rr_rdm
+**
+** Description      Configure dt anchor rr rdm list command
+**
+** Returns          FALSE (message buffer is NOT freed by caller)
+**
+*******************************************************************************/
+bool uwa_dm_act_configure_dt_anchor_rr_rdm(tUWA_DM_MSG* p_data){
+  tUWB_STATUS status;
+  if (p_data->sConfigure_dt_anchor_rr_rdm_list.length + 2 > MAX_RRRDM_LIST_LENGTH) {
+    /* Total length of mac addr list must be less than 256 (1 byte) */
+    status = UWA_STATUS_FAILED;
+  } else {
+    status = UWB_ConfigureDTAnchorForRrRdmList(p_data->sConfigure_dt_anchor_rr_rdm_list.session_id, p_data->sConfigure_dt_anchor_rr_rdm_list.rr_rdm_count, p_data->sConfigure_dt_anchor_rr_rdm_list.length,
+      p_data->sConfigure_dt_anchor_rr_rdm_list.p_data);
+    if(UWB_STATUS_OK == status){
+      UCI_TRACE_D("uwa_dm_act_configure_dt_anchor_rr_rdm(): success ,status=0x%X",status);
+    } else {
+      UCI_TRACE_E("uwa_dm_act_configure_dt_anchor_rr_rdm(): failed ,status=0x%X",status);
     }
   }
   return true;
@@ -1345,6 +1480,15 @@ std::string uwa_dm_uwb_revt_2_str(tUWB_RESPONSE_EVT event) {
 
     case UWB_BLINK_DATA_TX_NTF_REVT:
       return "UWB_BLINK_DATA_TX_NTF_REVT";
+
+    case UWB_DATA_RECV_REVT:
+      return "UWB_DATA_RECV_REVT";
+
+    case UWB_DATA_TRANSFER_STATUS_NTF_REVT:
+      return "UWB_DATA_TRANSFER_STATUS_NTF_REVT";
+
+    case UWB_SEND_DATA_STATUS_EVT:
+      return "UWB_SEND_DATA_STATUS_EVT";
 
     case UWB_CONFORMANCE_TEST_DATA:
       return "UWB_CONFORMANCE_TEST_DATA";
