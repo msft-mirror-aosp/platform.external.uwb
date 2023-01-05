@@ -169,6 +169,7 @@ enum_mapping! {
     STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => StateChangeWithSessionManagementCommands,
     MAX_RANGING_ROUND_RETRY_COUNT_REACHED => MaxRangingRoundRetryCountReached,
     MAX_NUMBER_OF_MEASUREMENTS_REACHED => MaxNumberOfMeasurementsReached,
+    ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => ErrorInvalidUlTdoaRandomWindow,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED => ErrorSlotLengthNotSupported,
     ERROR_INSUFFICIENT_SLOTS_PER_RR => ErrorInsufficientSlotsPerRr,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => ErrorMacAddressModeNotSupported,
