@@ -6,10 +6,10 @@
     //   "host": true
     // },
     {
-      "name": "libuwb_uci_rust_tests"
+      "name": "libuwb_uci_packet_tests"
     },
     {
-      "name": "libuwb_uci_packet_tests"
+      "name": "libuwb_core_tests"
     }
   ]
 }
