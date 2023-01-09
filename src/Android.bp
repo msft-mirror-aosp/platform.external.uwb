@@ -50,6 +50,7 @@ rust_test {
         },
     },
     auto_gen_config: true,
+    min_sdk_version: "33",
 }
 
 rust_library {
@@ -151,6 +152,7 @@ rust_test {
         },
     },
     auto_gen_config: true,
+    min_sdk_version: "33",
 }
 
 rust_binary {
