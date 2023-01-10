@@ -23,7 +23,7 @@ use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
-use uwb_uci_packets::build_session_update_controller_multicast_list_cmd;
+use uwb_uci_packets::{build_session_update_controller_multicast_list_cmd, GroupId, MessageType};
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
 #[allow(missing_docs)]
@@ -82,13 +82,14 @@ pub enum UciCommand {
     },
     AndroidGetPowerStats,
     RawUciCmd {
+        mt: u32,
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
     },
 }
 
-impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
+impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
     type Error = Error;
     fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
@@ -153,8 +154,8 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
-            UciCommand::RawUciCmd { gid, oid, payload } => {
-                build_raw_uci_cmd_packet(gid, oid, payload)?
+            UciCommand::RawUciCmd { mt, gid, oid, payload } => {
+                build_raw_uci_cmd_packet(mt, gid, oid, payload)?
             }
             UciCommand::SessionGetCount => {
                 uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into()
@@ -178,11 +179,11 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
 }
 
 fn build_raw_uci_cmd_packet(
+    mt: u32,
     gid: u32,
     oid: u32,
     payload: Vec<u8>,
-) -> Result<uwb_uci_packets::UciCommandPacket> {
-    use uwb_uci_packets::GroupId;
+) -> Result<uwb_uci_packets::UciControlPacketPacket> {
     let group_id = GroupId::from_u32(gid).ok_or_else(|| {
         error!("Invalid GroupId: {}", gid);
         Error::BadParameters
@@ -192,5 +193,12 @@ fn build_raw_uci_cmd_packet(
         error!("Invalid opcod: {}", oid);
         Error::BadParameters
     })?;
-    Ok(uwb_uci_packets::UciCommandBuilder { opcode, group_id, payload }.build())
+    let message_type = MessageType::from_u32(mt).ok_or_else(|| {
+        error!("Invalid MessageType: {}", mt);
+        Error::BadParameters
+    })?;
+    match uwb_uci_packets::build_uci_control_packet(message_type, group_id, opcode, payload) {
+        Some(cmd) => Ok(cmd),
+        None => Err(Error::BadParameters),
+    }
 }
