@@ -340,6 +340,8 @@ enum MessageType: 3 {
     COMMAND = 0x01,
     RESPONSE = 0x02,
     NOTIFICATION = 0x03,
+    RESERVED_FOR_TESTING_1 = 0x04,
+    RESERVED_FOR_TESTING_2 = 0x05,
 }
 
 // UCI packet description in compliance with the FIRA UCI spec.
