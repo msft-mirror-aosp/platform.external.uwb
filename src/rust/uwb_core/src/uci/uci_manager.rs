@@ -122,7 +122,13 @@ pub trait UciManager: 'static + Send + Sync + Clone {
     async fn android_get_power_stats(&self) -> Result<PowerStats>;
 
     // Send a raw uci command.
-    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage>;
+    async fn raw_uci_cmd(
+        &self,
+        mt: u32,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawUciMessage>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -414,8 +420,14 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
-        let cmd = UciCommand::RawUciCmd { gid, oid, payload };
+    async fn raw_uci_cmd(
+        &self,
+        mt: u32,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawUciMessage> {
+        let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::RawUciCmd(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
@@ -628,7 +640,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
                 // Remember that this command is a raw UCI command, we'll use this later
                 // to send a raw UCI response.
-                if let UciCommand::RawUciCmd { gid, oid, payload: _ } = cmd.clone() {
+                if let UciCommand::RawUciCmd { mt: _, gid, oid, payload: _ } = cmd.clone() {
                     let gid = GroupId::from_u32(gid);
                     let oid = oid.to_u8();
                     if oid.is_none() || gid.is_none() {
@@ -1494,6 +1506,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_uci_cmd_vendor_gid_ok() {
+        let mt = 0x1;
         let gid = 0xF; // Vendor reserved GID.
         let oid = 0x3;
         let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
@@ -1503,7 +1516,7 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
+                let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload: cmd_payload_clone };
                 let resp = into_uci_hal_packets(uwb_uci_packets::UciVendor_F_ResponseBuilder {
                     opcode: oid as u8,
                     payload: Some(Bytes::from(resp_payload_clone)),
@@ -1517,13 +1530,14 @@ mod tests {
         .await;
 
         let expected_result = RawUciMessage { gid, oid, payload: resp_payload };
-        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await.unwrap();
+        let result = uci_manager.raw_uci_cmd(mt, gid, oid, cmd_payload).await.unwrap();
         assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
     #[tokio::test]
     async fn test_raw_uci_cmd_fira_gid_ok() {
+        let mt = 0x1;
         let gid = 0x1; // SESSION_CONFIG GID.
         let oid = 0x3;
         let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
@@ -1536,7 +1550,7 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
+                let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload: cmd_payload_clone };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
                     status,
                     cfg_status,
@@ -1550,7 +1564,41 @@ mod tests {
         .await;
 
         let expected_result = RawUciMessage { gid, oid, payload: resp_payload };
-        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await.unwrap();
+        let result = uci_manager.raw_uci_cmd(mt, gid, oid, cmd_payload).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_raw_uci_cmd_mt_testing_ok() {
+        let mt = 0x4;
+        let gid = 0x1; // SESSION_CONFIG GID.
+        let oid = 0x3;
+        let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
+        let cmd_payload_clone = cmd_payload.clone();
+        let resp_payload = vec![0x00, 0x01, 0x07, 0x00];
+        let status = StatusCode::UciStatusOk;
+        let cfg_id = AppConfigTlvType::DstMacAddress;
+        let app_config = AppConfigStatus { cfg_id, status };
+        let cfg_status = vec![app_config];
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload: cmd_payload_clone };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
+                    status,
+                    cfg_status,
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let expected_result = RawUciMessage { gid, oid, payload: resp_payload };
+        let result = uci_manager.raw_uci_cmd(mt, gid, oid, cmd_payload).await.unwrap();
         assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
@@ -1561,6 +1609,7 @@ mod tests {
         // with SESSION_CONFIG GID.
         // In this case, UciManager should return Error::Unknown.
 
+        let mt = 0x1;
         let gid = 0x0; // CORE GID.
         let oid = 0x1;
         let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
@@ -1572,7 +1621,7 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RawUciCmd { gid, oid, payload: cmd_payload_clone };
+                let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload: cmd_payload_clone };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
                     status,
                     cfg_status,
@@ -1586,7 +1635,7 @@ mod tests {
         .await;
 
         let expected_result = Err(Error::Unknown);
-        let result = uci_manager.raw_uci_cmd(gid, oid, cmd_payload).await;
+        let result = uci_manager.raw_uci_cmd(mt, gid, oid, cmd_payload).await;
         assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
