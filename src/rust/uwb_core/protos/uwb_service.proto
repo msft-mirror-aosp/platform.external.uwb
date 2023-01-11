@@ -549,6 +549,7 @@ message SendVendorCmdRequest {
   uint32 gid = 1;
   uint32 oid = 2;
   bytes payload = 3;
+  uint32 mt = 4;
 }
 
 // Response of the UwbService::SendVendorCmd() method.
