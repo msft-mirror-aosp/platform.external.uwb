@@ -19,10 +19,11 @@ use num_traits::ToPrimitive;
 use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 
 use crate::error::{Error, Result};
+use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
-    ControleeStatus, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ControleeStatus, DataRcvStatusCode, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
     ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    RangingMeasurementType, RawUciMessage, ReasonCode, SessionId, SessionState,
+    FiraComponent, RangingMeasurementType, RawUciMessage, ReasonCode, SessionId, SessionState,
     ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
@@ -118,6 +119,54 @@ pub enum RangingMeasurements {
 
     /// OWR for AoA measurement with extended address.
     ExtendedAddressOwrAoa(Vec<ExtendedAddressOwrAoaRangingMeasurement>),
+}
+
+/// The DATA_RCV packet
+#[derive(Debug, Clone)]
+pub struct DataRcvNotification {
+    /// The identifier of the session on which data transfer is happening.
+    pub session_id: SessionId,
+
+    /// The status of the data rx.
+    pub status: DataRcvStatusCode,
+
+    /// The sequence number of the data packet.
+    pub uci_sequence_num: u32,
+
+    /// MacAddress of the sender of the application data.
+    pub source_address: UwbAddress,
+
+    /// Identifier for the source FiraComponent.
+    pub source_fira_component: FiraComponent,
+
+    /// Identifier for the destination FiraComponent.
+    pub dest_fira_component: FiraComponent,
+
+    /// Application Payload Data
+    pub payload: Vec<u8>,
+}
+
+impl TryFrom<uwb_uci_packets::UciDataPacketPacket> for DataRcvNotification {
+    type Error = Error;
+    fn try_from(
+        evt: uwb_uci_packets::UciDataPacketPacket,
+    ) -> std::result::Result<Self, Self::Error> {
+        match evt.specialize() {
+            uwb_uci_packets::UciDataPacketChild::UciDataRcv(evt) => Ok(DataRcvNotification {
+                session_id: evt.get_session_id(),
+                status: evt.get_status(),
+                uci_sequence_num: evt.get_uci_sequence_number(),
+                source_address: UwbAddress::Extended(evt.get_source_mac_address().to_le_bytes()),
+                source_fira_component: evt.get_source_fira_component(),
+                dest_fira_component: evt.get_dest_fira_component(),
+                payload: evt.get_data().to_vec(),
+            }),
+            _ => {
+                error!("Unknown UciData packet: {:?}", evt);
+                Err(Error::Unknown)
+            }
+        }
+    }
 }
 
 impl UciNotification {

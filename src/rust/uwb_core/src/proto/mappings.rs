@@ -169,6 +169,7 @@ enum_mapping! {
     STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => StateChangeWithSessionManagementCommands,
     MAX_RANGING_ROUND_RETRY_COUNT_REACHED => MaxRangingRoundRetryCountReached,
     MAX_NUMBER_OF_MEASUREMENTS_REACHED => MaxNumberOfMeasurementsReached,
+    ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => ErrorInvalidUlTdoaRandomWindow,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED => ErrorSlotLengthNotSupported,
     ERROR_INSUFFICIENT_SLOTS_PER_RR => ErrorInsufficientSlotsPerRr,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => ErrorMacAddressModeNotSupported,
@@ -349,6 +350,8 @@ enum_mapping! {
     ProtoUpdateMulticastListAction => UpdateMulticastListAction,
     ADD_CONTROLEE => AddControlee,
     REMOVE_CONTROLEE => RemoveControlee,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY => AddControleeWithShortSubSessionKey,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY => AddControleeWithLongSubSessionKey,
 }
 
 impl<T> From<Result<T>> for ProtoStatus {
