@@ -333,8 +333,14 @@ impl<U: UciManager> UciManagerSync<U> {
     }
 
     /// Send a raw UCI command.
-    pub fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
-        self.runtime_handle.block_on(self.uci_manager.raw_uci_cmd(gid, oid, payload))
+    pub fn raw_uci_cmd(
+        &self,
+        mt: u32,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawUciMessage> {
+        self.runtime_handle.block_on(self.uci_manager.raw_uci_cmd(mt, gid, oid, payload))
     }
 }
 
