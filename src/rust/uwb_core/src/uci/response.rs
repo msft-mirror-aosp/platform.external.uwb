@@ -43,6 +43,7 @@ pub(super) enum UciResponse {
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
     SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
+    SessionQueryMaxDataSize(Result<u16>),
     SessionStart(Result<()>),
     SessionStop(Result<()>),
     SessionGetRangingCount(Result<usize>),
@@ -77,6 +78,8 @@ impl UciResponse {
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
+
+            Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
         }
     }
 
@@ -191,6 +194,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
                     }),
                 ))
             }
+            SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) =>
+                 Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size()),
+                )),
             _ => Err(Error::Unknown),
         }
     }
