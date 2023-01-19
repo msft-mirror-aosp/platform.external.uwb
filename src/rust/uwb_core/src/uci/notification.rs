@@ -109,10 +109,10 @@ pub enum RangingMeasurements {
     ExtendedAddressTwoWay(Vec<ExtendedAddressTwoWayRangingMeasurement>),
 
     /// Dl-TDoA measurement with short address.
-    ShortDltdoa(Vec<ShortAddressDlTdoaRangingMeasurement>),
+    ShortAddressDltdoa(Vec<ShortAddressDlTdoaRangingMeasurement>),
 
     /// Dl-TDoA measurement with extended address.
-    ExtendedDltdoa(Vec<ExtendedAddressDlTdoaRangingMeasurement>),
+    ExtendedAddressDltdoa(Vec<ExtendedAddressDlTdoaRangingMeasurement>),
 
     /// OWR for AoA measurement with short address.
     ShortAddressOwrAoa(Vec<ShortAddressOwrAoaRangingMeasurement>),
@@ -296,7 +296,7 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
                 match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
-                            RangingMeasurements::ShortDltdoa(v)
+                            RangingMeasurements::ShortAddressDltdoa(v)
                         } else {
                             error!("Wrong count of ranging measurements {:?}", evt);
                             return Err(Error::BadParameters);
@@ -309,7 +309,7 @@ impl TryFrom<uwb_uci_packets::RangeDataNtfPacket> for SessionNotification {
                 match ExtendedAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
-                            RangingMeasurements::ExtendedDltdoa(v)
+                            RangingMeasurements::ExtendedAddressDltdoa(v)
                         } else {
                             error!("Wrong count of ranging measurements {:?}", evt);
                             return Err(Error::BadParameters);
