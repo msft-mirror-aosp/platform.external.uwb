@@ -35,10 +35,6 @@
 
 #define NORMAL_MODE_LENGTH_OFFSET 0x03
 #define DATA_PACKET_LEN_SHIFT 0x08
-#define EXTENDED_MODE_LEN_OFFSET 0x02
-#define EXTENDED_MODE_LEN_SHIFT 0x08
-#define EXTND_LEN_INDICATOR_OFFSET 0x01
-#define EXTND_LEN_INDICATOR_OFFSET_MASK  0x80
 #define TDOA_TX_TIMESTAMP_OFFSET         0x00FF
 #define TDOA_TX_TIMESTAMP_OFFSET_MASK    0x06
 #define TDOA_RX_TIMESTAMP_OFFSET         0x00FF
@@ -152,7 +148,6 @@ void uwb_ucif_cmd_timeout(void) {
     uwb_cb.cmd_retry_count++;
   } else {
     uwb_ucif_event_status(UWB_UWBS_RESP_TIMEOUT_REVT, UWB_STATUS_FAILED);
-    uwb_ucif_uwb_recovery();
   }
 }
 
@@ -260,12 +255,9 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
         uwb_cb.rawCmdCbflag = true;
       }
 
-      if(pbf) {
-        uwb_cb.rawCmdCbflag = false;
-      } else {
-        uwb_cb.uci_cmd_window--;
-      }
-      uwb_cb.is_resp_pending = !pbf;
+       /* Indicate command is pending */
+      uwb_cb.uci_cmd_window--;
+      uwb_cb.is_resp_pending = true;
       uwb_cb.cmd_retry_count = 0;
 
       /* send to HAL */
@@ -1127,10 +1119,6 @@ void uwb_ucif_proc_core_device_status(uint8_t* p_buf, uint16_t len) {
   uwb_cb.device_state = status;
 
   (*uwb_cb.p_resp_cback)(UWB_DEVICE_STATUS_REVT, &uwb_response);
-  if (status == UWBS_STATUS_ERROR || status == UWBS_STATUS_TIMEOUT) {
-    uwb_stop_quick_timer(&uwb_cb.uci_wait_rsp_timer);
-    uwb_ucif_uwb_recovery();
-  }
 }
 
 /*******************************************************************************
@@ -1291,20 +1279,21 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_azimuth_FOM, p);
       STREAM_TO_UINT16(dltdoa_range_measr->aoa_elevation, p);
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_elevation_FOM, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->rssi, p);
       txTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_TX_TIMESTAMP_OFFSET ) & (TDOA_TX_TIMESTAMP_OFFSET_MASK));
       if(txTimeStampValue == TDOA_TX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->txTimeStamp, p);
       } else if(txTimeStampValue == TDOA_TX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->txTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
         return;
       }
       rxTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_RX_TIMESTAMP_OFFSET ) & (TDOA_RX_TIMESTAMP_OFFSET_MASK));
       if(rxTimeStampValue == TDOA_RX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->rxTimeStamp, p);
       } else if(rxTimeStampValue == TDOA_RX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->rxTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
         return;
