@@ -1015,7 +1015,7 @@ tUWB_STATUS UWB_SendRawCommand(UWB_HDR* p_data, tUWB_RAW_CBACK* p_cback) {
 tUWB_STATUS UWB_SendData(uint32_t session_id, uint8_t* p_addr,
                          uint8_t dest_end_point, uint8_t sequence_num,
                          uint16_t data_len, uint8_t* p_data) {
-  return uci_send_data_frame(session_id, addr_len, p_addr, dest_end_point, sequence_num, data_len, p_data);
+  return uci_send_data_frame(session_id, p_addr, dest_end_point, sequence_num, data_len, p_data);
 }
 
 /*******************************************************************************
