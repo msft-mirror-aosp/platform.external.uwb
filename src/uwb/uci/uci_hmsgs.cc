@@ -962,8 +962,8 @@ uint8_t uci_send_data_frame(uint32_t session_id, uint8_t* p_addr, uint8_t dest_e
       UINT32_TO_STREAM(pp, session_id);
       ARRAY_TO_STREAM(pp, p_addr, EXTENDED_ADDRESS_LEN);
       UINT8_TO_STREAM(pp, dest_end_point);
-      UINT8_TO_STREAM(pp, (uint8_t)sequence_num);
-      uci_pkt_len -= (sizeof(session_id) + EXTENDED_ADDRESS_LEN  + sizeof(dest_end_point) +
+      UINT8_TO_STREAM(pp, sequence_num);
+      uci_pkt_len -= (sizeof(session_id) + EXTENDED_ADDRESS_LEN + sizeof(dest_end_point) +
                       sizeof(data_len) + sizeof(uint8_t));
     }
     if(!isFirstSegment){
