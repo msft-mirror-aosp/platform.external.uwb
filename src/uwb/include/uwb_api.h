@@ -306,8 +306,9 @@ typedef struct {
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
-  uint8_t txTimeStamp[8];
-  uint8_t rxTimeStamp[8];
+  uint8_t rssi;
+  uint64_t txTimeStamp;
+  uint64_t rxTimeStamp;
   uint16_t cfo_anchor;
   uint16_t cfo;
   uint32_t initiator_reply_time;
@@ -315,7 +316,7 @@ typedef struct {
   uint16_t initiator_responder_TOF;
   uint8_t anchor_location[12];
   uint8_t active_ranging_round[15];
-} tUWB_DLTDOA_RANGING_MEASR
+} tUWB_DLTDOA_RANGING_MEASR;
 
 typedef struct {
   uint8_t mac_addr[8];
