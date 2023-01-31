@@ -68,13 +68,13 @@ pub enum UciCommand {
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
     },
-    RangeStart {
+    SessionStart {
         session_id: SessionId,
     },
-    RangeStop {
+    SessionStop {
         session_id: SessionId,
     },
-    RangeGetRangingCount {
+    SessionGetRangingCount {
         session_id: SessionId,
     },
     AndroidSetCountryCode {
@@ -93,17 +93,12 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
     type Error = Error;
     fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
+            // UCI Session Config Commands
             UciCommand::SessionInit { session_id, session_type } => {
                 uwb_uci_packets::SessionInitCmdBuilder { session_id, session_type }.build().into()
             }
             UciCommand::SessionDeinit { session_id } => {
                 uwb_uci_packets::SessionDeinitCmdBuilder { session_id }.build().into()
-            }
-            UciCommand::RangeStart { session_id } => {
-                uwb_uci_packets::RangeStartCmdBuilder { session_id }.build().into()
-            }
-            UciCommand::RangeStop { session_id } => {
-                uwb_uci_packets::RangeStopCmdBuilder { session_id }.build().into()
             }
             UciCommand::CoreGetDeviceInfo => {
                 uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into()
@@ -141,7 +136,6 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
                 .build()
                 .into()
             }
-
             UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
                 uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
                     session_id,
@@ -150,7 +144,6 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
                 .build()
                 .into()
             }
-
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
@@ -170,8 +163,15 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
             UciCommand::DeviceReset { reset_config } => {
                 uwb_uci_packets::DeviceResetCmdBuilder { reset_config }.build().into()
             }
-            UciCommand::RangeGetRangingCount { session_id } => {
-                uwb_uci_packets::RangeGetRangingCountCmdBuilder { session_id }.build().into()
+            // UCI Session Control Commands
+            UciCommand::SessionStart { session_id } => {
+                uwb_uci_packets::SessionStartCmdBuilder { session_id }.build().into()
+            }
+            UciCommand::SessionStop { session_id } => {
+                uwb_uci_packets::SessionStopCmdBuilder { session_id }.build().into()
+            }
+            UciCommand::SessionGetRangingCount { session_id } => {
+                uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
             }
         };
         Ok(packet)
