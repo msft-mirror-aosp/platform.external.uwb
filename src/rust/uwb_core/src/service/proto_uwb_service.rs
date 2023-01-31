@@ -200,7 +200,7 @@ impl ProtoUwbService {
     pub fn raw_uci_cmd(&self, request: &[u8]) -> Result<Vec<u8>> {
         let request = parse_from_bytes::<SendVendorCmdRequest>(request)?;
         let mut resp = SendVendorCmdResponse::new();
-        match self.service.raw_uci_cmd(request.gid, request.oid, request.payload) {
+        match self.service.raw_uci_cmd(request.mt, request.gid, request.oid, request.payload) {
             Ok(msg) => {
                 resp.set_status(Ok(()).into());
                 resp.set_gid(msg.gid);

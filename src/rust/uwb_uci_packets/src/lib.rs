@@ -297,9 +297,26 @@ fn get_opcode_from_uci_control_packet(packet: &UciPacketHalPacket) -> u8 {
 
 fn is_uci_control_packet(message_type: MessageType) -> bool {
     match message_type {
-        MessageType::Command | MessageType::Response | MessageType::Notification => true,
+        MessageType::Command
+        | MessageType::Response
+        | MessageType::Notification
+        | MessageType::ReservedForTesting1
+        | MessageType::ReservedForTesting2 => true,
         _ => false,
     }
+}
+
+pub fn build_uci_control_packet(
+    message_type: MessageType,
+    group_id: GroupId,
+    opcode: u8,
+    payload: Option<Bytes>,
+) -> Option<UciControlPacketPacket> {
+    if !is_uci_control_packet(message_type) {
+        error!("Only control packets are allowed, MessageType: {}", message_type);
+        return None;
+    }
+    Some(UciControlPacketBuilder { group_id, message_type, opcode, payload }.build())
 }
 
 // Ensure that the new packet fragment belong to the same packet.
