@@ -16,10 +16,10 @@
 use std::convert::TryFrom;
 
 use uwb_uci_packets::{
-    AppConfigTlv, AppConfigTlvType, Packet, SessionCommandChild, SessionGetAppConfigRspBuilder,
-    SessionResponseChild, SessionSetAppConfigCmdBuilder, UciCommandChild, UciCommandPacket,
-    UciControlPacketPacket, UciDataPacketPacket, UciResponseChild, UciResponsePacket,
-    UCI_PACKET_HAL_HEADER_LEN,
+    AppConfigTlv, AppConfigTlvType, Packet, SessionConfigCommandChild, SessionConfigResponseChild,
+    SessionGetAppConfigRspBuilder, SessionSetAppConfigCmdBuilder, UciCommandChild,
+    UciControlPacketChild, UciControlPacketPacket, UciDataPacketPacket, UciResponseChild,
+    UciResponsePacket, UCI_PACKET_HAL_HEADER_LEN,
 };
 
 use crate::error::{Error, Result};
@@ -69,16 +69,19 @@ fn filter_tlv(mut tlv: AppConfigTlv) -> AppConfigTlv {
     tlv
 }
 
-fn filter_uci_command(cmd: UciCommandPacket) -> UciCommandPacket {
+fn filter_uci_command(cmd: UciControlPacketPacket) -> UciControlPacketPacket {
     match cmd.specialize() {
-        UciCommandChild::SessionCommand(session_cmd) => match session_cmd.specialize() {
-            SessionCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
-                let session_id = set_config_cmd.get_session_id();
-                let tlvs = set_config_cmd.get_tlvs().to_owned();
-                let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
-                SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
-            }
-            _ => session_cmd.into(),
+        UciControlPacketChild::UciCommand(control_cmd) => match control_cmd.specialize() {
+            UciCommandChild::SessionConfigCommand(session_cmd) => match session_cmd.specialize() {
+                SessionConfigCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
+                    let session_id = set_config_cmd.get_session_id();
+                    let tlvs = set_config_cmd.get_tlvs().to_owned();
+                    let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
+                    SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
+                }
+                _ => session_cmd.into(),
+            },
+            _ => cmd,
         },
         _ => cmd,
     }
@@ -86,8 +89,8 @@ fn filter_uci_command(cmd: UciCommandPacket) -> UciCommandPacket {
 
 fn filter_uci_response(rsp: UciResponsePacket) -> UciResponsePacket {
     match rsp.specialize() {
-        UciResponseChild::SessionResponse(session_rsp) => match session_rsp.specialize() {
-            SessionResponseChild::SessionGetAppConfigRsp(rsp) => {
+        UciResponseChild::SessionConfigResponse(session_rsp) => match session_rsp.specialize() {
+            SessionConfigResponseChild::SessionGetAppConfigRsp(rsp) => {
                 let status = rsp.get_status();
                 let tlvs = rsp.get_tlvs().to_owned();
                 let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
@@ -145,13 +148,13 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
         match self.mode {
             UciLoggerMode::Disabled => (),
             UciLoggerMode::Unfiltered => {
-                if let Ok(packet) = UciCommandPacket::try_from(cmd.clone()) {
-                    self.logger.log_uci_control_packet(packet.into());
+                if let Ok(packet) = UciControlPacketPacket::try_from(cmd.clone()) {
+                    self.logger.log_uci_control_packet(packet);
                 };
             }
             UciLoggerMode::Filtered => {
-                if let Ok(packet) = UciCommandPacket::try_from(cmd.clone()) {
-                    self.logger.log_uci_control_packet(filter_uci_command(packet).into());
+                if let Ok(packet) = UciControlPacketPacket::try_from(cmd.clone()) {
+                    self.logger.log_uci_control_packet(filter_uci_command(packet));
                 };
             }
         }
