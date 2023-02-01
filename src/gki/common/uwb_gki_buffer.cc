@@ -91,8 +91,16 @@ static bool phUwb_gki_alloc_free_queue(uint8_t id) {
   Q = &p_cb->freeq[p_cb->pool_list[id]];
 
   if (Q->p_first == 0) {
+    uint32_t requested_size;
+    bool overflow = __builtin_mul_overflow(Q->size + BUFFER_PADDING_SIZE,
+                                           Q->total, &requested_size);
+    if (overflow) {
+      phUwb_GKI_exception(GKI_ERROR_BUF_SIZE_TOOBIG,
+                         "gki_alloc_free_queue: Buffer overflow");
+      return false;
+    }
     void* p_mem =
-        phUwb_GKI_os_malloc((Q->size + BUFFER_PADDING_SIZE) * Q->total);
+        phUwb_GKI_os_malloc(requested_size);
     if (p_mem) {
       // re-initialize the queue with allocated memory
       phUwb_gki_init_free_queue(id, Q->size, Q->total, p_mem);
