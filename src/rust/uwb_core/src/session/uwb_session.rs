@@ -24,8 +24,8 @@ use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
-    UpdateMulticastListAction,
+    Controlee, ControleeStatus, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
+    SessionType, UpdateMulticastListAction,
 };
 use crate::uci::error::status_code_to_result;
 use crate::uci::uci_manager::UciManager;
@@ -306,7 +306,11 @@ impl<T: UciManager> UwbSessionActor<T> {
         }
 
         self.uci_manager
-            .session_update_controller_multicast_list(self.session_id, action, controlees)
+            .session_update_controller_multicast_list(
+                self.session_id,
+                action,
+                Controlees::NoSessionKey(controlees),
+            )
             .await?;
 
         // Wait for the notification of the update status.

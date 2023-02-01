@@ -1265,8 +1265,8 @@ mod tests {
             ),
             (AppConfigTlvType::DeviceRole, vec![device_role as u8]),
             (AppConfigTlvType::RframeConfig, vec![rframe_config as u8]),
-            (AppConfigTlvType::PreambleCodeIndex, vec![preamble_code_index as u8]),
-            (AppConfigTlvType::SfdId, vec![sfd_id as u8]),
+            (AppConfigTlvType::PreambleCodeIndex, vec![preamble_code_index]),
+            (AppConfigTlvType::SfdId, vec![sfd_id]),
             (AppConfigTlvType::PsduDataRate, vec![psdu_data_rate as u8]),
             (AppConfigTlvType::PreambleDuration, vec![preamble_duration as u8]),
             (AppConfigTlvType::RangingTimeStruct, vec![DEFAULT_RANGING_TIME_STRUCT as u8]),
@@ -1289,7 +1289,7 @@ mod tests {
             (AppConfigTlvType::ResultReportConfig, vec![result_report_config.as_u8()]),
             (
                 AppConfigTlvType::InBandTerminationAttemptCount,
-                vec![in_band_termination_attempt_count as u8],
+                vec![in_band_termination_attempt_count],
             ),
             (AppConfigTlvType::BprfPhrDataRate, vec![DEFAULT_BPRF_PHR_DATA_RATE as u8]),
             (

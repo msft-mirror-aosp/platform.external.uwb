@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -71,7 +71,11 @@ const tUWA_DM_ACTION uwa_dm_action[] = {
     uwa_dm_act_test_per_rx,       /* UWA_DM_API_TEST_PER_RX_EVT     */
     uwa_dm_act_test_uwb_loopback, /* UWA_DM_API_TEST_UWB_LOOPBACK_EVT */
     uwa_dm_act_test_rx,           /* UWA_DM_API_TEST_RX_EVT */
-    uwa_dm_act_test_stop_session  /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
+    uwa_dm_act_test_stop_session, /* UWA_DM_API_TEST_STOP_SESSION_EVT     */
+    /* API events for Data tranfer handling */
+    uwa_dm_act_send_data_frame,    /* UWA_DM_API_SEND_DATA_FRAME_EVT */
+    uwa_dm_act_configure_dt_anchor_rr_rdm, /* UWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_EVT */
+    uwa_dm_act_update_active_range_round_index /* UWA_DM_API_UPDATE_ACTIVE_RNG_INDEX_EVT */
 };
 
 /*****************************************************************************
