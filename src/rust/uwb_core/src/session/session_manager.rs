@@ -336,7 +336,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     );
                 }
             },
-            UciSessionNotification::RangeData(range_data) => {
+            UciSessionNotification::SessionInfo(range_data) => {
                 if self.active_sessions.get(&range_data.session_id).is_some() {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_id,
@@ -473,7 +473,7 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn range_data_notf(range_data: SessionRangeData) -> UciNotification {
-        UciNotification::Session(UciSessionNotification::RangeData(range_data))
+        UciNotification::Session(UciSessionNotification::SessionInfo(range_data))
     }
 
     pub(super) async fn setup_session_manager<F>(

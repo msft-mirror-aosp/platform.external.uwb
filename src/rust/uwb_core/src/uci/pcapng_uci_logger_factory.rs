@@ -486,7 +486,7 @@ mod tests {
         }
         // Expect no log file created as no packet is received.
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        assert!(fs::read(&log_path).is_err());
+        assert!(fs::read(log_path).is_err());
     }
 
     #[test]
@@ -515,7 +515,7 @@ mod tests {
         // Expect file log.pcapng consist of SHB->IDB(logger 0)->EPB(packet 0)->IDB(logger 1)
         // ->EPB(packet 1)->EPB(packet 2)
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 6);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -555,7 +555,7 @@ mod tests {
         // File 1: SHB->IDB->IDB->EPB (cannot fit next)
         // File 0: SHB->IDB->IDB->EPB
         let log_path = dir.as_ref().to_owned().join("log_2.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x6); // EPB
         assert_eq!(block_info[3].0, 0x1); // IDB
         let log_path = dir.as_ref().to_owned().join("log_1.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -571,7 +571,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x1); // IDB
         assert_eq!(block_info[3].0, 0x6); // EPB
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -608,7 +608,7 @@ mod tests {
         // File 1: SHB->IDB->EPB->EPB (cannot fit next)
         // File 0: SHB->IDB->IDB->EPB
         let log_path = dir.as_ref().to_owned().join("log_1.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -616,7 +616,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x6); // EPB
         assert_eq!(block_info[3].0, 0x6); // EPB
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
