@@ -193,7 +193,7 @@ extern void uwb_ucif_proc_rf_test_data(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
                                        uint16_t len);
 
 /* APIs for handling data transfer */
-extern void uwb_ucif_send_data_frame(uint32_t session_id,uint8_t addr_len, uint8_t* p_addr,
+extern void uwb_ucif_send_data_frame(uint32_t session_id, uint8_t* p_addr,
                                            uint16_t data_len, uint8_t* p_data);
 extern void uwb_ucif_proc_data_credit_ntf(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_data_transfer_status_ntf(uint8_t* p_buf, uint16_t len);

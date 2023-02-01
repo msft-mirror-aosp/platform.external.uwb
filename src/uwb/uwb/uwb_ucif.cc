@@ -35,14 +35,16 @@
 
 #define NORMAL_MODE_LENGTH_OFFSET 0x03
 #define DATA_PACKET_LEN_SHIFT 0x08
-#define EXTENDED_MODE_LEN_OFFSET 0x02
-#define EXTENDED_MODE_LEN_SHIFT 0x08
-#define EXTND_LEN_INDICATOR_OFFSET 0x01
-#define EXTND_LEN_INDICATOR_OFFSET_MASK  0x80
 #define TDOA_TX_TIMESTAMP_OFFSET         0x00FF
 #define TDOA_TX_TIMESTAMP_OFFSET_MASK    0x06
 #define TDOA_RX_TIMESTAMP_OFFSET         0x00FF
 #define TDOA_RX_TIMESTAMP_OFFSET_MASK    0x18
+#define ULTDOA_RX_TIMESTAMP_OFFSET       0xF0
+#define ULTDOA_RX_TIMESTAMP_OFFSET_MASK  0x30
+#define ULTDOA_DEVICE_ID_OFFSET          0x0F
+#define ULTDOA_DEVICE_ID_OFFSET_MASK     0X03
+#define ULTDOA_TX_TIMESTAMP_OFFSET       0x0F
+#define ULTDOA_TX_TIMESTAMP_OFFSET_MASK  0x0C
 #define TDOA_ANCHOR_LOC_OFFSET           0x00FF
 #define TDOA_ANCHOR_LOC_OFFSET_MASK      0x60
 #define TDOA_ACTIVE_RR_OFFSET            0x0FF0
@@ -55,6 +57,7 @@
 #define AOA_DEST_LEN 4
 #define CONFIG_TLV_OFFSET 2
 #define TWO_WAY_MEASUREMENT_LENGTH 31
+#define ULTDOA_MEASUREMENT_LENGTH 45
 #define ONE_WAY_MEASUREMENT_LENGTH 36
 #define RANGING_DATA_LENGTH 25
 
@@ -68,6 +71,23 @@
 #define TDOA_TX_TIMESTAMP_64BITS           2
 #define TDOA_RX_TIMESTAMP_40BITS           0
 #define TDOA_RX_TIMESTAMP_64BITS           8
+#define ULTDOA_TIMESTAMP_LEN               0
+#define ULTDOA_TIMESTAMP_LEN_40BITS        5
+#define ULTDOA_TIMESTAMP_LEN_64BITS        8
+#define ULTDOA_DEVICE_ID_LEN               0
+#define ULTDOA_DEVICE_ID_LEN_16BITS        2
+#define ULTDOA_DEVICE_ID_LEN_32BITS        4
+#define ULTDOA_DEVICE_ID_LEN_64BITS        8
+#define ULTDOA_RX_TIMESTAMP_40BITS         0
+#define ULTDOA_RX_TIMESTAMP_64BITS         20
+#define ULTDOA_DEVICE_ID_PRESCENCE         0
+#define ULTDOA_DEVICE_ID_16BITS            1
+#define ULTDOA_DEVICE_ID_32BITS            2
+#define ULTDOA_DEVICE_ID_64BITS            3
+#define ULTDOA_TX_TIMESTAMP_PRESENCE       0
+#define ULTDOA_TX_TIMESTAMP_40BITS         8
+#define ULTDOA_TX_TIMESTAMP_64BITS         4
+#define TDOA_ANCHOR_LOC_NOT_INCLUDED       0
 #define TDOA_ANCHOR_LOC_NOT_INCLUDED       0
 #define TDOA_ANCHOR_LOC_IN_RELATIVE_SYSTEM 0x40
 #define TDOA_ANCHOR_LOC_IN_WGS84_SYSTEM    0x20
@@ -75,10 +95,6 @@
 
 uint8_t last_cmd_buff[UCI_MAX_PAYLOAD_SIZE];
 uint8_t last_data_buff[4096];
-static uint8_t device_info_buffer[MAX_NUM_OF_TDOA_MEASURES]
-                                 [UCI_MAX_PAYLOAD_SIZE];
-static uint8_t blink_payload_buffer[MAX_NUM_OF_TDOA_MEASURES]
-                                   [UCI_MAX_PAYLOAD_SIZE];
 static uint8_t range_data_ntf_buffer[2048];
 static uint8_t range_data_ntf_len =0;
 
@@ -132,7 +148,6 @@ void uwb_ucif_cmd_timeout(void) {
     uwb_cb.cmd_retry_count++;
   } else {
     uwb_ucif_event_status(UWB_UWBS_RESP_TIMEOUT_REVT, UWB_STATUS_FAILED);
-    uwb_ucif_uwb_recovery();
   }
 }
 
@@ -240,12 +255,9 @@ void uwb_ucif_check_cmd_queue(UWB_HDR* p_buf) {
         uwb_cb.rawCmdCbflag = true;
       }
 
-      if(pbf) {
-        uwb_cb.rawCmdCbflag = false;
-      } else {
-        uwb_cb.uci_cmd_window--;
-      }
-      uwb_cb.is_resp_pending = !pbf;
+       /* Indicate command is pending */
+      uwb_cb.uci_cmd_window--;
+      uwb_cb.is_resp_pending = true;
       uwb_cb.cmd_retry_count = 0;
 
       /* send to HAL */
@@ -1107,10 +1119,6 @@ void uwb_ucif_proc_core_device_status(uint8_t* p_buf, uint16_t len) {
   uwb_cb.device_state = status;
 
   (*uwb_cb.p_resp_cback)(UWB_DEVICE_STATUS_REVT, &uwb_response);
-  if (status == UWBS_STATUS_ERROR || status == UWBS_STATUS_TIMEOUT) {
-    uwb_stop_quick_timer(&uwb_cb.uci_wait_rsp_timer);
-    uwb_ucif_uwb_recovery();
-  }
 }
 
 /*******************************************************************************
@@ -1186,10 +1194,10 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         "%s: MEASUREMENT_TYPE_TWOWAY Wrong number of measurements received:%d",
         __func__, sRange_data.no_of_measurements);
     return;
-  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ONEWAY &&
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ULTDOA &&
              sRange_data.no_of_measurements > MAX_NUM_OF_TDOA_MEASURES) {
     UCI_TRACE_E(
-        "%s: MEASUREMENT_TYPE_ONEWAY Wrong number of measurements received:%d",
+        "%s: MEASUREMENT_TYPE_ULTDOA Wrong number of measurements received:%d",
         __func__, sRange_data.no_of_measurements);
     return;
    } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_DLTDOA &&
@@ -1200,7 +1208,8 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
     return;
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_OWR_WITH_AOA &&
              sRange_data.no_of_measurements > MAX_NUM_OWR_AOA_MEASURES) {
-    UCI_TRACE_E("%s: MEASUREMENT_TYPE_OWR_WITH_AOA  Wrong number of measurements received:%d", __func__, sRange_data.no_of_measurements);
+    UCI_TRACE_E("%s: MEASUREMENT_TYPE_OWR_WITH_AOA  Wrong number of measurements received:%d",
+        __func__, sRange_data.no_of_measurements);
     return;
   }
   if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_TWOWAY) {
@@ -1270,20 +1279,21 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_azimuth_FOM, p);
       STREAM_TO_UINT16(dltdoa_range_measr->aoa_elevation, p);
       STREAM_TO_UINT8(dltdoa_range_measr->aoa_elevation_FOM, p);
+      STREAM_TO_UINT8(dltdoa_range_measr->rssi, p);
       txTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_TX_TIMESTAMP_OFFSET ) & (TDOA_TX_TIMESTAMP_OFFSET_MASK));
       if(txTimeStampValue == TDOA_TX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->txTimeStamp, p);
       } else if(txTimeStampValue == TDOA_TX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->txTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->txTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
         return;
       }
       rxTimeStampValue = ((dltdoa_range_measr->message_control & TDOA_RX_TIMESTAMP_OFFSET ) & (TDOA_RX_TIMESTAMP_OFFSET_MASK));
       if(rxTimeStampValue == TDOA_RX_TIMESTAMP_40BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_40BITS);
+        STREAM_TO_UINT40(dltdoa_range_measr->rxTimeStamp, p);
       } else if(rxTimeStampValue == TDOA_RX_TIMESTAMP_64BITS) {
-        STREAM_TO_ARRAY(&dltdoa_range_measr->rxTimeStamp[0], p, TDOA_TIMESTAMP_LEN_64BITS);
+        STREAM_TO_UINT64(dltdoa_range_measr->rxTimeStamp, p);
       } else {
         UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
         return;
@@ -1312,19 +1322,20 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         UCI_TRACE_D("%s: activeRangingRound not included", __func__);
       }
     }
-  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ONEWAY) {
+  } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_ULTDOA) {
     for (uint8_t i = 0; i < sRange_data.no_of_measurements; i++) {
       tUWA_TDoA_RANGING_MEASR* tdoa_range_measr =
           (tUWA_TDoA_RANGING_MEASR*)&sRange_data.ranging_measures
               .tdoa_range_measr[i];
-      uint16_t blink_payload_length = 0;
-      uint16_t device_info_length = 0;
-      if (ranging_measures_length < ONE_WAY_MEASUREMENT_LENGTH) {
+      if (ranging_measures_length < ULTDOA_MEASUREMENT_LENGTH) {
         UCI_TRACE_E("%s: Invalid ranging_measures_length = %x", __func__,
                     ranging_measures_length);
         return;
       }
-      ranging_measures_length -= ONE_WAY_MEASUREMENT_LENGTH;
+      uint16_t txTimeStampValue = 0;
+      uint16_t ultdoaDeviceIdValue = 0;
+      uint16_t rxTimeStampValue = 0;
+      ranging_measures_length -= ULTDOA_MEASUREMENT_LENGTH;
       if (sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
         STREAM_TO_ARRAY(&tdoa_range_measr->mac_addr[0], p, MAC_SHORT_ADD_LEN);
       } else if (sRange_data.mac_addr_mode_indicator == EXTENDED_MAC_ADDRESS) {
@@ -1333,45 +1344,47 @@ void uwb_ucif_proc_ranging_data(uint8_t* p, uint16_t len) {
         UCI_TRACE_E("%s: Invalid mac addressing indicator", __func__);
         return;
       }
+      STREAM_TO_UINT8(tdoa_range_measr->message_control, p);
       STREAM_TO_UINT8(tdoa_range_measr->frame_type, p);
       STREAM_TO_UINT8(tdoa_range_measr->nLos, p);
       STREAM_TO_UINT16(tdoa_range_measr->aoa_azimuth, p);
       STREAM_TO_UINT8(tdoa_range_measr->aoa_azimuth_FOM, p);
       STREAM_TO_UINT16(tdoa_range_measr->aoa_elevation, p);
       STREAM_TO_UINT8(tdoa_range_measr->aoa_elevation_FOM, p);
-      STREAM_TO_UINT64(tdoa_range_measr->timeStamp, p);
-      STREAM_TO_UINT32(tdoa_range_measr->blink_frame_number, p);
-      if (sRange_data.mac_addr_mode_indicator == SHORT_MAC_ADDRESS) {
-        STREAM_TO_ARRAY(&tdoa_range_measr->rfu[0], p, 12);
+      STREAM_TO_UINT32(tdoa_range_measr->frame_number, p);
+      rxTimeStampValue = ((tdoa_range_measr->message_control & ULTDOA_RX_TIMESTAMP_OFFSET ) & (ULTDOA_RX_TIMESTAMP_OFFSET_MASK));
+      if(rxTimeStampValue == ULTDOA_RX_TIMESTAMP_40BITS) {
+        STREAM_TO_ARRAY(&tdoa_range_measr->rxTimeStamp[0], p, ULTDOA_TIMESTAMP_LEN_40BITS);
+      } else if(rxTimeStampValue == ULTDOA_RX_TIMESTAMP_64BITS) {
+        STREAM_TO_ARRAY(&tdoa_range_measr->rxTimeStamp[0], p, ULTDOA_TIMESTAMP_LEN_64BITS);
       } else {
-        STREAM_TO_ARRAY(&tdoa_range_measr->rfu[0], p, 6);
-      }
-      STREAM_TO_UINT8(tdoa_range_measr->device_info_size, p);
-      device_info_length = tdoa_range_measr->device_info_size;
-      ranging_measures_length -= device_info_length;
-      if (ranging_measures_length < device_info_length) {
-        UCI_TRACE_E(
-            "%s: Invalid ranging_measures_length to copy device_info_length = "
-            "%x",
-            __func__, ranging_measures_length);
+        UCI_TRACE_E("%s: Invalid rxTimeStamp value", __func__);
         return;
       }
-      STREAM_TO_ARRAY(&device_info_buffer[i][0], p,
-                      tdoa_range_measr->device_info_size);
-      tdoa_range_measr->device_info = &device_info_buffer[i][0];
-      STREAM_TO_UINT8(tdoa_range_measr->blink_payload_size, p);
-      blink_payload_length = tdoa_range_measr->blink_payload_size;
-      ranging_measures_length -= blink_payload_length;
-      if (ranging_measures_length < blink_payload_length) {
-        UCI_TRACE_E(
-            "%s: Invalid ranging_measures_length to copy blink_payload_length "
-            "= %x",
-            __func__, ranging_measures_length);
-        return;
+      ultdoaDeviceIdValue = ((tdoa_range_measr->message_control & ULTDOA_DEVICE_ID_OFFSET ) & (ULTDOA_DEVICE_ID_OFFSET_MASK));
+      if(ultdoaDeviceIdValue > 0) {
+        if(ultdoaDeviceIdValue == ULTDOA_DEVICE_ID_16BITS) {
+          STREAM_TO_ARRAY(&tdoa_range_measr->ulTdoa_device_id[0], p, ULTDOA_DEVICE_ID_LEN_16BITS);
+        } else if(ultdoaDeviceIdValue == ULTDOA_DEVICE_ID_32BITS) {
+          STREAM_TO_ARRAY(&tdoa_range_measr->ulTdoa_device_id[0], p, ULTDOA_DEVICE_ID_LEN_32BITS);
+        } else if(ultdoaDeviceIdValue == ULTDOA_DEVICE_ID_64BITS) {
+          STREAM_TO_ARRAY(&tdoa_range_measr->ulTdoa_device_id[0], p, ULTDOA_DEVICE_ID_LEN_64BITS);
+        } else {
+          UCI_TRACE_E("%s: Invalid Device Id value", __func__);
+          return;
+        }
       }
-      STREAM_TO_ARRAY(&blink_payload_buffer[i][0], p,
-                      tdoa_range_measr->blink_payload_size);
-      tdoa_range_measr->blink_payload_data = &blink_payload_buffer[i][0];
+      txTimeStampValue = ((tdoa_range_measr->message_control & ULTDOA_TX_TIMESTAMP_OFFSET ) & (ULTDOA_TX_TIMESTAMP_OFFSET_MASK));
+      if(txTimeStampValue > 0) {
+        if(txTimeStampValue == ULTDOA_TX_TIMESTAMP_40BITS) {
+          STREAM_TO_ARRAY(&tdoa_range_measr->txTimeStamp[0], p, ULTDOA_TIMESTAMP_LEN_40BITS);
+        } else if(txTimeStampValue == ULTDOA_TX_TIMESTAMP_64BITS){
+          STREAM_TO_ARRAY(&tdoa_range_measr->txTimeStamp[0], p, ULTDOA_TIMESTAMP_LEN_64BITS);
+        } else {
+          UCI_TRACE_E("%s: Invalid txTimeStamp value", __func__);
+          return;
+        }
+      }
     }
   } else if (sRange_data.ranging_measure_type == MEASUREMENT_TYPE_OWR_WITH_AOA) {
     tUWA_OWR_WITH_AOA_RANGING_MEASR* owr_aoa_range_measr =

@@ -274,20 +274,17 @@ typedef struct {
 
 typedef struct {
   uint8_t mac_addr[8];
+  uint8_t message_control;
   uint8_t frame_type;
   uint8_t nLos; /* non line of sight */
   uint16_t aoa_azimuth;
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
-  uint64_t timeStamp;          /* Time stamp */
-  uint32_t blink_frame_number; /* blink frame number received from tag/master
-                                  anchor */
-  uint8_t rfu[TDOA_RANGE_MEASR_RFU];
-  uint8_t device_info_size;    /* Size of Device Specific Information */
-  uint8_t* device_info;        /* Device Specific Information */
-  uint8_t blink_payload_size;  /* Size of Blink Payload Data */
-  uint8_t* blink_payload_data; /* Blink Payload Data */
+  uint32_t frame_number; /* Number received in the payload of the Blink UTM  */
+  uint8_t rxTimeStamp[8]; /* Local RX timestamp of the received UWB RFRAME  */
+  uint8_t ulTdoa_device_id[8]; /* Device ID of the sender of the received UTM  */
+  uint8_t txTimeStamp[8]; /* TX timestamp of the UWB RFRAME   */
 } tUWB_TDoA_RANGING_MEASR;
 
 
@@ -309,8 +306,9 @@ typedef struct {
   uint8_t aoa_azimuth_FOM;
   uint16_t aoa_elevation;
   uint8_t aoa_elevation_FOM;
-  uint8_t txTimeStamp[8];
-  uint8_t rxTimeStamp[8];
+  uint8_t rssi;
+  uint64_t txTimeStamp;
+  uint64_t rxTimeStamp;
   uint16_t cfo_anchor;
   uint16_t cfo;
   uint32_t initiator_reply_time;
@@ -318,7 +316,7 @@ typedef struct {
   uint16_t initiator_responder_TOF;
   uint8_t anchor_location[12];
   uint8_t active_ranging_round[15];
-} tUWB_DLTDOA_RANGING_MEASR
+} tUWB_DLTDOA_RANGING_MEASR;
 
 typedef struct {
   uint8_t mac_addr[8];

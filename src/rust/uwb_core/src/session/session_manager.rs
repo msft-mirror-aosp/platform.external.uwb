@@ -336,7 +336,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     );
                 }
             },
-            UciSessionNotification::RangeData(range_data) => {
+            UciSessionNotification::SessionInfo(range_data) => {
                 if self.active_sessions.get(&range_data.session_id).is_some() {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_id,
@@ -473,7 +473,7 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn range_data_notf(range_data: SessionRangeData) -> UciNotification {
-        UciNotification::Session(UciSessionNotification::RangeData(range_data))
+        UciNotification::Session(UciSessionNotification::SessionInfo(range_data))
     }
 
     pub(super) async fn setup_session_manager<F>(
@@ -508,7 +508,7 @@ mod tests {
 
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
-        AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
+        AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
         SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
@@ -761,7 +761,7 @@ mod tests {
                 uci_manager.expect_session_update_controller_multicast_list(
                     session_id,
                     action,
-                    controlees_clone,
+                    Controlees::NoSessionKey(controlees_clone),
                     multicast_list_notf,
                     Ok(()),
                 );
@@ -846,7 +846,7 @@ mod tests {
                 uci_manager.expect_session_update_controller_multicast_list(
                     session_id,
                     action,
-                    controlees_clone,
+                    uwb_uci_packets::Controlees::NoSessionKey(controlees_clone),
                     vec![], // Not sending notification.
                     Ok(()),
                 );

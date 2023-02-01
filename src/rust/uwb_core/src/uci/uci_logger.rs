@@ -16,9 +16,10 @@
 use std::convert::TryFrom;
 
 use uwb_uci_packets::{
-    AppConfigTlv, AppConfigTlvType, SessionCommandChild, SessionGetAppConfigRspBuilder,
-    SessionResponseChild, SessionSetAppConfigCmdBuilder, UciCommandChild, UciCommandPacket,
-    UciControlPacketPacket, UciResponseChild, UciResponsePacket,
+    AppConfigTlv, AppConfigTlvType, Packet, SessionConfigCommandChild, SessionConfigResponseChild,
+    SessionGetAppConfigRspBuilder, SessionSetAppConfigCmdBuilder, UciCommandChild,
+    UciControlPacketChild, UciControlPacketPacket, UciDataPacketPacket, UciResponseChild,
+    UciResponsePacket, UCI_PACKET_HAL_HEADER_LEN,
 };
 
 use crate::error::{Error, Result};
@@ -50,8 +51,11 @@ impl TryFrom<String> for UciLoggerMode {
 
 /// Trait definition for the thread-safe uci logger
 pub trait UciLogger: 'static + Send + Sync {
-    /// Logs Uci Packet.
-    fn log_uci_packet(&mut self, packet: UciControlPacketPacket);
+    /// Logs Uci Control Packet.
+    fn log_uci_control_packet(&mut self, packet: UciControlPacketPacket);
+    /// Logs Uci Data Packet. This is being passed as a reference since most of the time logging is
+    /// disabled, and so this will avoid copying the data payload.
+    fn log_uci_data_packet(&mut self, packet: &UciDataPacketPacket);
     /// Logs hal open event.
     fn log_hal_open(&mut self, result: Result<()>);
     /// Logs hal close event.
@@ -65,16 +69,19 @@ fn filter_tlv(mut tlv: AppConfigTlv) -> AppConfigTlv {
     tlv
 }
 
-fn filter_uci_command(cmd: UciCommandPacket) -> UciCommandPacket {
+fn filter_uci_command(cmd: UciControlPacketPacket) -> UciControlPacketPacket {
     match cmd.specialize() {
-        UciCommandChild::SessionCommand(session_cmd) => match session_cmd.specialize() {
-            SessionCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
-                let session_id = set_config_cmd.get_session_id();
-                let tlvs = set_config_cmd.get_tlvs().to_owned();
-                let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
-                SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
-            }
-            _ => session_cmd.into(),
+        UciControlPacketChild::UciCommand(control_cmd) => match control_cmd.specialize() {
+            UciCommandChild::SessionConfigCommand(session_cmd) => match session_cmd.specialize() {
+                SessionConfigCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
+                    let session_id = set_config_cmd.get_session_id();
+                    let tlvs = set_config_cmd.get_tlvs().to_owned();
+                    let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
+                    SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
+                }
+                _ => session_cmd.into(),
+            },
+            _ => cmd,
         },
         _ => cmd,
     }
@@ -82,8 +89,8 @@ fn filter_uci_command(cmd: UciCommandPacket) -> UciCommandPacket {
 
 fn filter_uci_response(rsp: UciResponsePacket) -> UciResponsePacket {
     match rsp.specialize() {
-        UciResponseChild::SessionResponse(session_rsp) => match session_rsp.specialize() {
-            SessionResponseChild::SessionGetAppConfigRsp(rsp) => {
+        UciResponseChild::SessionConfigResponse(session_rsp) => match session_rsp.specialize() {
+            SessionConfigResponseChild::SessionGetAppConfigRsp(rsp) => {
                 let status = rsp.get_status();
                 let tlvs = rsp.get_tlvs().to_owned();
                 let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
@@ -93,6 +100,20 @@ fn filter_uci_response(rsp: UciResponsePacket) -> UciResponsePacket {
         },
         _ => rsp,
     }
+}
+
+// Log only the Data Packet header bytes, so that we don't log any PII (payload bytes).
+fn filter_uci_data(
+    packet: &UciDataPacketPacket,
+) -> std::result::Result<UciDataPacketPacket, uwb_uci_packets::Error> {
+    // Initialize a (zeroed out) Vec to the same length as the data packet, and then copy over
+    // only the Data Packet header bytes into it. This masks out all the payload bytes to 0.
+    let data_packet_bytes: Vec<u8> = packet.clone().to_vec();
+    let mut filtered_data_packet_bytes: Vec<u8> = vec![0; data_packet_bytes.len()];
+    for (i, &b) in data_packet_bytes[..UCI_PACKET_HAL_HEADER_LEN].iter().enumerate() {
+        filtered_data_packet_bytes[i] = b;
+    }
+    UciDataPacketPacket::parse(&filtered_data_packet_bytes)
 }
 
 /// Wrapper struct that filters messages feeded to UciLogger.
@@ -127,13 +148,13 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
         match self.mode {
             UciLoggerMode::Disabled => (),
             UciLoggerMode::Unfiltered => {
-                if let Ok(packet) = UciCommandPacket::try_from(cmd.clone()) {
-                    self.logger.log_uci_packet(packet.into());
+                if let Ok(packet) = UciControlPacketPacket::try_from(cmd.clone()) {
+                    self.logger.log_uci_control_packet(packet);
                 };
             }
             UciLoggerMode::Filtered => {
-                if let Ok(packet) = UciCommandPacket::try_from(cmd.clone()) {
-                    self.logger.log_uci_packet(filter_uci_command(packet).into());
+                if let Ok(packet) = UciControlPacketPacket::try_from(cmd.clone()) {
+                    self.logger.log_uci_control_packet(filter_uci_command(packet));
                 };
             }
         }
@@ -142,16 +163,25 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
     pub fn log_uci_response_or_notification(&mut self, packet: &UciControlPacketPacket) {
         match self.mode {
             UciLoggerMode::Disabled => (),
-            UciLoggerMode::Unfiltered => self.logger.log_uci_packet(packet.clone()),
+            UciLoggerMode::Unfiltered => self.logger.log_uci_control_packet(packet.clone()),
             UciLoggerMode::Filtered => match packet.clone().specialize() {
                 uwb_uci_packets::UciControlPacketChild::UciResponse(packet) => {
-                    self.logger.log_uci_packet(filter_uci_response(packet).into())
+                    self.logger.log_uci_control_packet(filter_uci_response(packet).into())
                 }
                 uwb_uci_packets::UciControlPacketChild::UciNotification(packet) => {
-                    self.logger.log_uci_packet(packet.into())
+                    self.logger.log_uci_control_packet(packet.into())
                 }
                 _ => (),
             },
+        }
+    }
+
+    pub fn log_uci_data(&mut self, packet: &UciDataPacketPacket) {
+        if self.mode == UciLoggerMode::Disabled {
+            return;
+        }
+        if let Ok(filtered_packet) = filter_uci_data(packet) {
+            self.logger.log_uci_data_packet(&filtered_packet);
         }
     }
 }
@@ -161,7 +191,9 @@ impl<T: UciLogger> UciLoggerWrapper<T> {
 pub struct NopUciLogger {}
 
 impl UciLogger for NopUciLogger {
-    fn log_uci_packet(&mut self, _packet: UciControlPacketPacket) {}
+    fn log_uci_control_packet(&mut self, _packet: UciControlPacketPacket) {}
+
+    fn log_uci_data_packet(&mut self, _packet: &UciDataPacketPacket) {}
 
     fn log_hal_open(&mut self, _result: Result<()>) {}
 

@@ -223,7 +223,6 @@ typedef struct {
 typedef struct {
   UWB_HDR hdr;
   uint32_t session_id;
-  uint8_t addr_len;
   uint8_t p_addr[EXTENDED_ADDRESS_LEN];
   uint8_t dest_end_point;
   uint8_t sequence_num;
