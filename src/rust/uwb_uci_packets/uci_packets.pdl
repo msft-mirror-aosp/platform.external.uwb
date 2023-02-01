@@ -8,7 +8,7 @@ enum PacketBoundaryFlag : 1 {
 enum GroupId : 4 {
     CORE = 0x00,
     SESSION_CONFIG = 0x01,
-    RANGING_SESSION_CONTROL = 0x02,
+    SESSION_CONTROL = 0x02,
     DATA_CONTROL = 0x03,
     TEST = 0x0d,
     VENDOR_RESERVED_9 = 0x09,
@@ -29,7 +29,7 @@ enum DataPacketFormat: 4 {
 enum GroupIdOrDataPacketFormat : 4 {
     CORE = 0x00,
     SESSION_CONFIG_OR_DATA_SND = 0x01,
-    RANGING_SESSION_CONTROL_OR_DATA_RCV = 0x02,
+    SESSION_CONTROL_OR_DATA_RCV = 0x02,
     DATA_CONTROL = 0x03,
     TEST = 0x0d,
     VENDOR_RESERVED_9 = 0x09,
@@ -51,7 +51,7 @@ enum CoreOpCode : 6 {
     CORE_GENERIC_ERROR_NTF = 0x07,
 }
 
-enum SessionOpCode : 6 {
+enum SessionConfigOpCode : 6 {
     SESSION_INIT = 0x00,
     SESSION_DEINIT = 0x01,
     SESSION_STATUS_NTF = 0x02,
@@ -60,14 +60,20 @@ enum SessionOpCode : 6 {
     SESSION_GET_COUNT = 0x05,
     SESSION_GET_STATE = 0x06,
     SESSION_UPDATE_CONTROLLER_MULTICAST_LIST = 0x07,
-    SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG = 0X09,
+    SESSION_UPDATE_ACTIVE_ROUNDS_ANCHOR = 0x08,
+    SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG = 0x09,
+    SESSION_SET_INITIATOR_DT_ANCHOR_RR_RDM_LIST = 0x0a,
+    SESSION_QUERY_DATA_SIZE_IN_RANGING = 0x0b,
+    SESSION_SET_HUS_CONFIG = 0x0c,
 }
 
-enum RangeOpCode : 6 {
-    RANGE_START = 0x00,
-    RANGE_STOP = 0x01,
-    RANGE_INTERVAL_UPDATE_REQ = 0x02,
-    RANGE_GET_RANGING_COUNT = 0x03,
+enum SessionControlOpCode : 6 {
+    SESSION_START = 0x00,
+    SESSION_STOP = 0x01,
+    SESSION_RESERVED = 0x02,
+    SESSION_GET_RANGING_COUNT = 0x03,
+    SESSION_DATA_CREDIT_NTF = 0x04,
+    SESSION_DATA_TRANSFER_STATUS_NTF = 0x05,
 }
 
 enum AppDataOpCode : 6 {
@@ -461,27 +467,27 @@ packet CoreNotification : UciNotification (group_id = CORE) {
     _body_,
 }
 
-packet SessionCommand : UciCommand (group_id = SESSION_CONFIG) {
+packet SessionConfigCommand : UciCommand (group_id = SESSION_CONFIG) {
     _body_,
 }
 
-packet SessionResponse : UciResponse (group_id = SESSION_CONFIG) {
+packet SessionConfigResponse : UciResponse (group_id = SESSION_CONFIG) {
     _body_,
 }
 
-packet SessionNotification : UciNotification (group_id = SESSION_CONFIG) {
+packet SessionConfigNotification : UciNotification (group_id = SESSION_CONFIG) {
     _body_,
 }
 
-packet RangingCommand : UciCommand (group_id = RANGING_SESSION_CONTROL) {
+packet SessionControlCommand : UciCommand (group_id = SESSION_CONTROL) {
     _body_,
 }
 
-packet RangingResponse : UciResponse (group_id = RANGING_SESSION_CONTROL) {
+packet SessionControlResponse : UciResponse (group_id = SESSION_CONTROL) {
     _body_,
 }
 
-packet RangingNotification : UciNotification (group_id = RANGING_SESSION_CONTROL) {
+packet SessionControlNotification : UciNotification (group_id = SESSION_CONTROL) {
     _body_,
 }
 
@@ -626,7 +632,7 @@ test GenericError {
     "\x60\x07\x00\x01\x00\x00\x00\x01",
 }
 
-packet SessionInitCmd : SessionCommand (opcode = 0x0) { //SESSION_INIT
+packet SessionInitCmd : SessionConfigCommand (opcode = 0x0) { //SESSION_INIT
     session_id: 32,
     session_type: SessionType,
 }
@@ -635,7 +641,7 @@ test SessionInitCmd {
     "\x21\x00\x00\x05\x00\x00\x00\x01\x02\x03\x04\x01",
 }
 
-packet SessionInitRsp : SessionResponse (opcode = 0x0) { //SESSION_INIT
+packet SessionInitRsp : SessionConfigResponse (opcode = 0x0) { //SESSION_INIT
     status: StatusCode,
 }
 
@@ -643,7 +649,7 @@ test SessionInitRsp {
     "\x41\x00\x00\x01\x00\x00\x00\x11",
 }
 
-packet SessionDeinitCmd : SessionCommand (opcode = 0x1) { //SESSION_DEINIT
+packet SessionDeinitCmd : SessionConfigCommand (opcode = 0x1) { //SESSION_DEINIT
     session_id: 32,
 }
 
@@ -651,7 +657,7 @@ test SessionDeinitCmd {
     "\x21\x01\x00\x04\x00\x00\x00\x01\x02\x03\x04",
 }
 
-packet SessionDeinitRsp : SessionResponse (opcode = 0x1) { //SESSION_DEINIT
+packet SessionDeinitRsp : SessionConfigResponse (opcode = 0x1) { //SESSION_DEINIT
     status: StatusCode,
 }
 
@@ -659,7 +665,7 @@ test SessionDeinitRsp {
     "\x41\x01\x00\x01\x00\x00\x00\x00",
 }
 
-packet SessionStatusNtf : SessionNotification (opcode = 0x2) { //SESSION_STATUS_NTF
+packet SessionStatusNtf : SessionConfigNotification (opcode = 0x2) { //SESSION_STATUS_NTF
     session_id: 32,
     session_state: SessionState,
     reason_code: ReasonCode,
@@ -675,7 +681,7 @@ struct AppConfigTlv {
     v: 8[],
 }
 
-packet SessionSetAppConfigCmd : SessionCommand (opcode = 0x3) { //SESSION_SET_APP_CONFIG
+packet SessionSetAppConfigCmd : SessionConfigCommand (opcode = 0x3) { //SESSION_SET_APP_CONFIG
     session_id: 32,
     _count_(tlvs): 8,
     tlvs: AppConfigTlv[]
@@ -690,7 +696,7 @@ struct AppConfigStatus {
     status: StatusCode,
 }
 
-packet SessionSetAppConfigRsp : SessionResponse (opcode = 0x3) { //SESSION_SET_APP_CONFIG
+packet SessionSetAppConfigRsp : SessionConfigResponse (opcode = 0x3) { //SESSION_SET_APP_CONFIG
     status: StatusCode,
     _count_(cfg_status): 8,
     cfg_status: AppConfigStatus[],
@@ -700,7 +706,7 @@ test SessionSetAppConfigRsp {
     "\x41\x03\x00\x04\x00\x00\x00\x01\x01\x01\x00",
 }
 
-packet SessionGetAppConfigCmd : SessionCommand (opcode = 0x4) { //SESSION_GET_APP_CONFIG
+packet SessionGetAppConfigCmd : SessionConfigCommand (opcode = 0x4) { //SESSION_GET_APP_CONFIG
     session_id: 32,
     _count_(app_cfg): 8,
     app_cfg: 8[], // AppConfigTlvType (Infra does not allow array of enums)
@@ -710,7 +716,7 @@ test SessionGetAppConfigCmd {
     "\x21\x04\x00\x05\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
-packet SessionGetAppConfigRsp : SessionResponse (opcode = 0x4) { //SESSION_GET_APP_CONFIG
+packet SessionGetAppConfigRsp : SessionConfigResponse (opcode = 0x4) { //SESSION_GET_APP_CONFIG
     status: StatusCode,
     _count_(tlvs): 8,
     tlvs: AppConfigTlv[],
@@ -720,14 +726,14 @@ test SessionGetAppConfigRsp {
     "\x41\x04\x00\x02\x00\x00\x00\x01\x00",
 }
 
-packet SessionGetCountCmd : SessionCommand (opcode = 0x5) { //SESSION_GET_COUNT
+packet SessionGetCountCmd : SessionConfigCommand (opcode = 0x5) { //SESSION_GET_COUNT
 }
 
 test SessionGetCountCmd {
     "\x21\x05\x00\x00\x00\x00\x00",
 }
 
-packet SessionGetCountRsp : SessionResponse (opcode = 0x5) { //SESSION_GET_COUNT
+packet SessionGetCountRsp : SessionConfigResponse (opcode = 0x5) { //SESSION_GET_COUNT
     status: StatusCode,
     session_count: 8,
 }
@@ -736,7 +742,7 @@ test SessionGetCountRsp {
     "\x41\x05\x00\x02\x00\x00\x00\x00\x01",
 }
 
-packet SessionGetStateCmd : SessionCommand (opcode = 0x6) { //SESSION_GET_STATE
+packet SessionGetStateCmd : SessionConfigCommand (opcode = 0x6) { //SESSION_GET_STATE
     session_id: 32,
 }
 
@@ -744,7 +750,7 @@ test SessionGetStateCmd {
     "\x21\x06\x00\x04\x00\x00\x00\x00\x01\x02\x03",
 }
 
-packet SessionGetStateRsp : SessionResponse (opcode = 0x6) { //SESSION_GET_STATE
+packet SessionGetStateRsp : SessionConfigResponse (opcode = 0x6) { //SESSION_GET_STATE
     status: StatusCode,
     session_state: SessionState,
 }
@@ -753,7 +759,7 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
-packet SessionUpdateActiveRoundsDtTagCmd : SessionCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateActiveRoundsDtTagCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     session_id: 32,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
@@ -763,7 +769,7 @@ test SessionUpdateActiveRoundsDtTagCmd {
     "\x21\x09\x00\x0a\x00\x00\x00\x03\x03\x0f\x0c\x05\x08\x00\x00\x00\x00",
 }
 
-packet SessionUpdateActiveRoundsDtTagRsp : SessionResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateActiveRoundsDtTagRsp : SessionConfigResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     status: StatusCode,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
@@ -797,7 +803,7 @@ enum UpdateMulticastListAction: 8 {
     ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 0x03,
 }
 
-packet SessionUpdateControllerMulticastListCmd : SessionCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+packet SessionUpdateControllerMulticastListCmd : SessionConfigCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_id: 32,
     action: UpdateMulticastListAction,
     _payload_,
@@ -818,7 +824,7 @@ struct SessionUpdateControllerMulticastListCmd_2_0_32_Byte_Payload {
     controlees: Controlee_V2_0_32_Byte_Version[],
 }
 
-packet SessionUpdateControllerMulticastListRsp : SessionResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+packet SessionUpdateControllerMulticastListRsp : SessionConfigResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     status: StatusCode,
 }
 
@@ -832,7 +838,7 @@ struct ControleeStatus {
     status: MulticastUpdateStatusCode,
 }
 
-packet SessionUpdateControllerMulticastListNtf : SessionNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
+packet SessionUpdateControllerMulticastListNtf : SessionConfigNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_id: 32,
     remaining_multicast_list_size: 8,
     _count_(controlee_status): 8,
@@ -843,20 +849,19 @@ test SessionUpdateControllerMulticastListNtf {
     "\x61\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
-
-packet RangeStartCmd : RangingCommand (opcode = 0x0) { //RANGE_START
+packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
     session_id: 32,
 }
 
-test RangeStartCmd {
+test SessionStartCmd {
     "\x22\x00\x00\x04\x00\x00\x00\x00\x01\x02\x03",
 }
 
-packet RangeStartRsp : RangingResponse (opcode = 0x0) { //RANGE_START
+packet SessionStartRsp : SessionControlResponse (opcode = 0x0) { //RANGE_START
     status: StatusCode,
 }
 
-test RangeStartRsp {
+test SessionStartRsp {
     "\x42\x00\x00\x01\x00\x00\x00\x00",
 }
 
@@ -927,7 +932,7 @@ enum RangingMeasurementType : 8 {
     OWR_AOA = 0x03,
 }
 
-packet RangeDataNtf : RangingNotification (opcode = 0x0) { //RANGE_START
+packet SessionInfoNtf : SessionControlNotification (opcode = 0x0) { // SESSION_INFO
     sequence_number: 32,
     session_id: 32,
     rcr_indicator: 8,
@@ -939,84 +944,84 @@ packet RangeDataNtf : RangingNotification (opcode = 0x0) { //RANGE_START
     _body_,
 }
 
-packet ShortMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
+packet ShortMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ShortAddressTwoWayRangingMeasurement[],
 }
 
-test ShortMacTwoWayRangeDataNtf {
+test ShortMacTwoWaySessionInfoNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-packet ExtendedMacTwoWayRangeDataNtf : RangeDataNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
+packet ExtendedMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ExtendedAddressTwoWayRangingMeasurement[],
 }
 
-test ExtendedMacTwoWayRangeDataNtf {
+test ExtendedMacTwoWaySessionInfoNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
-packet ShortMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
+packet ShortMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
     no_of_ranging_measurements : 8,
     _payload_,
 }
 
-packet ExtendedMacDlTDoARangeDataNtf : RangeDataNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
+packet ExtendedMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
     no_of_ranging_measurements : 8,
     _payload_,
 }
 
-packet ShortMacOwrAoaRangeDataNtf : RangeDataNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
+packet ShortMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ShortAddressOwrAoaRangingMeasurement[],
 }
 
-test ShortMacOwrAoaRangeDataNtf {
+test ShortMacOwrAoaSessionInfoNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
     "\x62\x00\x00\x26\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xaa\xbb\x00\x00\x01\x01\x00\x03\x04\x60\x05\x06\x50",
 }
 
-packet ExtendedMacOwrAoaRangeDataNtf : RangeDataNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = EXTENDED_ADDRESS) {
+packet ExtendedMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ExtendedAddressOwrAoaRangingMeasurement[],
 }
 
-test ExtendedMacOwrAoaRangeDataNtf {
+test ExtendedMacOwrAoaSessionInfoNtf {
     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
     "\x62\x00\x00\x2c\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x03\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\xaa\xbb\xcc\xdd\x01\x02\x03\x04\x00\x00\x01\x01\x00\x03\x04\x60\x05\x06\x50",
 }
 
-packet RangeStopCmd : RangingCommand (opcode = 0x1) { //RANGE_STOP
+packet SessionStopCmd : SessionControlCommand (opcode = 0x1) { // SESSION_STOP
     session_id: 32,
 }
 
-test RangeStopCmd {
+test SessionStopCmd {
     "\x22\x01\x00\x04\x00\x00\x00\x00\x02\x03\x04",
 }
 
-packet RangeStopRsp : RangingResponse (opcode = 0x1) { //RANGE_STOP
+packet SessionStopRsp : SessionControlResponse (opcode = 0x1) { // SESSION_STOP
     status: StatusCode,
 }
 
-test RangeStopRsp {
+test SessionStopRsp {
     "\x42\x01\x00\x01\x00\x00\x00\x00",
 }
 
-packet RangeGetRangingCountCmd : RangingCommand (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
+packet SessionGetRangingCountCmd : SessionControlCommand (opcode = 0x3) { // SESSION_GET_RANGING_COUNT
     session_id: 32,
 }
 
-test RangeGetRangingCountCmd {
+test SessionGetRangingCountCmd {
     "\x22\x03\x00\x04\x00\x00\x00\x00\x02\x03\x04",
 }
 
-packet RangeGetRangingCountRsp : RangingResponse (opcode = 0x3) { //RANGE_GET_RANGING_COUNT
+packet SessionGetRangingCountRsp : SessionControlResponse (opcode = 0x3) { // SESSION_GET_RANGING_COUNT
     status: StatusCode,
     count: 32,
 }
 
-test RangeGetRangingCountRsp {
+test SessionGetRangingCountRsp {
     "\x42\x03\x00\x05\x00\x00\x00\x00\x02\x03\x04\x05",
 }
 
