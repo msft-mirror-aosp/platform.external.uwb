@@ -16,10 +16,10 @@
 use std::convert::TryFrom;
 
 use uwb_uci_packets::{
-    AppConfigTlv, AppConfigTlvType, Packet, SessionCommandChild, SessionGetAppConfigRspBuilder,
-    SessionResponseChild, SessionSetAppConfigCmdBuilder, UciCommandChild, UciControlPacketChild,
-    UciControlPacketPacket, UciDataPacketPacket, UciResponseChild, UciResponsePacket,
-    UCI_PACKET_HAL_HEADER_LEN,
+    AppConfigTlv, AppConfigTlvType, Packet, SessionConfigCommandChild, SessionConfigResponseChild,
+    SessionGetAppConfigRspBuilder, SessionSetAppConfigCmdBuilder, UciCommandChild,
+    UciControlPacketChild, UciControlPacketPacket, UciDataPacketPacket, UciResponseChild,
+    UciResponsePacket, UCI_PACKET_HAL_HEADER_LEN,
 };
 
 use crate::error::{Error, Result};
@@ -72,8 +72,8 @@ fn filter_tlv(mut tlv: AppConfigTlv) -> AppConfigTlv {
 fn filter_uci_command(cmd: UciControlPacketPacket) -> UciControlPacketPacket {
     match cmd.specialize() {
         UciControlPacketChild::UciCommand(control_cmd) => match control_cmd.specialize() {
-            UciCommandChild::SessionCommand(session_cmd) => match session_cmd.specialize() {
-                SessionCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
+            UciCommandChild::SessionConfigCommand(session_cmd) => match session_cmd.specialize() {
+                SessionConfigCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
                     let session_id = set_config_cmd.get_session_id();
                     let tlvs = set_config_cmd.get_tlvs().to_owned();
                     let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
@@ -89,8 +89,8 @@ fn filter_uci_command(cmd: UciControlPacketPacket) -> UciControlPacketPacket {
 
 fn filter_uci_response(rsp: UciResponsePacket) -> UciResponsePacket {
     match rsp.specialize() {
-        UciResponseChild::SessionResponse(session_rsp) => match session_rsp.specialize() {
-            SessionResponseChild::SessionGetAppConfigRsp(rsp) => {
+        UciResponseChild::SessionConfigResponse(session_rsp) => match session_rsp.specialize() {
+            SessionConfigResponseChild::SessionGetAppConfigRsp(rsp) => {
                 let status = rsp.get_status();
                 let tlvs = rsp.get_tlvs().to_owned();
                 let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
