@@ -414,6 +414,31 @@ message RangingMeasurement {
   OwrAoaStatusCode owr_aoa_status_code = 17;
 }
 
+// Represent uwb_uci_packets::ShortAddressDlTdoaRangingMeasurement or
+// uwb_uci_packets::ExtendedAddressDlTdoaRangingMeasurement.
+message DlTDoARangingMeasurement {
+  uint64 mac_address = 1;
+  StatusCode status = 2;
+  uint32 message_control = 3;
+  uint32 block_index = 4;
+  uint32 round_index = 5;
+  uint32 nlos = 6;
+  uint32 aoa_azimuth = 7;
+  uint32 aoa_azimuth_fom = 8;
+  uint32 aoa_elevation = 9;
+  uint32 aoa_elevation_fom = 10;
+  uint32 rssi = 11;
+  uint64 tx_timestamp = 12;
+  uint64 rx_timestamp = 13;
+  uint32 anchor_cfo = 14;
+  uint32 cfo = 15;
+  uint32 initiator_reply_time = 16;
+  uint32 responder_reply_time = 17;
+  uint32 initiator_responder_tof = 18;
+  repeated uint32 dt_anchor_location = 19;
+  repeated uint32 ranging_rounds = 20;
+}
+
 // Represent uwb_core::uci::notification::SessionRangeData;
 message SessionRangeData {
   uint32 sequence_number = 1;
@@ -421,6 +446,7 @@ message SessionRangeData {
   uint32 current_ranging_interval_ms = 3;
   RangingMeasurementType ranging_measurement_type = 4;
   repeated RangingMeasurement ranging_measurements = 5;
+  repeated DlTDoARangingMeasurement dltdoa_ranging_measurements = 6;
 }
 
 // Represent uwb_uci_packets::PowerStats;
@@ -549,6 +575,7 @@ message SendVendorCmdRequest {
   uint32 gid = 1;
   uint32 oid = 2;
   bytes payload = 3;
+  uint32 mt = 4;
 }
 
 // Response of the UwbService::SendVendorCmd() method.
