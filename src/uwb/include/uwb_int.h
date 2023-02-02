@@ -34,6 +34,7 @@
 /* UWB Timer events */
 #define UWB_TTYPE_UCI_WAIT_RSP 0x00
 #define UWB_WAIT_RSP_RAW_CMD 0x01
+#define UWB_TTYPE_UCI_WAIT_DATA_NTF 0x02
 
 #define UWB_SAVED_HDR_SIZE 2
 
@@ -97,10 +98,40 @@ typedef struct {
   uint8_t device_state;
 
   uint16_t cmd_retry_count;
+  uint8_t invalid_len_cmd_retry_cnt;
   UWB_HDR* pLast_cmd_buf;
 
+  UWB_HDR* pLast_data_buf;
+  uint8_t data_pkt_retry_count;
+  bool is_credit_ntf_pending;
+
   bool IsConformaceTestEnabled; /* MCTT mode indicator */
+
+  uint8_t data_credits; /* number of buffer credits */
+  TIMER_LIST_ENT
+  uci_wait_credit_ntf_timer;        /* Timer for waiting for uci credit ntf */
+  uint16_t uci_credit_ntf_timeout;  /* UCI credit timeout (in ms) */
+  bool is_first_frgmnt_done;     /*flag indicates recieved pbf=1 uci pkt before*/
 } tUWB_CB;
+
+typedef struct {
+ DATA_BUFFER_Q tx_data_pkt[5];
+ uint8_t no_of_sessions;
+ uint32_t curr_session_id;
+ uint8_t curr_session_idx;
+ uint16_t  max_data_pkt_payload_size;
+ uint16_t  max_msg_size;
+}tDATA_TX_CB;
+
+struct chained_uci_packet {
+  uint8_t buffer[UCI_MAX_FRAGMENT_BUFF_SIZE];
+  uint8_t oid;
+  uint8_t gid;
+  uint16_t offset;
+};
+
+typedef struct chained_uci_packet chained_uci_packet;
+extern chained_uci_packet chained_packet;
 
 /*****************************************************************************
  **  EXTERNAL FUNCTION DECLARATIONS
@@ -108,6 +139,7 @@ typedef struct {
 
 /* Global UWB data */
 extern tUWB_CB uwb_cb;
+extern tDATA_TX_CB data_tx_cb;
 
 /****************************************************************************
  ** Internal uwb functions
@@ -160,6 +192,15 @@ extern void uwb_ucif_proc_test_set_config_status(uint8_t* p_buf, uint16_t len);
 extern void uwb_ucif_proc_rf_test_data(tUWB_RESPONSE_EVT event, uint8_t* p_buf,
                                        uint16_t len);
 
+/* APIs for handling data transfer */
+extern void uwb_ucif_send_data_frame(uint32_t session_id, uint8_t* p_addr,
+                                           uint16_t data_len, uint8_t* p_data);
+extern void uwb_ucif_proc_data_credit_ntf(uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_proc_data_transfer_status_ntf(uint8_t* p_buf, uint16_t len);
+extern void uci_ucif_proc_data_packet(uint8_t* p_buf, uint16_t len);
+extern void uwb_ucif_credit_ntf_timeout(void);
+extern void uwb_ucif_send_data_frame(UWB_HDR* p_data);
+
 /* From uwb_task.c */
 extern uint32_t uwb_task(uint32_t param);
 void uwb_task_shutdown_uwbc(void);
@@ -168,6 +209,7 @@ void uwb_task_shutdown_uwbc(void);
 void uwb_enabled(tUWB_STATUS uwb_status, UWB_HDR* p_init_rsp_msg);
 void uwb_set_state(tUWB_STATE uwb_state);
 void uwb_main_flush_cmd_queue(void);
+void uwb_main_flush_data_queue(void);
 void uwb_main_handle_hal_evt(tUWB_HAL_EVT_MSG* p_msg);
 void uwb_gen_cleanup(void);
 
