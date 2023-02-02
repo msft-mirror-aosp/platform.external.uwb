@@ -376,27 +376,27 @@ impl UciManager for UciManagerImpl {
     }
 
     async fn range_start(&self, session_id: SessionId) -> Result<()> {
-        let cmd = UciCommand::RangeStart { session_id };
+        let cmd = UciCommand::SessionStart { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::RangeStart(resp)) => resp,
+            Ok(UciResponse::SessionStart(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
 
     async fn range_stop(&self, session_id: SessionId) -> Result<()> {
-        let cmd = UciCommand::RangeStop { session_id };
+        let cmd = UciCommand::SessionStop { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::RangeStop(resp)) => resp,
+            Ok(UciResponse::SessionStop(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
     }
 
     async fn range_get_ranging_count(&self, session_id: SessionId) -> Result<usize> {
-        let cmd = UciCommand::RangeGetRangingCount { session_id };
+        let cmd = UciCommand::SessionGetRangingCount { session_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::RangeGetRangingCount(resp)) => resp,
+            Ok(UciResponse::SessionGetRangingCount(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -1385,8 +1385,8 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RangeStart { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeStartRspBuilder {
+                let cmd = UciCommand::SessionStart { session_id };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionStartRspBuilder {
                     status: uwb_uci_packets::StatusCode::UciStatusOk,
                 });
 
@@ -1408,8 +1408,8 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RangeStop { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeStopRspBuilder {
+                let cmd = UciCommand::SessionStop { session_id };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionStopRspBuilder {
                     status: uwb_uci_packets::StatusCode::UciStatusOk,
                 });
 
@@ -1432,11 +1432,12 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::RangeGetRangingCount { session_id };
-                let resp = into_uci_hal_packets(uwb_uci_packets::RangeGetRangingCountRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    count,
-                });
+                let cmd = UciCommand::SessionGetRangingCount { session_id };
+                let resp =
+                    into_uci_hal_packets(uwb_uci_packets::SessionGetRangingCountRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                        count,
+                    });
 
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
