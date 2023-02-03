@@ -352,12 +352,14 @@ impl MockUciManager {
     /// MockUciManager expects call with parameters, returns out as response.
     pub fn expect_raw_uci_cmd(
         &mut self,
+        expected_mt: u32,
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
         out: Result<RawUciMessage>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::RawUciCmd {
+            expected_mt,
             expected_gid,
             expected_oid,
             expected_payload,
@@ -798,11 +800,25 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
+    async fn raw_uci_cmd(
+        &self,
+        mt: u32,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawUciMessage> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::RawUciCmd { expected_gid, expected_oid, expected_payload, out })
-                if expected_gid == gid && expected_oid == oid && expected_payload == payload =>
+            Some(ExpectedCall::RawUciCmd {
+                expected_mt,
+                expected_gid,
+                expected_oid,
+                expected_payload,
+                out,
+            }) if expected_mt == mt
+                && expected_gid == gid
+                && expected_oid == oid
+                && expected_payload == payload =>
             {
                 self.expect_call_consumed.notify_one();
                 out
@@ -907,6 +923,7 @@ enum ExpectedCall {
         out: Result<PowerStats>,
     },
     RawUciCmd {
+        expected_mt: u32,
         expected_gid: u32,
         expected_oid: u32,
         expected_payload: Vec<u8>,
