@@ -46,6 +46,9 @@ pub enum Error {
     /// Duplicated SessionId.
     #[error("Duplicated SessionId")]
     DuplicatedSessionId,
+    /// Packet Tx Error
+    #[error("The packet send failed with an error")]
+    PacketTxError,
     /// The unknown error.
     #[error("The unknown error")]
     Unknown,
