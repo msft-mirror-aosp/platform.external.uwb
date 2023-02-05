@@ -336,7 +336,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                     );
                 }
             },
-            UciSessionNotification::RangeData(range_data) => {
+            UciSessionNotification::SessionInfo(range_data) => {
                 if self.active_sessions.get(&range_data.session_id).is_some() {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_id,
@@ -344,6 +344,42 @@ impl<T: UciManager> SessionManagerActor<T> {
                     });
                 } else {
                     warn!("Received range data of the unknown Session: {:?}", range_data);
+                }
+            }
+            UciSessionNotification::DataCredit { session_id, credit_availability: _ } => {
+                match self.active_sessions.get(&session_id) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/261886903): Handle the DataCredit notification in the new
+                         * code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received the Data Credit notification for an unknown Session {}",
+                            session_id
+                        );
+                    }
+                }
+            }
+            UciSessionNotification::DataTransferStatus {
+                session_id,
+                uci_sequence_number: _,
+                status: _,
+            } => {
+                match self.active_sessions.get(&session_id) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/261886903): Handle the DataTransferStatus notification in the
+                         * new code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received a Data Transfer Status notification for unknown Session {}",
+                            session_id
+                        );
+                    }
                 }
             }
         }
@@ -473,7 +509,7 @@ pub(crate) mod test_utils {
     }
 
     pub(crate) fn range_data_notf(range_data: SessionRangeData) -> UciNotification {
-        UciNotification::Session(UciSessionNotification::RangeData(range_data))
+        UciNotification::Session(UciSessionNotification::SessionInfo(range_data))
     }
 
     pub(super) async fn setup_session_manager<F>(
