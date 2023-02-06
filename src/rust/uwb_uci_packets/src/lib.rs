@@ -486,8 +486,46 @@ impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
     }
 }
 
-// TODO(b/261886903): Implement From<UciDataPacketPacket> for Vec<UciDataPacketHalPacket>. This
-// will be used for fragmentation in the Data Packet Tx flow.
+// Helper to convert From<UciDataSndPacket> into Vec<UciDataPacketHalPacket>. An
+// example usage is for fragmentation in the Data Packet Tx flow.
+impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
+    fn from(packet: UciDataSndPacket) -> Self {
+        let mut fragments = Vec::new();
+        let dpf = packet.get_data_packet_format().into();
+
+        // get payload by stripping the header.
+        let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
+        if payload.is_empty() {
+            fragments.push(
+                UciDataPacketHalBuilder {
+                    group_id_or_data_packet_format: dpf,
+                    packet_boundary_flag: PacketBoundaryFlag::Complete,
+                    payload: None,
+                }
+                .build(),
+            );
+        } else {
+            let mut fragments_iter = payload.chunks(MAX_PAYLOAD_LEN).peekable();
+            while let Some(fragment) = fragments_iter.next() {
+                // Set the last fragment complete if this is last fragment.
+                let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
+                    PacketBoundaryFlag::NotComplete
+                } else {
+                    PacketBoundaryFlag::Complete
+                };
+                fragments.push(
+                    UciDataPacketHalBuilder {
+                        group_id_or_data_packet_format: dpf,
+                        packet_boundary_flag: pbf,
+                        payload: Some(Bytes::from(fragment.to_owned())),
+                    }
+                    .build(),
+                );
+            }
+        }
+        fragments
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct PacketDefrager {

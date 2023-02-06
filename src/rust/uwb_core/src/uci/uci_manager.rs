@@ -25,11 +25,13 @@ use crate::uci::command::UciCommand;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
-    DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse, GroupId, MessageType,
-    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UciControlPacketPacket,
-    UciDataPacketPacket, UpdateMulticastListAction,
+    CreditAvailability, DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigTlv, DeviceState,
+    FiraComponent, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RawUciMessage,
+    ResetConfig, SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, UciControlPacketPacket, UciDataPacketHalPacket, UciDataPacketPacket,
+    UciDataSndPacket, UpdateMulticastListAction,
 };
+use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -39,7 +41,7 @@ use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
-use uwb_uci_packets::UciDefragPacket;
+use uwb_uci_packets::{Packet, UciDefragPacket};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -106,6 +108,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         action: UpdateMulticastListAction,
         controlees: Controlees,
     ) -> Result<()>;
+
     // Update active ranging rounds update for DT
     async fn session_update_active_rounds_dt_tag(
         &self,
@@ -129,6 +132,16 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         oid: u32,
         payload: Vec<u8>,
     ) -> Result<RawUciMessage>;
+
+    // Send a Data packet.
+    async fn send_data_packet(
+        &self,
+        session_id: SessionId,
+        address: Vec<u8>,
+        dest_end_point: FiraComponent,
+        uci_sequence_number: u8,
+        app_payload_data: Vec<u8>,
+    ) -> Result<()>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -136,6 +149,8 @@ pub trait UciManager: 'static + Send + Sync + Clone {
 #[derive(Clone)]
 pub struct UciManagerImpl {
     cmd_sender: mpsc::UnboundedSender<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
+    data_packet_sender:
+        mpsc::UnboundedSender<(UciDataSndPacket, oneshot::Sender<DataTransferNtfStatusCode>)>,
 }
 
 impl UciManagerImpl {
@@ -146,10 +161,12 @@ impl UciManagerImpl {
         logger_mode: UciLoggerMode,
     ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let mut actor = UciManagerActor::new(hal, logger, logger_mode, cmd_receiver);
+        let (data_packet_sender, data_packet_receiver) = mpsc::unbounded_channel();
+        let mut actor =
+            UciManagerActor::new(hal, logger, logger_mode, cmd_receiver, data_packet_receiver);
         tokio::spawn(async move { actor.run().await });
 
-        Self { cmd_sender }
+        Self { cmd_sender, data_packet_sender }
     }
 
     // Send the |cmd| to the UciManagerActor.
@@ -434,6 +451,47 @@ impl UciManager for UciManagerImpl {
             Err(e) => Err(e),
         }
     }
+
+    // Send a data packet to the UWBS (use the UciManagerActor).
+    async fn send_data_packet(
+        &self,
+        session_id: SessionId,
+        dest_mac_address_bytes: Vec<u8>,
+        dest_fira_component: FiraComponent,
+        uci_sequence_number: u8,
+        data: Vec<u8>,
+    ) -> Result<()> {
+        let dest_mac_address =
+            bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters).unwrap();
+        let data_packet = uwb_uci_packets::UciDataSndBuilder {
+            session_id,
+            dest_mac_address,
+            dest_fira_component,
+            uci_sequence_number,
+            data,
+        }
+        .build();
+        let (data_transfer_status_ntf_sender, data_transfer_status_ntf_receiver) =
+            oneshot::channel();
+        match self.data_packet_sender.send((data_packet, data_transfer_status_ntf_sender)) {
+            Ok(()) => {
+                // Wait to receive a DATA_TRANSFER_STATUS_NTF from UWBS. This indicates that the
+                // last fragment of the data packet has been received by the UWBS.
+                //
+                // TODO(b/261886903): Convert the DataTransferNtfStatusCode to Result.
+                data_transfer_status_ntf_receiver.await.unwrap();
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    "Failed to send data packet - got error{} for uci_sequence_number: {},\
+                       session_id: {}",
+                    e, uci_sequence_number, session_id
+                );
+                Err(Error::PacketTxError)
+            }
+        }
+    }
 }
 
 struct RawCmdSignature {
@@ -455,6 +513,11 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // Receive the commands and the corresponding response senders from UciManager.
     cmd_receiver: mpsc::UnboundedReceiver<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
 
+    // Receive Data packets (to be sent to UWBS) and the corresponding status sender from
+    // UciManager.
+    data_packet_receiver:
+        mpsc::UnboundedReceiver<(UciDataSndPacket, oneshot::Sender<DataTransferNtfStatusCode>)>,
+
     // Set to true when |hal| is opened successfully.
     is_hal_opened: bool,
     // Receive response, notification and data packets from |hal|. Only used when |hal| is opened
@@ -466,6 +529,11 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // The response sender of UciManager's open_hal() method. Used to wait for the device ready
     // notification.
     open_hal_result_sender: Option<oneshot::Sender<Result<UciResponse>>>,
+
+    // Send out the notifications received from UWBS, in response to sending a Data packet to it.
+    data_credit_ntf_sender: Option<oneshot::Sender<SessionNotification>>,
+    data_transfer_status_ntf_sender: Option<oneshot::Sender<DataTransferNtfStatusCode>>,
+
     // The timeout of waiting for the notification of device ready notification.
     wait_device_status_timeout: PinSleep,
 
@@ -496,15 +564,22 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciManagerCmd,
             oneshot::Sender<Result<UciResponse>>,
         )>,
+        data_packet_receiver: mpsc::UnboundedReceiver<(
+            UciDataSndPacket,
+            oneshot::Sender<DataTransferNtfStatusCode>,
+        )>,
     ) -> Self {
         Self {
             hal: TimeoutUciHal::new(hal),
             logger: UciLoggerWrapper::new(logger, logger_mode),
             cmd_receiver,
+            data_packet_receiver,
             is_hal_opened: false,
             packet_receiver: mpsc::unbounded_channel().1,
             defrager: Default::default(),
             open_hal_result_sender: None,
+            data_credit_ntf_sender: None,
+            data_transfer_status_ntf_sender: None,
             wait_device_status_timeout: PinSleep::new(Duration::MAX),
             retryer: None,
             wait_resp_timeout: PinSleep::new(Duration::MAX),
@@ -529,6 +604,21 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         },
                         Some((cmd, result_sender)) => {
                             self.handle_cmd(cmd, result_sender).await;
+                        }
+                    }
+                }
+
+                // Handle a data packet - this is to be sent from the Host to UWBS.
+                data = self.data_packet_receiver.recv(),
+                    if !self.is_waiting_data_packet_send_status() => {
+                    match data {
+                        Some((data_packet_send, data_transfer_status_ntf_sender)) => {
+                            self.data_transfer_status_ntf_sender =
+                                Some(data_transfer_status_ntf_sender);
+                            self.handle_data_packet_send(data_packet_send).await;
+                        },
+                        None => {
+                            debug!("Unexpected error as no data packet to send from UciManager");
                         }
                     }
                 }
@@ -653,6 +743,49 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
                 self.retryer = Some(Retryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
                 self.retry_command().await;
+            }
+        }
+    }
+
+    async fn handle_data_packet_send(&mut self, data_packet: UciDataSndPacket) {
+        // We expect data Credit should be available when we start here, for all UWB Sessions as:
+        // - it's available by default for a UWB Session when it becomes active, and,
+        // - Data packet send completed for earlier packets only after the host received both
+        //   DATA_TRANSFER_STATUS and DATA_CREDIT notifications for them. The latter would have
+        //   indicated credit availability for the UWB session.
+        //
+        // TODO(b/261886903): Use a Map<SessionId, CreditAvailability> to explicitly confirm
+        // credit availability here (before sending any data packet fragment). The map should also
+        // be updated (in handle_notification()), when UWBS unilaterally sends a DATA_CREDIT_NTF.
+        let data_packet_session_id = data_packet.get_session_id();
+        let fragmented_packets: Vec<UciDataPacketHalPacket> = data_packet.into();
+        for packet in fragmented_packets.into_iter() {
+            let (data_credit_ntf_sender, data_credit_ntf_receiver) = oneshot::channel();
+            self.data_credit_ntf_sender = Some(data_credit_ntf_sender);
+            let result = self.hal.send_packet(packet.to_vec()).await;
+            if result.is_err() {
+                error!("Error in sending data packet to HAL.");
+                return;
+            }
+
+            let result = data_credit_ntf_receiver.await;
+            if result.is_err() {
+                error!("oneshot sender is dropped.");
+                return;
+            }
+
+            if let SessionNotification::DataCredit { session_id, credit_availability } =
+                result.unwrap()
+            {
+                // TODO(b/261886903): More relevant error codes.
+                if session_id != data_packet_session_id {
+                    error!("Received Data Credit NTF for different sessionID.");
+                    return;
+                }
+                if credit_availability != CreditAvailability::CreditAvailable {
+                    error!("Received Data Credit NTF with no availability.");
+                    return;
+                }
             }
         }
     }
@@ -784,6 +917,28 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         warn!("notify_session_initialized() failed: {:?}", e);
                     }
                 }
+                if let SessionNotification::DataCredit { session_id: _, credit_availability: _ } =
+                    session_notf
+                {
+                    if let Some(data_credit_ntf_sender) = self.data_credit_ntf_sender.take() {
+                        let _ = data_credit_ntf_sender.send(session_notf);
+                    }
+                    return; // We consume these here and don't need to send to upper layer.
+                }
+                if let SessionNotification::DataTransferStatus {
+                    session_id: _,
+                    uci_sequence_number: _,
+                    status,
+                } = session_notf
+                {
+                    if let Some(data_transfer_status_ntf_sender) =
+                        self.data_transfer_status_ntf_sender.take()
+                    {
+                        let _ = data_transfer_status_ntf_sender.send(status);
+                    }
+                    return; // We consume these here and don't need to send to upper layer.
+                }
+
                 let _ = self.session_notf_sender.send(session_notf);
             }
             UciNotification::Vendor(vendor_notf) => {
@@ -819,6 +974,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     }
     fn is_waiting_device_status(&self) -> bool {
         self.open_hal_result_sender.is_some()
+    }
+    fn is_waiting_data_packet_send_status(&self) -> bool {
+        self.data_transfer_status_ntf_sender.is_some()
     }
 }
 
