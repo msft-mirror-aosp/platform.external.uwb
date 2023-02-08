@@ -21,11 +21,11 @@ use uwb_uci_packets::{parse_diagnostics_ntf, Packet};
 use crate::error::{Error, Result};
 use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
-    ControleeStatus, DataRcvStatusCode, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    FiraComponent, RangingMeasurementType, RawUciMessage, ReasonCode, SessionId, SessionState,
-    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
-    ShortAddressTwoWayRangingMeasurement, StatusCode,
+    ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
+    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, RangingMeasurementType, RawUciMessage,
+    ReasonCode, SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -71,6 +71,22 @@ pub enum SessionNotification {
     },
     /// (Short/Extended)Mac()SessionInfoNtf equivalent
     SessionInfo(SessionRangeData),
+    /// DataCreditNtf equivalent.
+    DataCredit {
+        /// SessionId : u32
+        session_id: SessionId,
+        /// Credit Availability (for sending Data packets on UWB Session)
+        credit_availability: CreditAvailability,
+    },
+    /// DataTransferStatusNtf equivalent.
+    DataTransferStatus {
+        /// SessionId : u32
+        session_id: SessionId,
+        /// Sequence Number: u8
+        uci_sequence_number: u8,
+        /// Data Transfer Status Code
+        status: DataTransferNtfStatusCode,
+    },
 }
 
 /// The session range data.
@@ -245,7 +261,7 @@ impl TryFrom<uwb_uci_packets::SessionConfigNotificationPacket> for SessionNotifi
                 })
             }
             _ => {
-                error!("Unknown SessionNotificationPacket: {:?}", evt);
+                error!("Unknown SessionConfigNotificationPacket: {:?}", evt);
                 Err(Error::Unknown)
             }
         }
@@ -260,8 +276,19 @@ impl TryFrom<uwb_uci_packets::SessionControlNotificationPacket> for SessionNotif
         use uwb_uci_packets::SessionControlNotificationChild;
         match evt.specialize() {
             SessionControlNotificationChild::SessionInfoNtf(evt) => evt.try_into(),
+            SessionControlNotificationChild::DataCreditNtf(evt) => Ok(Self::DataCredit {
+                session_id: evt.get_session_id(),
+                credit_availability: evt.get_credit_availability(),
+            }),
+            SessionControlNotificationChild::DataTransferStatusNtf(evt) => {
+                Ok(Self::DataTransferStatus {
+                    session_id: evt.get_session_id(),
+                    uci_sequence_number: evt.get_uci_sequence_number(),
+                    status: evt.get_status(),
+                })
+            }
             _ => {
-                error!("Unknown SessionInfoNtfPacket: {:?}", evt);
+                error!("Unknown SessionControlNotificationPacket: {:?}", evt);
                 Err(Error::Unknown)
             }
         }
@@ -297,7 +324,10 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtfPacket> for SessionNotification {
                 )
             }
             SessionInfoNtfChild::ShortMacDlTDoASessionInfoNtf(evt) => {
-                match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                match ShortAddressDlTdoaRangingMeasurement::parse(
+                    evt.get_dl_tdoa_measurements(),
+                    evt.get_no_of_ranging_measurements(),
+                ) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
                             RangingMeasurements::ShortAddressDltdoa(v)
@@ -310,7 +340,10 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtfPacket> for SessionNotification {
                 }
             }
             SessionInfoNtfChild::ExtendedMacDlTDoASessionInfoNtf(evt) => {
-                match ExtendedAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                match ExtendedAddressDlTdoaRangingMeasurement::parse(
+                    evt.get_dl_tdoa_measurements(),
+                    evt.get_no_of_ranging_measurements(),
+                ) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
                             RangingMeasurements::ExtendedAddressDltdoa(v)
