@@ -28,9 +28,10 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionType,
-    SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse, UpdateMulticastListAction,
+    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
+    GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
+    SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
+    UpdateMulticastListAction,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -363,6 +364,28 @@ impl MockUciManager {
             expected_gid,
             expected_oid,
             expected_payload,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect send_data_packet.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_send_data_packet(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_address: Vec<u8>,
+        expected_dest_end_point: FiraComponent,
+        expected_uci_sequence_num: u8,
+        expected_app_payload_data: Vec<u8>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendDataPacket {
+            expected_session_id,
+            expected_address,
+            expected_dest_end_point,
+            expected_uci_sequence_num,
+            expected_app_payload_data,
             out,
         });
     }
@@ -830,6 +853,40 @@ impl UciManager for MockUciManager {
             None => Err(Error::MockUndefined),
         }
     }
+
+    async fn send_data_packet(
+        &self,
+        session_id: SessionId,
+        address: Vec<u8>,
+        dest_end_point: FiraComponent,
+        uci_sequence_num: u8,
+        app_payload_data: Vec<u8>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SendDataPacket {
+                expected_session_id,
+                expected_address,
+                expected_dest_end_point,
+                expected_uci_sequence_num,
+                expected_app_payload_data,
+                out,
+            }) if expected_session_id == session_id
+                && expected_address == address
+                && expected_dest_end_point == dest_end_point
+                && expected_uci_sequence_num == uci_sequence_num
+                && expected_app_payload_data == app_payload_data =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -928,5 +985,13 @@ enum ExpectedCall {
         expected_oid: u32,
         expected_payload: Vec<u8>,
         out: Result<RawUciMessage>,
+    },
+    SendDataPacket {
+        expected_session_id: SessionId,
+        expected_address: Vec<u8>,
+        expected_dest_end_point: FiraComponent,
+        expected_uci_sequence_num: u8,
+        expected_app_payload_data: Vec<u8>,
+        out: Result<()>,
     },
 }
