@@ -35,8 +35,6 @@ rust_test {
             test_suites: [
                 "general-tests",
             ],
-           // See b/268061150
-           stem: "libuwb_uci_packet_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -149,8 +147,6 @@ rust_test {
                 "liblog",
                 "libutils",
             ],
-            // See b/268061150
-            stem: "libuwb_uci_packet_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
