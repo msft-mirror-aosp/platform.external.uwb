@@ -454,7 +454,7 @@ message SessionRangeData {
   RangingMeasurementType ranging_measurement_type = 4;
   repeated TwoWayRangingMeasurement twoway_ranging_measurements = 5;
   repeated DlTDoARangingMeasurement dltdoa_ranging_measurements = 6;
-  repeated OwrAoaRangingMeasurement owraoa_ranging_measurements = 7;
+  OwrAoaRangingMeasurement owraoa_ranging_measurement = 7;
 }
 
 // Represent uwb_uci_packets::PowerStats;
