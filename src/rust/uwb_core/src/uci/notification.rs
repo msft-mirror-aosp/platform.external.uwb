@@ -324,7 +324,10 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtfPacket> for SessionNotification {
                 )
             }
             SessionInfoNtfChild::ShortMacDlTDoASessionInfoNtf(evt) => {
-                match ShortAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                match ShortAddressDlTdoaRangingMeasurement::parse(
+                    evt.get_dl_tdoa_measurements(),
+                    evt.get_no_of_ranging_measurements(),
+                ) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
                             RangingMeasurements::ShortAddressDltdoa(v)
@@ -337,7 +340,10 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtfPacket> for SessionNotification {
                 }
             }
             SessionInfoNtfChild::ExtendedMacDlTDoASessionInfoNtf(evt) => {
-                match ExtendedAddressDlTdoaRangingMeasurement::parse(&evt.clone().to_vec()) {
+                match ExtendedAddressDlTdoaRangingMeasurement::parse(
+                    evt.get_dl_tdoa_measurements(),
+                    evt.get_no_of_ranging_measurements(),
+                ) {
                     Some(v) => {
                         if v.len() == evt.get_no_of_ranging_measurements().into() {
                             RangingMeasurements::ExtendedAddressDltdoa(v)
