@@ -43,10 +43,10 @@ use crate::proto::bindings::{
     FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
     KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
     MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
+    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
     OwrAoaStatusCode as ProtoOwrAoaStatusCode, PowerStats as ProtoPowerStats,
     PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
     PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
-    RangingMeasurement as ProtoRangingMeasurement,
     RangingMeasurementType as ProtoRangingMeasurementType,
     RangingRoundControl as ProtoRangingRoundControl, RangingRoundUsage as ProtoRangingRoundUsage,
     RangingTimeStruct as ProtoRangingTimeStruct, ReasonCode as ProtoReasonCode,
@@ -54,6 +54,7 @@ use crate::proto::bindings::{
     ScheduledMode as ProtoScheduledMode, SessionRangeData as ProtoSessionRangeData,
     SessionState as ProtoSessionState, SessionType as ProtoSessionType, Status as ProtoStatus,
     StatusCode as ProtoStatusCode, StsConfig as ProtoStsConfig, StsLength as ProtoStsLength,
+    TwoWayRangingMeasurement as ProtoTwoWayRangingMeasurement,
     TxAdaptivePayloadPower as ProtoTxAdaptivePayloadPower, UciLoggerMode as ProtoUciLoggerMode,
     UpdateMulticastListAction as ProtoUpdateMulticastListAction, UwbChannel as ProtoUwbChannel,
 };
@@ -358,7 +359,8 @@ enum_mapping! {
 }
 
 pub enum ProtoRangingMeasurements {
-    Ranging(Vec<ProtoRangingMeasurement>),
+    TwoWay(Vec<ProtoTwoWayRangingMeasurement>),
+    OwrAoa(Vec<ProtoOwrAoaRangingMeasurement>),
     DlTDoa(Vec<ProtoDlTDoARangingMeasurement>),
 }
 
@@ -379,7 +381,7 @@ impl<T> From<Result<T>> for ProtoStatus {
     }
 }
 
-impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ShortAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -400,7 +402,7 @@ impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ExtendedAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -421,7 +423,7 @@ impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -437,7 +439,7 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -539,8 +541,11 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
         result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
         result.set_ranging_measurement_type(item.ranging_measurement_type.into());
         match to_proto_ranging_measurements(item.ranging_measurements) {
-            ProtoRangingMeasurements::Ranging(ranging_measurements) => {
-                result.set_ranging_measurements(RepeatedField::from_vec(ranging_measurements))
+            ProtoRangingMeasurements::TwoWay(twoway_measurements) => {
+                result.set_twoway_ranging_measurements(RepeatedField::from_vec(twoway_measurements))
+            }
+            ProtoRangingMeasurements::OwrAoa(owraoa_measurements) => {
+                result.set_owraoa_ranging_measurements(RepeatedField::from_vec(owraoa_measurements))
             }
             ProtoRangingMeasurements::DlTDoa(dltdoa_measurements) => {
                 result.set_dltdoa_ranging_measurements(RepeatedField::from_vec(dltdoa_measurements))
@@ -553,16 +558,16 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
 fn to_proto_ranging_measurements(item: RangingMeasurements) -> ProtoRangingMeasurements {
     match item {
         RangingMeasurements::ShortAddressTwoWay(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ExtendedAddressTwoWay(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ShortAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::OwrAoa(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ExtendedAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::OwrAoa(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ShortAddressDltdoa(arr) => {
             ProtoRangingMeasurements::DlTDoa(arr.into_iter().map(|item| item.into()).collect())
