@@ -360,7 +360,7 @@ enum_mapping! {
 
 pub enum ProtoRangingMeasurements {
     TwoWay(Vec<ProtoTwoWayRangingMeasurement>),
-    OwrAoa(Vec<ProtoOwrAoaRangingMeasurement>),
+    OwrAoa(ProtoOwrAoaRangingMeasurement),
     DlTDoa(Vec<ProtoDlTDoARangingMeasurement>),
 }
 
@@ -544,8 +544,8 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
             ProtoRangingMeasurements::TwoWay(twoway_measurements) => {
                 result.set_twoway_ranging_measurements(RepeatedField::from_vec(twoway_measurements))
             }
-            ProtoRangingMeasurements::OwrAoa(owraoa_measurements) => {
-                result.set_owraoa_ranging_measurements(RepeatedField::from_vec(owraoa_measurements))
+            ProtoRangingMeasurements::OwrAoa(owraoa_measurement) => {
+                result.set_owraoa_ranging_measurement(owraoa_measurement)
             }
             ProtoRangingMeasurements::DlTDoa(dltdoa_measurements) => {
                 result.set_dltdoa_ranging_measurements(RepeatedField::from_vec(dltdoa_measurements))
@@ -563,12 +563,8 @@ fn to_proto_ranging_measurements(item: RangingMeasurements) -> ProtoRangingMeasu
         RangingMeasurements::ExtendedAddressTwoWay(arr) => {
             ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
-        RangingMeasurements::ShortAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::OwrAoa(arr.into_iter().map(|item| item.into()).collect())
-        }
-        RangingMeasurements::ExtendedAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::OwrAoa(arr.into_iter().map(|item| item.into()).collect())
-        }
+        RangingMeasurements::ShortAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
+        RangingMeasurements::ExtendedAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
         RangingMeasurements::ShortAddressDltdoa(arr) => {
             ProtoRangingMeasurements::DlTDoa(arr.into_iter().map(|item| item.into()).collect())
         }
