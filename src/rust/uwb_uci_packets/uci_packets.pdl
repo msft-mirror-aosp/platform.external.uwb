@@ -152,6 +152,22 @@ enum DataRcvStatusCode : 8 {
     UCI_STATUS_UNKNOWN = 0x02,
 }
 
+enum CreditAvailability : 8 {
+    CREDIT_NOT_AVAILABLE = 0,
+    CREDIT_AVAILABLE = 1,
+}
+
+// The UCI spec defines these status codes for a DATA_TRANSFER_STATUS_NTF packet.
+enum DataTransferNtfStatusCode : 8 {
+    UCI_DATA_TRANSFER_STATUS_REPETITION_OK = 0x00,
+    UCI_DATA_TRANSFER_STATUS_OK = 0x01,
+    UCI_DATA_TRANSFER_STATUS_ERROR_DATA_TRANSFER = 0x02,
+    UCI_DATA_TRANSFER_STATUS_ERROR_NO_CREDIT_AVAILABLE = 0x03,
+    UCI_DATA_TRANSFER_STATUS_ERROR_REJECTED = 0x04,
+    UCI_DATA_TRANSFER_STATUS_SESSION_TYPE_NOT_SUPPORTED = 0x05,
+    UCI_DATA_TRANSFER_STATUS_ERROR_DATA_TRANSFER_IS_ONGOING = 0x06,
+}
+
 enum FiraComponent : 8 {
     UWBS = 0x00,
     HOST = 0x01,
@@ -368,17 +384,20 @@ packet UciPacketHal {
     _body_
 }
 
+// The UciDataPacketHal must be declared before the UciControlPacketHal for correct parsing to
+// happen. This is required as the Data packet specifies a value for the 'message_type' constraint,
+// while the Control packet does not (as it encompasses multiple 'message_type' values).
+packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
+    _reserved_: 8,
+    _size_(_payload_): 16,
+    _payload_,
+}
+
 packet UciControlPacketHal: UciPacketHal {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
-    _payload_,
-}
-
-packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
-    _reserved_: 8,
-    _size_(_payload_): 16,
     _payload_,
 }
 
@@ -423,7 +442,7 @@ packet UciDataPacket {
     _payload_,
 }
 
-packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND) {
+packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type = DATA) {
     session_id: 32,
     dest_mac_address: 64,
     dest_fira_component: FiraComponent,
@@ -432,7 +451,7 @@ packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND) {
     data: 8[]
 }
 
-packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV) {
+packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV, message_type = DATA) {
     session_id: 32,
     status: DataRcvStatusCode,
     uci_sequence_number: 32,
@@ -502,8 +521,6 @@ packet AndroidResponse : UciResponse (group_id = VENDOR_ANDROID) {
 packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
     _body_,
 }
-
-// TODO(b/261886903): Define the DATA_CREDIT_NTF and DATA_STATUS_NTF packets.
 
 // TODO: b/202760099: Use the correspnding opcode enum instead of the raw value in the |opcode| field.
 packet DeviceResetCmd : CoreCommand (opcode = 0x0) { //CORE_DEVICE_RESET
@@ -849,6 +866,26 @@ test SessionUpdateControllerMulticastListNtf {
     "\x61\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
 }
 
+packet DataCreditNtf : SessionControlNotification (opcode = 0x04) { // SESSION_DATA_CREDIT_NTF
+    session_id: 32,
+    credit_availability: CreditAvailability,
+}
+
+test DataCreditNtf {
+    "\x62\x04\x00\x05\x00\x00\x00\x00\x00\x00\x01\x01",
+}
+
+packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
+    session_id: 32,
+    uci_sequence_number: 8,
+    status: DataTransferNtfStatusCode,
+    // TODO(b/261886903): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
+}
+
+test DataTransferStatusNtf {
+    "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00",
+}
+
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
     session_id: 32,
 }
@@ -964,12 +1001,20 @@ test ExtendedMacTwoWaySessionInfoNtf {
 
 packet ShortMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
     no_of_ranging_measurements : 8,
-    _payload_,
+    dl_tdoa_measurements : 8[],
+}
+
+test ShortMacDlTDoASessionInfoNtf {
+     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x02\x01\x01\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ExtendedMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
     no_of_ranging_measurements : 8,
-    _payload_,
+    dl_tdoa_measurements : 8[],
+}
+
+test ExtendedMacDlTDoASessionInfoNtf {
+     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ShortMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
