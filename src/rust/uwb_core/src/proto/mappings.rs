@@ -16,6 +16,7 @@
 
 use std::convert::{TryFrom, TryInto};
 
+use num_traits::FromPrimitive;
 use protobuf::RepeatedField;
 use zeroize::Zeroize;
 
@@ -28,22 +29,24 @@ use crate::params::fira_app_config_params::{
     ScheduledMode, StsConfig, StsLength, TxAdaptivePayloadPower, UwbAddress, UwbChannel,
 };
 use crate::params::uci_packets::{
-    Controlee, DeviceState, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, OwrAoaStatusCode, PowerStats, RangingMeasurementType,
-    ReasonCode, SessionState, SessionType, ShortAddressOwrAoaRangingMeasurement,
+    Controlee, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode, SessionState, SessionType,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 use crate::params::AppConfigParams;
 use crate::proto::bindings::{
     AoaResultRequest as ProtoAoaResultRequest, BprfPhrDataRate as ProtoBprfPhrDataRate,
     Controlee as ProtoControlee, DeviceRole as ProtoDeviceRole, DeviceState as ProtoDeviceState,
-    DeviceType as ProtoDeviceType, FiraAppConfigParams as ProtoFiraAppConfigParams,
-    HoppingMode as ProtoHoppingMode, KeyRotation as ProtoKeyRotation,
-    MacAddressMode as ProtoMacAddressMode, MacFcsType as ProtoMacFcsType,
-    MultiNodeMode as ProtoMultiNodeMode, OwrAoaStatusCode as ProtoOwrAoaStatusCode,
-    PowerStats as ProtoPowerStats, PreambleDuration as ProtoPreambleDuration,
-    PrfMode as ProtoPrfMode, PsduDataRate as ProtoPsduDataRate,
-    RangeDataNtfConfig as ProtoRangeDataNtfConfig, RangingMeasurement as ProtoRangingMeasurement,
+    DeviceType as ProtoDeviceType, DlTDoARangingMeasurement as ProtoDlTDoARangingMeasurement,
+    FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
+    KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
+    MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
+    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
+    OwrAoaStatusCode as ProtoOwrAoaStatusCode, PowerStats as ProtoPowerStats,
+    PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
+    PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
     RangingMeasurementType as ProtoRangingMeasurementType,
     RangingRoundControl as ProtoRangingRoundControl, RangingRoundUsage as ProtoRangingRoundUsage,
     RangingTimeStruct as ProtoRangingTimeStruct, ReasonCode as ProtoReasonCode,
@@ -51,6 +54,7 @@ use crate::proto::bindings::{
     ScheduledMode as ProtoScheduledMode, SessionRangeData as ProtoSessionRangeData,
     SessionState as ProtoSessionState, SessionType as ProtoSessionType, Status as ProtoStatus,
     StatusCode as ProtoStatusCode, StsConfig as ProtoStsConfig, StsLength as ProtoStsLength,
+    TwoWayRangingMeasurement as ProtoTwoWayRangingMeasurement,
     TxAdaptivePayloadPower as ProtoTxAdaptivePayloadPower, UciLoggerMode as ProtoUciLoggerMode,
     UpdateMulticastListAction as ProtoUpdateMulticastListAction, UwbChannel as ProtoUwbChannel,
 };
@@ -169,6 +173,7 @@ enum_mapping! {
     STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => StateChangeWithSessionManagementCommands,
     MAX_RANGING_ROUND_RETRY_COUNT_REACHED => MaxRangingRoundRetryCountReached,
     MAX_NUMBER_OF_MEASUREMENTS_REACHED => MaxNumberOfMeasurementsReached,
+    ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => ErrorInvalidUlTdoaRandomWindow,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED => ErrorSlotLengthNotSupported,
     ERROR_INSUFFICIENT_SLOTS_PER_RR => ErrorInsufficientSlotsPerRr,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => ErrorMacAddressModeNotSupported,
@@ -349,6 +354,14 @@ enum_mapping! {
     ProtoUpdateMulticastListAction => UpdateMulticastListAction,
     ADD_CONTROLEE => AddControlee,
     REMOVE_CONTROLEE => RemoveControlee,
+    ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY => AddControleeWithShortSubSessionKey,
+    ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY => AddControleeWithLongSubSessionKey,
+}
+
+pub enum ProtoRangingMeasurements {
+    TwoWay(Vec<ProtoTwoWayRangingMeasurement>),
+    OwrAoa(ProtoOwrAoaRangingMeasurement),
+    DlTDoa(Vec<ProtoDlTDoARangingMeasurement>),
 }
 
 impl<T> From<Result<T>> for ProtoStatus {
@@ -368,7 +381,7 @@ impl<T> From<Result<T>> for ProtoStatus {
     }
 }
 
-impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ShortAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -389,7 +402,7 @@ impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ExtendedAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -410,7 +423,7 @@ impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -426,7 +439,7 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -442,6 +455,84 @@ impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
+impl From<ShortAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasurement {
+    fn from(item: ShortAddressDlTdoaRangingMeasurement) -> Self {
+        let mut result = Self::new();
+        result.set_mac_address(item.mac_address.into());
+        result.set_status(
+            StatusCode::from_u8(item.measurement.status)
+                .unwrap_or(StatusCode::UciStatusFailed)
+                .into(),
+        );
+        result.set_message_control(item.measurement.message_control.into());
+        result.set_block_index(item.measurement.block_index.into());
+        result.set_round_index(item.measurement.round_index.into());
+        result.set_nlos(item.measurement.nlos.into());
+        result.set_aoa_azimuth(item.measurement.aoa_azimuth.into());
+        result.set_aoa_azimuth_fom(item.measurement.aoa_azimuth_fom.into());
+        result.set_aoa_elevation(item.measurement.aoa_elevation.into());
+        result.set_aoa_elevation_fom(item.measurement.aoa_elevation_fom.into());
+        result.set_rssi(item.measurement.rssi.into());
+        result.set_tx_timestamp(item.measurement.tx_timestamp);
+        result.set_rx_timestamp(item.measurement.rx_timestamp);
+        result.set_anchor_cfo(item.measurement.anchor_cfo.into());
+        result.set_cfo(item.measurement.cfo.into());
+        result.set_initiator_reply_time(item.measurement.initiator_reply_time);
+        result.set_responder_reply_time(item.measurement.responder_reply_time);
+        result.set_initiator_responder_tof(item.measurement.initiator_responder_tof.into());
+        result.set_dt_anchor_location(
+            item.measurement
+                .dt_anchor_location
+                .into_iter()
+                .map(|val| val as u32)
+                .collect::<Vec<u32>>(),
+        );
+        result.set_ranging_rounds(
+            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>(),
+        );
+        result
+    }
+}
+
+impl From<ExtendedAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasurement {
+    fn from(item: ExtendedAddressDlTdoaRangingMeasurement) -> Self {
+        let mut result = Self::new();
+        result.set_mac_address(item.mac_address);
+        result.set_status(
+            StatusCode::from_u8(item.measurement.status)
+                .unwrap_or(StatusCode::UciStatusFailed)
+                .into(),
+        );
+        result.set_message_control(item.measurement.message_control.into());
+        result.set_block_index(item.measurement.block_index.into());
+        result.set_round_index(item.measurement.round_index.into());
+        result.set_nlos(item.measurement.nlos.into());
+        result.set_aoa_azimuth(item.measurement.aoa_azimuth.into());
+        result.set_aoa_azimuth_fom(item.measurement.aoa_azimuth_fom.into());
+        result.set_aoa_elevation(item.measurement.aoa_elevation.into());
+        result.set_aoa_elevation_fom(item.measurement.aoa_elevation_fom.into());
+        result.set_rssi(item.measurement.rssi.into());
+        result.set_tx_timestamp(item.measurement.tx_timestamp);
+        result.set_rx_timestamp(item.measurement.rx_timestamp);
+        result.set_anchor_cfo(item.measurement.anchor_cfo.into());
+        result.set_cfo(item.measurement.cfo.into());
+        result.set_initiator_reply_time(item.measurement.initiator_reply_time);
+        result.set_responder_reply_time(item.measurement.responder_reply_time);
+        result.set_initiator_responder_tof(item.measurement.initiator_responder_tof.into());
+        result.set_dt_anchor_location(
+            item.measurement
+                .dt_anchor_location
+                .into_iter()
+                .map(|val| val as u32)
+                .collect::<Vec<u32>>(),
+        );
+        result.set_ranging_rounds(
+            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>(),
+        );
+        result
+    }
+}
+
 impl From<SessionRangeData> for ProtoSessionRangeData {
     fn from(item: SessionRangeData) -> Self {
         let mut result = Self::new();
@@ -449,29 +540,37 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
         result.set_session_id(item.session_id);
         result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
         result.set_ranging_measurement_type(item.ranging_measurement_type.into());
-        result.set_ranging_measurements(RepeatedField::from_vec(to_proto_ranging_measurements(
-            item.ranging_measurements,
-        )));
+        match to_proto_ranging_measurements(item.ranging_measurements) {
+            ProtoRangingMeasurements::TwoWay(twoway_measurements) => {
+                result.set_twoway_ranging_measurements(RepeatedField::from_vec(twoway_measurements))
+            }
+            ProtoRangingMeasurements::OwrAoa(owraoa_measurement) => {
+                result.set_owraoa_ranging_measurement(owraoa_measurement)
+            }
+            ProtoRangingMeasurements::DlTDoa(dltdoa_measurements) => {
+                result.set_dltdoa_ranging_measurements(RepeatedField::from_vec(dltdoa_measurements))
+            }
+        }
         result
     }
 }
 
-fn to_proto_ranging_measurements(item: RangingMeasurements) -> Vec<ProtoRangingMeasurement> {
+fn to_proto_ranging_measurements(item: RangingMeasurements) -> ProtoRangingMeasurements {
     match item {
         RangingMeasurements::ShortAddressTwoWay(arr) => {
-            arr.into_iter().map(|item| item.into()).collect()
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ExtendedAddressTwoWay(arr) => {
-            arr.into_iter().map(|item| item.into()).collect()
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
-        RangingMeasurements::ShortAddressOwrAoa(arr) => {
-            arr.into_iter().map(|item| item.into()).collect()
+        RangingMeasurements::ShortAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
+        RangingMeasurements::ExtendedAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
+        RangingMeasurements::ShortAddressDltdoa(arr) => {
+            ProtoRangingMeasurements::DlTDoa(arr.into_iter().map(|item| item.into()).collect())
         }
-        RangingMeasurements::ExtendedAddressOwrAoa(arr) => {
-            arr.into_iter().map(|item| item.into()).collect()
+        RangingMeasurements::ExtendedAddressDltdoa(arr) => {
+            ProtoRangingMeasurements::DlTDoa(arr.into_iter().map(|item| item.into()).collect())
         }
-        // TODO(b/260499366): Add support for DlTDoA.
-        _ => todo!(),
     }
 }
 

@@ -122,6 +122,12 @@ typedef struct {
   uint16_t count;
 } BUFFER_Q;
 
+typedef struct {
+  BUFFER_Q tx_data_pkt_q;
+  uint32_t session_id;
+  uint8_t credit_available;
+} DATA_BUFFER_Q;
+
 /* Task constants
  */
 #ifndef TASKPTR

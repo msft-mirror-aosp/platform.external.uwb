@@ -30,9 +30,13 @@ const MAX_PAYLOAD_LEN: usize = 255;
 // TODO: Use a PDL struct to represent the headers and avoid hardcoding
 // lengths below.
 // Real UCI packet header len.
-const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
+pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
 const UCI_PACKET_HEADER_LEN: usize = 7;
+
+// Opcode field byte position (within UCI packet header) and mask (of bits to be used).
+const UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION: usize = 1;
+const UCI_CONTROL_PACKET_HEADER_OPCODE_MASK: u8 = 0x3F;
 
 #[derive(Debug, Clone, PartialEq, FromPrimitive)]
 pub enum TimeStampLength {
@@ -148,10 +152,11 @@ pub struct ShortAddressDlTdoaRangingMeasurement {
 
 impl ShortAddressDlTdoaRangingMeasurement {
     /// Parse the `payload` byte buffer from PDL to the vector of measurement.
-    pub fn parse(bytes: &[u8]) -> Option<Vec<Self>> {
+    pub fn parse(bytes: &[u8], no_of_ranging_measurement: u8) -> Option<Vec<Self>> {
         let mut ptr = 0;
         let mut measurements = vec![];
-        while (ptr < bytes.len()) {
+        let mut count = 0;
+        while (count < no_of_ranging_measurement) {
             let mac_address = extract_u16(bytes, &mut ptr, 2)?;
             let rem = &bytes[ptr..];
             let measurement = DlTdoaRangingMeasurement::parse_one(rem);
@@ -160,6 +165,7 @@ impl ShortAddressDlTdoaRangingMeasurement {
                     ptr += measurement.get_total_size();
                     measurements
                         .push(ShortAddressDlTdoaRangingMeasurement { mac_address, measurement });
+                    count = count + 1;
                 }
                 None => return None,
             }
@@ -176,10 +182,11 @@ pub struct ExtendedAddressDlTdoaRangingMeasurement {
 
 impl ExtendedAddressDlTdoaRangingMeasurement {
     /// Parse the `payload` byte buffer from PDL to the vector of measurement.
-    pub fn parse(bytes: &[u8]) -> Option<Vec<Self>> {
+    pub fn parse(bytes: &[u8], no_of_ranging_measurement: u8) -> Option<Vec<Self>> {
         let mut ptr = 0;
         let mut measurements = vec![];
-        while (ptr < bytes.len()) {
+        let mut count = 0;
+        while (count < no_of_ranging_measurement) {
             let mac_address = extract_u64(bytes, &mut ptr, 8)?;
             let rem = &bytes[ptr..];
             let measurement = DlTdoaRangingMeasurement::parse_one(rem);
@@ -188,6 +195,7 @@ impl ExtendedAddressDlTdoaRangingMeasurement {
                     ptr += measurement.get_total_size();
                     measurements
                         .push(ExtendedAddressDlTdoaRangingMeasurement { mac_address, measurement });
+                    count = count + 1;
                 }
                 None => return None,
             }
@@ -229,57 +237,140 @@ generate_extract_func!(extract_u16, u16);
 generate_extract_func!(extract_u32, u32);
 generate_extract_func!(extract_u64, u64);
 
+// The GroupIdOrDataPacketFormat enum has all the values defined in both the GroupId and
+// DataPacketFormat enums. It represents the same bits in UCI packet header - the GID field in
+// a UCI control packet, and the DataPacketFormat field in a UCI data packet. Hence the unwrap()
+// calls in the conversions below should always succeed (as long as care is taken in future, to
+// keep the two enums in sync, for any additional values defined in the UCI spec).
+impl From<GroupId> for GroupIdOrDataPacketFormat {
+    fn from(gid: GroupId) -> Self {
+        GroupIdOrDataPacketFormat::from_u8(gid.to_u8().unwrap()).unwrap()
+    }
+}
+
+impl From<GroupIdOrDataPacketFormat> for GroupId {
+    fn from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Self {
+        GroupId::from_u8(gid_or_dpf.to_u8().unwrap()).unwrap()
+    }
+}
+
+impl From<DataPacketFormat> for GroupIdOrDataPacketFormat {
+    fn from(dpf: DataPacketFormat) -> Self {
+        GroupIdOrDataPacketFormat::from_u8(dpf.to_u8().unwrap()).unwrap()
+    }
+}
+
+// The GroupIdOrDataPacketFormat enum has more values defined (for the GroupId bits) than the
+// DataPacketFormat enum. Hence this is implemented as TryFrom() instead of From().
+impl TryFrom<GroupIdOrDataPacketFormat> for DataPacketFormat {
+    type Error = Error;
+
+    fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self> {
+        DataPacketFormat::from_u8(gid_or_dpf.to_u8().unwrap()).ok_or(Error::InvalidPacketError)
+    }
+}
+
 // Container for UCI packet header fields.
-struct UciPacketHeader {
+struct UciControlPacketHeader {
     message_type: MessageType,
     group_id: GroupId,
     opcode: u8,
 }
 
-// Ensure that the new packet fragment belong to the same packet.
-fn is_same_packet(header: &UciPacketHeader, packet: &UciPacketHalPacket) -> bool {
-    header.message_type == packet.get_message_type()
-        && header.group_id == packet.get_group_id()
-        && header.opcode == packet.get_opcode()
+impl UciControlPacketHeader {
+    fn new(message_type: MessageType, group_id: GroupId, opcode: u8) -> Result<Self> {
+        if !is_uci_control_packet(message_type) {
+            return Err(Error::InvalidPacketError);
+        }
+
+        Ok(UciControlPacketHeader {
+            message_type: message_type,
+            group_id: group_id,
+            opcode: opcode,
+        })
+    }
 }
 
-impl UciPacketPacket {
+// This function parses the packet bytes to return the Control Packet Opcode (OID) field. The
+// caller should check that the packet bytes represent a UCI control packet. The code will not
+// panic because UciPacketHalPacket::to_bytes() should always be larger then the place we access.
+fn get_opcode_from_uci_control_packet(packet: &UciPacketHalPacket) -> u8 {
+    packet.clone().to_bytes()[UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION]
+        & UCI_CONTROL_PACKET_HEADER_OPCODE_MASK
+}
+
+fn is_uci_control_packet(message_type: MessageType) -> bool {
+    match message_type {
+        MessageType::Command
+        | MessageType::Response
+        | MessageType::Notification
+        | MessageType::ReservedForTesting1
+        | MessageType::ReservedForTesting2 => true,
+        _ => false,
+    }
+}
+
+pub fn build_uci_control_packet(
+    message_type: MessageType,
+    group_id: GroupId,
+    opcode: u8,
+    payload: Option<Bytes>,
+) -> Option<UciControlPacketPacket> {
+    if !is_uci_control_packet(message_type) {
+        error!("Only control packets are allowed, MessageType: {}", message_type);
+        return None;
+    }
+    Some(UciControlPacketBuilder { group_id, message_type, opcode, payload }.build())
+}
+
+// Ensure that the new packet fragment belong to the same packet.
+fn is_same_control_packet(header: &UciControlPacketHeader, packet: &UciPacketHalPacket) -> bool {
+    is_uci_control_packet(header.message_type)
+        && header.message_type == packet.get_message_type()
+        && header.group_id == packet.get_group_id_or_data_packet_format().into()
+        && header.opcode == get_opcode_from_uci_control_packet(packet)
+}
+
+impl UciControlPacketPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
         self.to_bytes().slice(UCI_PACKET_HEADER_LEN..).to_vec()
     }
 }
 
-// Helper to convert from vector of |UciPacketHalPacket| to |UciPacketPacket|
-impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
+// Helper to convert from vector of |UciPacketHalPacket| to |UciControlPacketPacket|. An example
+// usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
+impl TryFrom<Vec<UciPacketHalPacket>> for UciControlPacketPacket {
     type Error = Error;
 
     fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
         if packets.is_empty() {
             return Err(Error::InvalidPacketError);
         }
-        // Store header info from the first packet.
-        let header = UciPacketHeader {
-            message_type: packets[0].get_message_type(),
-            group_id: packets[0].get_group_id(),
-            opcode: packets[0].get_opcode(),
-        };
 
-        let mut payload_buf = BytesMut::new();
+        // Store header info from the first packet.
+        let header = UciControlPacketHeader::new(
+            packets[0].get_message_type(),
+            packets[0].get_group_id_or_data_packet_format().into(),
+            get_opcode_from_uci_control_packet(&packets[0]),
+        )?;
+
         // Create the reassembled payload.
+        let mut payload_buf = BytesMut::new();
         for packet in packets {
             // Ensure that the new fragment is part of the same packet.
-            if !is_same_packet(&header, &packet) {
+            if !is_same_control_packet(&header, &packet) {
                 error!("Received unexpected fragment: {:?}", packet);
                 return Err(Error::InvalidPacketError);
             }
             // get payload by stripping the header.
             payload_buf.extend_from_slice(&packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
         }
-        // Create assembled |UciPacketPacket| and convert to bytes again since we need to
+
+        // Create assembled |UciControlPacketPacket| and convert to bytes again since we need to
         // reparse the packet after defragmentation to get the appropriate message.
-        UciPacketPacket::parse(
-            &UciPacketBuilder {
+        UciControlPacketPacket::parse(
+            &UciControlPacketBuilder {
                 message_type: header.message_type,
                 group_id: header.group_id,
                 opcode: header.opcode,
@@ -291,23 +382,83 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciPacketPacket {
     }
 }
 
-// Helper to convert from |UciPacketPacket| to vector of |UciPacketHalPacket|s
-impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
-    fn from(packet: UciPacketPacket) -> Self {
+// UCI Data packet functions.
+fn is_uci_data_rcv_packet(message_type: MessageType, data_packet_format: DataPacketFormat) -> bool {
+    message_type == MessageType::Data && data_packet_format == DataPacketFormat::DataRcv
+}
+
+fn try_into_data_payload(packet: UciPacketHalPacket) -> Result<Bytes> {
+    if is_uci_data_rcv_packet(
+        packet.get_message_type(),
+        packet.get_group_id_or_data_packet_format().try_into()?,
+    ) {
+        Ok(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
+    } else {
+        error!("Received unexpected data packet fragment: {:?}", packet);
+        Err(Error::InvalidPacketError)
+    }
+}
+
+// Helper to convert from vector of |UciPacketHalPacket| to |UciDataPacketPacket|. An example
+// usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
+impl TryFrom<Vec<UciPacketHalPacket>> for UciDataPacketPacket {
+    type Error = Error;
+
+    fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
+        if packets.is_empty() {
+            return Err(Error::InvalidPacketError);
+        }
+
+        // Create the reassembled payload.
+        let mut payload_buf = Bytes::new();
+        for packet in packets {
+            // Ensure that the fragment is a Data Rcv packet.
+            // Get payload by stripping the header.
+            payload_buf = [payload_buf, try_into_data_payload(packet)?].concat().into();
+        }
+
+        // Create assembled |UciDataPacketPacket| and convert to bytes again since we need to
+        // reparse the packet after defragmentation to get the appropriate message.
+        UciDataPacketPacket::parse(
+            &UciDataPacketBuilder {
+                message_type: MessageType::Data,
+                data_packet_format: DataPacketFormat::DataRcv,
+                payload: Some(payload_buf.into()),
+            }
+            .build()
+            .to_bytes(),
+        )
+    }
+}
+
+// Helper to convert from |UciControlPacketPacket| to vector of |UciControlPacketHalPacket|s. An
+// example usage is to do this conversion for fragmentation (from Host to UWBS).
+impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
+    fn from(packet: UciControlPacketPacket) -> Self {
         // Store header info.
-        let header = UciPacketHeader {
-            message_type: packet.get_message_type(),
-            group_id: packet.get_group_id(),
-            opcode: packet.get_opcode(),
+        let header = match UciControlPacketHeader::new(
+            packet.get_message_type(),
+            packet.get_group_id(),
+            packet.get_opcode(),
+        ) {
+            Ok(hdr) => hdr,
+            _ => {
+                error!(
+                    "Unable to parse UciControlPacketHeader from UciControlPacketPacket: {:?}",
+                    packet
+                );
+                return Vec::new();
+            }
         };
-        let mut fragments: Vec<UciPacketHalPacket> = Vec::new();
+
+        let mut fragments = Vec::new();
         // get payload by stripping the header.
         let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
         if payload.is_empty() {
             fragments.push(
-                UciPacketHalBuilder {
+                UciControlPacketHalBuilder {
                     message_type: header.message_type,
-                    group_id: header.group_id,
+                    group_id_or_data_packet_format: header.group_id.into(),
                     opcode: header.opcode,
                     packet_boundary_flag: PacketBoundaryFlag::Complete,
                     payload: None,
@@ -324,10 +475,51 @@ impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
                     PacketBoundaryFlag::Complete
                 };
                 fragments.push(
-                    UciPacketHalBuilder {
+                    UciControlPacketHalBuilder {
                         message_type: header.message_type,
-                        group_id: header.group_id,
+                        group_id_or_data_packet_format: header.group_id.into(),
                         opcode: header.opcode,
+                        packet_boundary_flag: pbf,
+                        payload: Some(Bytes::from(fragment.to_owned())),
+                    }
+                    .build(),
+                );
+            }
+        }
+        fragments
+    }
+}
+
+// Helper to convert From<UciDataSndPacket> into Vec<UciDataPacketHalPacket>. An
+// example usage is for fragmentation in the Data Packet Tx flow.
+impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
+    fn from(packet: UciDataSndPacket) -> Self {
+        let mut fragments = Vec::new();
+        let dpf = packet.get_data_packet_format().into();
+
+        // get payload by stripping the header.
+        let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
+        if payload.is_empty() {
+            fragments.push(
+                UciDataPacketHalBuilder {
+                    group_id_or_data_packet_format: dpf,
+                    packet_boundary_flag: PacketBoundaryFlag::Complete,
+                    payload: None,
+                }
+                .build(),
+            );
+        } else {
+            let mut fragments_iter = payload.chunks(MAX_PAYLOAD_LEN).peekable();
+            while let Some(fragment) = fragments_iter.next() {
+                // Set the last fragment complete if this is last fragment.
+                let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
+                    PacketBoundaryFlag::NotComplete
+                } else {
+                    PacketBoundaryFlag::Complete
+                };
+                fragments.push(
+                    UciDataPacketHalBuilder {
+                        group_id_or_data_packet_format: dpf,
                         packet_boundary_flag: pbf,
                         payload: Some(Bytes::from(fragment.to_owned())),
                     }
@@ -343,32 +535,62 @@ impl From<UciPacketPacket> for Vec<UciPacketHalPacket> {
 pub struct PacketDefrager {
     // Cache to store incoming fragmented packets in the middle of reassembly.
     // Will be empty if there is no reassembly in progress.
-    fragment_cache: Vec<UciPacketHalPacket>,
+    // TODO(b/261762781): Prefer this to be UciControlPacketHalPacket
+    control_fragment_cache: Vec<UciPacketHalPacket>,
+    // TODO(b/261762781): Prefer this to be UciDataPacketHalPacket
+    data_fragment_cache: Vec<UciPacketHalPacket>,
+}
+
+pub enum UciDefragPacket {
+    Control(UciControlPacketPacket),
+    Data(UciDataPacketPacket),
 }
 
 impl PacketDefrager {
-    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciPacketPacket> {
-        match UciPacketHalPacket::parse(msg) {
-            Ok(packet) => {
-                let pbf = packet.get_packet_boundary_flag();
-                // Add the incoming fragment to the packet cache.
-                self.fragment_cache.push(packet);
-                if pbf == PacketBoundaryFlag::NotComplete {
-                    // Wait for remaining fragments.
-                    return None;
-                }
-                // All fragments received, defragment the packet.
-                match self.fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
-                    Ok(packet) => Some(packet),
-                    Err(e) => {
-                        error!("Failed to defragment packet: {:?}", e);
-                        None
-                    }
+    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciDefragPacket> {
+        let packet = UciPacketHalPacket::parse(msg)
+            .or_else(|e| {
+                error!("Failed to parse packet: {:?}", e);
+                Err(e)
+            })
+            .ok()?;
+
+        let pbf = packet.get_packet_boundary_flag();
+
+        // TODO(b/261762781): The current implementation allows for the possibility that we receive
+        // interleaved Control/Data HAL packets, and so uses separate caches for them. In the
+        // future, if we determine that interleaving is not possible, this can be simplified.
+        if is_uci_control_packet(packet.get_message_type()) {
+            // Add the incoming fragment to the control packet cache.
+            self.control_fragment_cache.push(packet);
+            if pbf == PacketBoundaryFlag::NotComplete {
+                // Wait for remaining fragments.
+                return None;
+            }
+
+            // All fragments received, defragment the control packet.
+            match self.control_fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
+                Ok(packet) => Some(UciDefragPacket::Control(packet)),
+                Err(e) => {
+                    error!("Failed to defragment control packet: {:?}", e);
+                    None
                 }
             }
-            Err(e) => {
-                error!("Failed to parse packet: {:?}", e);
-                None
+        } else {
+            // Add the incoming fragment to the data packet cache.
+            self.data_fragment_cache.push(packet);
+            if pbf == PacketBoundaryFlag::NotComplete {
+                // Wait for remaining fragments.
+                return None;
+            }
+
+            // All fragments received, defragment the data packet.
+            match self.data_fragment_cache.drain(..).collect::<Vec<_>>().try_into() {
+                Ok(packet) => Some(UciDefragPacket::Data(packet)),
+                Err(e) => {
+                    error!("Failed to defragment data packet: {:?}", e);
+                    None
+                }
             }
         }
     }
@@ -443,8 +665,8 @@ pub fn parse_diagnostics_ntf(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ControleesV2 {
-    NoSessionKey(Vec<Controlee_V2_0_0_Byte_Version>),
+pub enum Controlees {
+    NoSessionKey(Vec<Controlee>),
     ShortSessionKey(Vec<Controlee_V2_0_16_Byte_Version>),
     LongSessionKey(Vec<Controlee_V2_0_32_Byte_Version>),
 }
@@ -459,25 +681,12 @@ pub fn write_controlee(controlee: &Controlee) -> BytesMut {
     buffer
 }
 
-pub fn write_controlee_2_0_0byte(controlee: &Controlee_V2_0_0_Byte_Version) -> BytesMut {
-    let mut buffer = BytesMut::new();
-    let short_address = controlee.short_address;
-    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
-    let subsession_id = controlee.subsession_id;
-    buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
-    let message_control = controlee.message_control.to_u8().unwrap();
-    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
-    buffer
-}
-
 pub fn write_controlee_2_0_16byte(controlee: &Controlee_V2_0_16_Byte_Version) -> BytesMut {
     let mut buffer = BytesMut::new();
     let short_address = controlee.short_address;
     buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
     let subsession_id = controlee.subsession_id;
     buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
-    let message_control = controlee.message_control.to_u8().unwrap();
-    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
     buffer.extend_from_slice(&controlee.subsession_key);
     buffer
 }
@@ -488,70 +697,54 @@ pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) ->
     buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
     let subsession_id = controlee.subsession_id;
     buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
-    let message_control = controlee.message_control.to_u8().unwrap();
-    buffer.extend_from_slice(&message_control.to_le_bytes()[0..1]);
     buffer.extend_from_slice(&controlee.subsession_key);
     buffer
 }
 
-/// Generate the V1 SessionUpdateControllerMulticastListCmd packet.
+/// Generate the SessionUpdateControllerMulticastListCmd packet.
 ///
-/// Workaround for handling the non-compatible command.
-/// Size check omitted and UCI spec compliancy is up to the caller of the method.
-pub fn build_session_update_controller_multicast_list_cmd_v1(
+/// This function can build the packet with/without message control, which
+/// is indicated by action parameter.
+pub fn build_session_update_controller_multicast_list_cmd(
     session_id: u32,
     action: UpdateMulticastListAction,
-    controlees: Vec<Controlee>,
-) -> SessionUpdateControllerMulticastListCmdPacket {
-    let mut controlees_buf = BytesMut::new();
-    controlees_buf.extend_from_slice(&(controlees.len() as u8).to_le_bytes());
-    for controlee in controlees {
-        controlees_buf.extend_from_slice(&write_controlee(&controlee));
-    }
-    SessionUpdateControllerMulticastListCmdBuilder {
-        session_id,
-        action,
-        payload: Some(controlees_buf.freeze()),
-    }
-    .build()
-}
-
-/// Generate the V2 SessionUpdateControllerMulticastListCmd packet.
-///
-/// Workaround for handling the non-compatible command.
-/// Size check omitted and UCI spec compliancy is up to the caller of the method.
-pub fn build_session_update_controller_multicast_list_cmd_v2(
-    session_id: u32,
-    action: UpdateMulticastListAction,
-    controlees: ControleesV2,
-) -> SessionUpdateControllerMulticastListCmdPacket {
+    controlees: Controlees,
+) -> Result<SessionUpdateControllerMulticastListCmdPacket> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
-        ControleesV2::NoSessionKey(controlee_v2) => {
-            controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
-            for controlee in controlee_v2 {
-                controlees_buf.extend_from_slice(&write_controlee_2_0_0byte(&controlee));
+        Controlees::NoSessionKey(controlee_v1)
+            if action == UpdateMulticastListAction::AddControlee
+                || action == UpdateMulticastListAction::RemoveControlee =>
+        {
+            controlees_buf.extend_from_slice(&(controlee_v1.len() as u8).to_le_bytes());
+            for controlee in controlee_v1 {
+                controlees_buf.extend_from_slice(&write_controlee(&controlee));
             }
         }
-        ControleesV2::ShortSessionKey(controlee_v2) => {
+        Controlees::ShortSessionKey(controlee_v2)
+            if action == UpdateMulticastListAction::AddControleeWithShortSubSessionKey =>
+        {
             controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
             for controlee in controlee_v2 {
                 controlees_buf.extend_from_slice(&write_controlee_2_0_16byte(&controlee));
             }
         }
-        ControleesV2::LongSessionKey(controlee_v2) => {
+        Controlees::LongSessionKey(controlee_v2)
+            if action == UpdateMulticastListAction::AddControleeWithLongSubSessionKey =>
+        {
             controlees_buf.extend_from_slice(&(controlee_v2.len() as u8).to_le_bytes());
             for controlee in controlee_v2 {
                 controlees_buf.extend_from_slice(&write_controlee_2_0_32byte(&controlee));
             }
         }
+        _ => return Err(Error::InvalidPacketError),
     }
-    SessionUpdateControllerMulticastListCmdBuilder {
+    Ok(SessionUpdateControllerMulticastListCmdBuilder {
         session_id,
         action,
         payload: Some(controlees_buf.freeze()),
     }
-    .build()
+    .build())
 }
 
 impl Drop for AppConfigTlv {
@@ -615,15 +808,16 @@ mod tests {
     }
 
     #[test]
-    fn test_build_multicast_update_v1_packet() {
+    fn test_build_multicast_update_packet() {
         let controlee = Controlee { short_address: 0x1234, subsession_id: 0x1324_3546 };
-        let packet: UciPacketPacket = build_session_update_controller_multicast_list_cmd_v1(
+        let packet: UciControlPacketPacket = build_session_update_controller_multicast_list_cmd(
             0x1425_3647,
             UpdateMulticastListAction::AddControlee,
-            vec![controlee; 1],
+            Controlees::NoSessionKey(vec![controlee; 1]),
         )
+        .unwrap()
         .into();
-        let packet_fragments: Vec<UciPacketHalPacket> = packet.into();
+        let packet_fragments: Vec<UciControlPacketHalPacket> = packet.into();
         let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
         assert_eq!(
             uci_packet,
@@ -640,7 +834,7 @@ mod tests {
     fn test_to_raw_payload() {
         let payload = vec![0x11, 0x22, 0x33];
         let payload_clone = payload.clone();
-        let packet = UciPacketBuilder {
+        let packet = UciControlPacketBuilder {
             group_id: GroupId::Test,
             message_type: MessageType::Response,
             opcode: 0x5,
@@ -654,7 +848,7 @@ mod tests {
     #[test]
     fn test_to_raw_payload_empty() {
         let payload: Vec<u8> = vec![];
-        let packet = UciPacketBuilder {
+        let packet = UciControlPacketBuilder {
             group_id: GroupId::Test,
             message_type: MessageType::Response,
             opcode: 0x5,
@@ -735,7 +929,7 @@ mod tests {
             0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
         ];
 
-        let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes).unwrap();
+        let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes, 2).unwrap();
         assert_eq!(measurements.len(), 2);
         let measurement_1 = &measurements[0].measurement;
         let mac_address_1 = &measurements[0].mac_address;
@@ -819,7 +1013,7 @@ mod tests {
             0x02, 0x05, 0x02, 0x05, // 2(Initiator-Responder ToF), 2(Active Ranging Rounds)
         ];
 
-        let measurements = ExtendedAddressDlTdoaRangingMeasurement::parse(&bytes).unwrap();
+        let measurements = ExtendedAddressDlTdoaRangingMeasurement::parse(&bytes, 1).unwrap();
         assert_eq!(measurements.len(), 1);
         let measurement = &measurements[0].measurement;
         let mac_address = &measurements[0].mac_address;

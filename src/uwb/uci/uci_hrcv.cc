@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2021 The Android Open Source Project
  *
- * Copyright 2021 NXP.
+ * Copyright 2021-2022 NXP.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * You may not use this file except in compliance with the License.
@@ -131,6 +131,14 @@ void uci_proc_session_management_rsp(uint8_t op_code, uint8_t* p_buf,
       uwb_ucif_session_management_status(UWB_SESSION_UPDATE_MULTICAST_LIST_REVT,
                                          p_buf, len);
       break;
+    case UCI_MSG_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST:
+      uwb_ucif_session_management_status(UWB_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT, p_buf, len);
+    break;
+    case UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_ANCHOR:
+    case UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_TAG:
+      uwb_ucif_session_management_status(UWB_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT, p_buf,
+        len);
+    break;
     default:
       UCI_TRACE_E("%s: unknown opcode:0x%x", __func__, op_code);
       break;
@@ -193,6 +201,12 @@ void uci_proc_session_management_ntf(uint8_t op_code, uint8_t* p_buf,
       break;
     case UCI_MSG_SESSION_UPDATE_CONTROLLER_MULTICAST_LIST:
       uwb_ucif_proc_multicast_list_update_ntf(p_buf, len);
+      break;
+    case UCI_MSG_DATA_CREDIT_NTF:
+      uwb_ucif_proc_data_credit_ntf(p_buf, len);
+      break;
+    case UCI_MSG_DATA_TRANSFER_STATUS_NTF:
+      uwb_ucif_proc_data_transfer_status_ntf(p_buf, len);
       break;
     default:
       UCI_TRACE_E("%s: unknown opcode:0x%x", __func__, op_code);
@@ -293,9 +307,9 @@ void uci_proc_vendor_specific_ntf(uint8_t gid, uint8_t* p_buf, uint16_t len) {
     if (uwb_cb.p_resp_cback == NULL) {
       UCI_TRACE_E("ext response callback is null");
     } else {
-      evt_data.sVendor_specific_ntf.len = len;
-      if (evt_data.sVendor_specific_ntf.len > 0) {
-      STREAM_TO_ARRAY(evt_data.sVendor_specific_ntf.data, p_buf,
+      evt_data.vendor_specific_ntf.len = len;
+      if (evt_data.vendor_specific_ntf.len > 0) {
+      STREAM_TO_ARRAY(evt_data.vendor_specific_ntf.data, p_buf,
                     len);
       }
       (*uwb_cb.p_resp_cback)(UWB_VENDOR_SPECIFIC_UCI_NTF_EVT, &evt_data);
