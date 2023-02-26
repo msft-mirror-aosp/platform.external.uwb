@@ -33,6 +33,8 @@ const MAX_PAYLOAD_LEN: usize = 255;
 pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
 const UCI_PACKET_HEADER_LEN: usize = 7;
+// Unfragmented UCI DATA_MESSAGE_SND packet header len.
+const UCI_DATA_SND_PACKET_HEADER_LEN: usize = 6;
 
 // Opcode field byte position (within UCI packet header) and mask (of bits to be used).
 const UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION: usize = 1;
@@ -498,7 +500,7 @@ impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
         let dpf = packet.get_data_packet_format().into();
 
         // get payload by stripping the header.
-        let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
+        let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
         if payload.is_empty() {
             fragments.push(
                 UciDataPacketHalBuilder {
