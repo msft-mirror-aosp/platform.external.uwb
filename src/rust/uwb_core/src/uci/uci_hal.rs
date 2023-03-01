@@ -50,9 +50,6 @@ pub trait UciHal: 'static + Send {
     ///
     /// The caller should call this method after the response of the previous send_command() is
     /// received.
-    ///
-    /// TODO(b/261886903): For the Data Packet Tx flow, we need to add a similar send_data()
-    /// API which implements fragmentation on the Data packet and calls send_packet().
     async fn send_command(&mut self, cmd: UciCommand) -> Result<()> {
         // A UCI command message may consist of multiple UCI packets when the payload is over the
         // maximum packet size. We convert the command into list of UciHalPacket, then send the
