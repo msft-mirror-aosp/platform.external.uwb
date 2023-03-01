@@ -60,7 +60,7 @@ pub trait UwbServiceCallback: 'static {
     /// Notify the vendor notification is received.
     fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>);
 
-    // TODO(b/261762781): In the future, add a callback here to notify the Data Rx packet.
+    // TODO(b/270443790): In the future, add a callback here to notify the Data Rx packet.
 }
 
 /// A placeholder implementation for UwbServiceCallback that does nothing.

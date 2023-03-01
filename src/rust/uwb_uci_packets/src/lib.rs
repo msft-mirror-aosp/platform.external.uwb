@@ -33,6 +33,8 @@ const MAX_PAYLOAD_LEN: usize = 255;
 pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
 const UCI_PACKET_HEADER_LEN: usize = 7;
+// Unfragmented UCI DATA_MESSAGE_SND packet header len.
+const UCI_DATA_SND_PACKET_HEADER_LEN: usize = 6;
 
 // Opcode field byte position (within UCI packet header) and mask (of bits to be used).
 const UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION: usize = 1;
@@ -152,10 +154,11 @@ pub struct ShortAddressDlTdoaRangingMeasurement {
 
 impl ShortAddressDlTdoaRangingMeasurement {
     /// Parse the `payload` byte buffer from PDL to the vector of measurement.
-    pub fn parse(bytes: &[u8]) -> Option<Vec<Self>> {
+    pub fn parse(bytes: &[u8], no_of_ranging_measurement: u8) -> Option<Vec<Self>> {
         let mut ptr = 0;
         let mut measurements = vec![];
-        while (ptr < bytes.len()) {
+        let mut count = 0;
+        while (count < no_of_ranging_measurement) {
             let mac_address = extract_u16(bytes, &mut ptr, 2)?;
             let rem = &bytes[ptr..];
             let measurement = DlTdoaRangingMeasurement::parse_one(rem);
@@ -164,6 +167,7 @@ impl ShortAddressDlTdoaRangingMeasurement {
                     ptr += measurement.get_total_size();
                     measurements
                         .push(ShortAddressDlTdoaRangingMeasurement { mac_address, measurement });
+                    count = count + 1;
                 }
                 None => return None,
             }
@@ -180,10 +184,11 @@ pub struct ExtendedAddressDlTdoaRangingMeasurement {
 
 impl ExtendedAddressDlTdoaRangingMeasurement {
     /// Parse the `payload` byte buffer from PDL to the vector of measurement.
-    pub fn parse(bytes: &[u8]) -> Option<Vec<Self>> {
+    pub fn parse(bytes: &[u8], no_of_ranging_measurement: u8) -> Option<Vec<Self>> {
         let mut ptr = 0;
         let mut measurements = vec![];
-        while (ptr < bytes.len()) {
+        let mut count = 0;
+        while (count < no_of_ranging_measurement) {
             let mac_address = extract_u64(bytes, &mut ptr, 8)?;
             let rem = &bytes[ptr..];
             let measurement = DlTdoaRangingMeasurement::parse_one(rem);
@@ -192,6 +197,7 @@ impl ExtendedAddressDlTdoaRangingMeasurement {
                     ptr += measurement.get_total_size();
                     measurements
                         .push(ExtendedAddressDlTdoaRangingMeasurement { mac_address, measurement });
+                    count = count + 1;
                 }
                 None => return None,
             }
@@ -486,8 +492,46 @@ impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
     }
 }
 
-// TODO(b/261886903): Implement From<UciDataPacketPacket> for Vec<UciDataPacketHalPacket>. This
-// will be used for fragmentation in the Data Packet Tx flow.
+// Helper to convert From<UciDataSndPacket> into Vec<UciDataPacketHalPacket>. An
+// example usage is for fragmentation in the Data Packet Tx flow.
+impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
+    fn from(packet: UciDataSndPacket) -> Self {
+        let mut fragments = Vec::new();
+        let dpf = packet.get_data_packet_format().into();
+
+        // get payload by stripping the header.
+        let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
+        if payload.is_empty() {
+            fragments.push(
+                UciDataPacketHalBuilder {
+                    group_id_or_data_packet_format: dpf,
+                    packet_boundary_flag: PacketBoundaryFlag::Complete,
+                    payload: None,
+                }
+                .build(),
+            );
+        } else {
+            let mut fragments_iter = payload.chunks(MAX_PAYLOAD_LEN).peekable();
+            while let Some(fragment) = fragments_iter.next() {
+                // Set the last fragment complete if this is last fragment.
+                let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
+                    PacketBoundaryFlag::NotComplete
+                } else {
+                    PacketBoundaryFlag::Complete
+                };
+                fragments.push(
+                    UciDataPacketHalBuilder {
+                        group_id_or_data_packet_format: dpf,
+                        packet_boundary_flag: pbf,
+                        payload: Some(Bytes::from(fragment.to_owned())),
+                    }
+                    .build(),
+                );
+            }
+        }
+        fragments
+    }
+}
 
 #[derive(Default, Debug)]
 pub struct PacketDefrager {
@@ -887,7 +931,7 @@ mod tests {
             0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
         ];
 
-        let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes).unwrap();
+        let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes, 2).unwrap();
         assert_eq!(measurements.len(), 2);
         let measurement_1 = &measurements[0].measurement;
         let mac_address_1 = &measurements[0].mac_address;
@@ -971,7 +1015,7 @@ mod tests {
             0x02, 0x05, 0x02, 0x05, // 2(Initiator-Responder ToF), 2(Active Ranging Rounds)
         ];
 
-        let measurements = ExtendedAddressDlTdoaRangingMeasurement::parse(&bytes).unwrap();
+        let measurements = ExtendedAddressDlTdoaRangingMeasurement::parse(&bytes, 1).unwrap();
         assert_eq!(measurements.len(), 1);
         let measurement = &measurements[0].measurement;
         let mac_address = &measurements[0].mac_address;
