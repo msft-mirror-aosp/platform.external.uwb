@@ -149,7 +149,6 @@ impl<U: UciManager> UciManagerSync<U> {
             mpsc::unbounded_channel::<RawUciMessage>();
         let (data_rcv_notification_sender, data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<DataRcvNotification>();
-        // TODO(b/261762781):Add a similar channel for Data Packet Rx
         self.runtime_handle.to_owned().block_on(async {
             self.uci_manager.set_core_notification_sender(core_notification_sender).await;
             self.uci_manager.set_session_notification_sender(session_notification_sender).await;
