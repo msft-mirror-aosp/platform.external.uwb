@@ -350,7 +350,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 match self.active_sessions.get(&session_id) {
                     Some(_) => {
                         /*
-                         * TODO(b/261886903): Handle the DataCredit notification in the new
+                         * TODO(b/270443790): Handle the DataCredit notification in the new
                          * code flow.
                          */
                     }
@@ -370,7 +370,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 match self.active_sessions.get(&session_id) {
                     Some(_) => {
                         /*
-                         * TODO(b/261886903): Handle the DataTransferStatus notification in the
+                         * TODO(b/270443790): Handle the DataTransferStatus notification in the
                          * new code flow.
                          */
                     }
