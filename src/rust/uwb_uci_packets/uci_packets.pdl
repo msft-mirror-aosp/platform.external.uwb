@@ -917,7 +917,11 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
     rssi: 8,
-    _reserved_: 88,
+    // b/272301550: The pdl compiler cannot handle individual fields
+    // larger than 64 bit. The work around is to split the 88 bit
+    // field into two.
+    _reserved_: 64,
+    _reserved_: 24,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
