@@ -14,13 +14,13 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use log::error;
 use num_traits::ToPrimitive;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawVendorMessage, SessionState, SetAppConfigResponse, StatusCode,
+    PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, StatusCode, UciControlPacketPacket,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -42,12 +42,13 @@ pub(super) enum UciResponse {
     SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
-    RangeStart(Result<()>),
-    RangeStop(Result<()>),
-    RangeGetRangingCount(Result<usize>),
+    SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
+    SessionStart(Result<()>),
+    SessionStop(Result<()>),
+    SessionGetRangingCount(Result<usize>),
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
-    RawVendorCmd(Result<RawVendorMessage>),
+    RawUciCmd(Result<RawUciMessage>),
 }
 
 impl UciResponse {
@@ -66,12 +67,13 @@ impl UciResponse {
             Self::SessionUpdateControllerMulticastList(result) => {
                 Self::matches_result_retry(result)
             }
-            Self::RangeStart(result) => Self::matches_result_retry(result),
-            Self::RangeStop(result) => Self::matches_result_retry(result),
-            Self::RangeGetRangingCount(result) => Self::matches_result_retry(result),
+            Self::SessionUpdateActiveRoundsDtTag(result) => Self::matches_result_retry(result),
+            Self::SessionStart(result) => Self::matches_result_retry(result),
+            Self::SessionStop(result) => Self::matches_result_retry(result),
+            Self::SessionGetRangingCount(result) => Self::matches_result_retry(result),
             Self::AndroidSetCountryCode(result) => Self::matches_result_retry(result),
             Self::AndroidGetPowerStats(result) => Self::matches_result_retry(result),
-            Self::RawVendorCmd(result) => Self::matches_result_retry(result),
+            Self::RawUciCmd(result) => Self::matches_result_retry(result),
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
@@ -92,14 +94,14 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
             UciResponseChild::CoreResponse(evt) => evt.try_into(),
-            UciResponseChild::SessionResponse(evt) => evt.try_into(),
-            UciResponseChild::RangingResponse(evt) => evt.try_into(),
+            UciResponseChild::SessionConfigResponse(evt) => evt.try_into(),
+            UciResponseChild::SessionControlResponse(evt) => evt.try_into(),
             UciResponseChild::AndroidResponse(evt) => evt.try_into(),
-            UciResponseChild::UciVendor_9_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_A_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_B_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_E_Response(evt) => vendor_response(evt.into()),
-            UciResponseChild::UciVendor_F_Response(evt) => vendor_response(evt.into()),
+            UciResponseChild::UciVendor_9_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_A_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_B_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_E_Response(evt) => raw_response(evt.into()),
+            UciResponseChild::UciVendor_F_Response(evt) => raw_response(evt.into()),
             _ => Err(Error::Unknown),
         }
     }
@@ -142,37 +144,49 @@ impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionResponsePacket,
+        evt: uwb_uci_packets::SessionConfigResponsePacket,
     ) -> std::result::Result<Self, Self::Error> {
-        use uwb_uci_packets::SessionResponseChild;
+        use uwb_uci_packets::SessionConfigResponseChild;
         match evt.specialize() {
-            SessionResponseChild::SessionInitRsp(evt) => {
+            SessionConfigResponseChild::SessionInitRsp(evt) => {
                 Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status())))
             }
-            SessionResponseChild::SessionDeinitRsp(evt) => {
+            SessionConfigResponseChild::SessionDeinitRsp(evt) => {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
-            SessionResponseChild::SessionGetCountRsp(evt) => Ok(UciResponse::SessionGetCount(
-                status_code_to_result(evt.get_status()).map(|_| evt.get_session_count()),
-            )),
-            SessionResponseChild::SessionGetStateRsp(evt) => Ok(UciResponse::SessionGetState(
-                status_code_to_result(evt.get_status()).map(|_| evt.get_session_state()),
-            )),
-            SessionResponseChild::SessionUpdateControllerMulticastListRsp(evt) => {
+            SessionConfigResponseChild::SessionGetCountRsp(evt) => {
+                Ok(UciResponse::SessionGetCount(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_session_count()),
+                ))
+            }
+            SessionConfigResponseChild::SessionGetStateRsp(evt) => {
+                Ok(UciResponse::SessionGetState(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_session_state()),
+                ))
+            }
+            SessionConfigResponseChild::SessionUpdateControllerMulticastListRsp(evt) => {
                 Ok(UciResponse::SessionUpdateControllerMulticastList(status_code_to_result(
                     evt.get_status(),
                 )))
             }
-            SessionResponseChild::SessionSetAppConfigRsp(evt) => {
+            SessionConfigResponseChild::SessionUpdateActiveRoundsDtTagRsp(evt) => {
+                Ok(UciResponse::SessionUpdateActiveRoundsDtTag(Ok(
+                    SessionUpdateActiveRoundsDtTagResponse {
+                        status: evt.get_status(),
+                        ranging_round_indexes: evt.get_ranging_round_indexes().to_vec(),
+                    },
+                )))
+            }
+            SessionConfigResponseChild::SessionSetAppConfigRsp(evt) => {
                 Ok(UciResponse::SessionSetAppConfig(SetAppConfigResponse {
                     status: evt.get_status(),
                     config_status: evt.get_cfg_status().clone(),
                 }))
             }
-            SessionResponseChild::SessionGetAppConfigRsp(evt) => {
+            SessionConfigResponseChild::SessionGetAppConfigRsp(evt) => {
                 Ok(UciResponse::SessionGetAppConfig(
                     status_code_to_result(evt.get_status()).map(|_| {
                         evt.get_tlvs().clone().into_iter().map(|tlv| tlv.into()).collect()
@@ -184,21 +198,21 @@ impl TryFrom<uwb_uci_packets::SessionResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::RangingResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::RangingResponsePacket,
+        evt: uwb_uci_packets::SessionControlResponsePacket,
     ) -> std::result::Result<Self, Self::Error> {
-        use uwb_uci_packets::RangingResponseChild;
+        use uwb_uci_packets::SessionControlResponseChild;
         match evt.specialize() {
-            RangingResponseChild::RangeStartRsp(evt) => {
-                Ok(UciResponse::RangeStart(status_code_to_result(evt.get_status())))
+            SessionControlResponseChild::SessionStartRsp(evt) => {
+                Ok(UciResponse::SessionStart(status_code_to_result(evt.get_status())))
             }
-            RangingResponseChild::RangeStopRsp(evt) => {
-                Ok(UciResponse::RangeStop(status_code_to_result(evt.get_status())))
+            SessionControlResponseChild::SessionStopRsp(evt) => {
+                Ok(UciResponse::SessionStop(status_code_to_result(evt.get_status())))
             }
-            RangingResponseChild::RangeGetRangingCountRsp(evt) => {
-                Ok(UciResponse::RangeGetRangingCount(
+            SessionControlResponseChild::SessionGetRangingCountRsp(evt) => {
+                Ok(UciResponse::SessionGetRangingCount(
                     status_code_to_result(evt.get_status()).map(|_| evt.get_count() as usize),
                 ))
             }
@@ -227,39 +241,9 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
     }
 }
 
-fn vendor_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
-    Ok(UciResponse::RawVendorCmd(Ok(RawVendorMessage {
-        gid: evt.get_group_id().to_u32().ok_or(Error::Unknown)?,
-        oid: evt.get_opcode().to_u32().ok_or(Error::Unknown)?,
-        payload: get_vendor_uci_payload(evt)?,
-    })))
-}
-
-fn get_vendor_uci_payload(data: uwb_uci_packets::UciResponsePacket) -> Result<Vec<u8>> {
-    match data.specialize() {
-        uwb_uci_packets::UciResponseChild::UciVendor_9_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_9_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_9_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_A_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_A_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_A_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_B_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_B_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_B_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_E_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_E_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_E_ResponseChild::None => Ok(Vec::new()),
-        },
-        uwb_uci_packets::UciResponseChild::UciVendor_F_Response(evt) => match evt.specialize() {
-            uwb_uci_packets::UciVendor_F_ResponseChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::UciVendor_F_ResponseChild::None => Ok(Vec::new()),
-        },
-        _ => {
-            error!("Invalid vendor response with gid {:?}", data.get_group_id());
-            Err(Error::Unknown)
-        }
-    }
+fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
+    let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
+    let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
+    let packet: UciControlPacketPacket = evt.into();
+    Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }

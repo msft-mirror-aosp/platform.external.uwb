@@ -21,11 +21,20 @@ use std::iter::FromIterator;
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, ControleesV2, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
-    DeviceState, ExtendedAddressTwoWayRangingMeasurement, MulticastUpdateStatusCode, PowerStats,
-    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
-    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
+    Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
+    DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
+    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, GroupId, MessageType,
+    MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode,
+    ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    UpdateMulticastListAction,
 };
+pub(crate) use uwb_uci_packets::{
+    UciControlPacketPacket, UciDataPacketHalPacket, UciDataPacketPacket, UciDataSndPacket,
+};
+
+use crate::error::Error;
 
 /// The type of the session identifier.
 pub type SessionId = u32;
@@ -132,6 +141,15 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
+/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionUpdateActiveRoundsDtTagResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// Indexes of unsuccessful ranging rounds.
+    pub ranging_round_indexes: Vec<u8>,
+}
+
 /// The country code struct that contains 2 uppercase ASCII characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountryCode([u8; 2]);
@@ -153,6 +171,14 @@ impl From<CountryCode> for [u8; 2] {
     }
 }
 
+impl TryFrom<String> for CountryCode {
+    type Error = Error;
+    fn try_from(item: String) -> Result<Self, Self::Error> {
+        let code = item.as_bytes().try_into().map_err(|_| Error::BadParameters)?;
+        Self::new(code).ok_or(Error::BadParameters)
+    }
+}
+
 /// The response of the UciManager::core_get_device_info() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
@@ -170,13 +196,23 @@ pub struct GetDeviceInfoResponse {
 
 /// The raw UCI message for the vendor commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawVendorMessage {
+pub struct RawUciMessage {
     /// The group id of the message.
     pub gid: u32,
     /// The opcode of the message.
     pub oid: u32,
     /// The payload of the message.
     pub payload: Vec<u8>,
+}
+
+impl From<UciControlPacketPacket> for RawUciMessage {
+    fn from(packet: UciControlPacketPacket) -> Self {
+        Self {
+            gid: packet.get_group_id() as u32,
+            oid: packet.get_opcode() as u32,
+            payload: packet.to_raw_payload(),
+        }
+    }
 }
 
 #[cfg(test)]
