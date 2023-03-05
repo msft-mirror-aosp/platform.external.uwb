@@ -384,17 +384,20 @@ packet UciPacketHal {
     _body_
 }
 
+// The UciDataPacketHal must be declared before the UciControlPacketHal for correct parsing to
+// happen. This is required as the Data packet specifies a value for the 'message_type' constraint,
+// while the Control packet does not (as it encompasses multiple 'message_type' values).
+packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
+    _reserved_: 8,
+    _size_(_payload_): 16,
+    _payload_,
+}
+
 packet UciControlPacketHal: UciPacketHal {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
-    _payload_,
-}
-
-packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
-    _reserved_: 8,
-    _size_(_payload_): 16,
     _payload_,
 }
 
@@ -444,7 +447,7 @@ packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type =
     dest_mac_address: 64,
     dest_fira_component: FiraComponent,
     uci_sequence_number: 8,
-    _size_(data): 32,
+    _size_(data): 16,
     data: 8[]
 }
 
@@ -455,7 +458,7 @@ packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV, message_type =
     source_mac_address: 64,
     source_fira_component: FiraComponent,
     dest_fira_component: FiraComponent,
-    _size_(data): 32,
+    _size_(data): 16,
     data: 8[]
 }
 
@@ -998,12 +1001,20 @@ test ExtendedMacTwoWaySessionInfoNtf {
 
 packet ShortMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = SHORT_ADDRESS) {
     no_of_ranging_measurements : 8,
-    _payload_,
+    dl_tdoa_measurements : 8[],
+}
+
+test ShortMacDlTDoASessionInfoNtf {
+     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x02\x01\x01\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ExtendedMacDlTDoASessionInfoNtf : SessionInfoNtf (ranging_measurement_type = DL_TDOA, mac_address_indicator = EXTENDED_ADDRESS) {
     no_of_ranging_measurements : 8,
-    _payload_,
+    dl_tdoa_measurements : 8[],
+}
+
+test ExtendedMacDlTDoASessionInfoNtf {
+     "\x62\x00\x00\x19\x00\x00\x00\x00\x02\x03\x04\x05\x06\x07\x08\x00\x0a\x01\x01\x01\x02\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
 }
 
 packet ShortMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
