@@ -346,6 +346,42 @@ impl<T: UciManager> SessionManagerActor<T> {
                     warn!("Received range data of the unknown Session: {:?}", range_data);
                 }
             }
+            UciSessionNotification::DataCredit { session_id, credit_availability: _ } => {
+                match self.active_sessions.get(&session_id) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/270443790): Handle the DataCredit notification in the new
+                         * code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received the Data Credit notification for an unknown Session {}",
+                            session_id
+                        );
+                    }
+                }
+            }
+            UciSessionNotification::DataTransferStatus {
+                session_id,
+                uci_sequence_number: _,
+                status: _,
+            } => {
+                match self.active_sessions.get(&session_id) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/270443790): Handle the DataTransferStatus notification in the
+                         * new code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received a Data Transfer Status notification for unknown Session {}",
+                            session_id
+                        );
+                    }
+                }
+            }
         }
     }
 }
