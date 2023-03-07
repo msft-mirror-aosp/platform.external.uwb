@@ -28,6 +28,7 @@ use crate::uci::pcapng_block::{
 };
 use crate::uci::uci_logger_factory::UciLoggerFactory;
 use crate::uci::uci_logger_pcapng::UciLoggerPcapng;
+use crate::utils::consuming_builder_field;
 
 const DEFAULT_LOG_DIR: &str = "/var/log/uwb";
 const DEFAULT_FILE_PREFIX: &str = "uwb_uci";
@@ -102,41 +103,13 @@ impl PcapngUciLoggerFactoryBuilder {
         PcapngUciLoggerFactoryBuilder::default()
     }
 
-    /// Tokio Runtime for driving Log.
-    pub fn runtime_handle(mut self, runtime_handle: Handle) -> Self {
-        self.runtime_handle = Some(runtime_handle);
-        self
-    }
-
-    /// Filename prefix for log file.
-    pub fn filename_prefix<T: AsRef<str>>(mut self, filename_prefix: T) -> Self {
-        self.filename_prefix = filename_prefix.as_ref().to_owned();
-        self
-    }
-
-    /// Range for the rotating index of log files.
-    pub fn rotate_range(mut self, rotate_range: usize) -> Self {
-        self.rotate_range = rotate_range;
-        self
-    }
-
-    /// Directory for log file.
-    pub fn log_path<T: AsRef<Path>>(mut self, log_path: T) -> Self {
-        self.log_path = log_path.as_ref().to_owned();
-        self
-    }
-
-    /// Buffer size.
-    pub fn buffer_size(mut self, buffer_size: usize) -> Self {
-        self.buffer_size = buffer_size;
-        self
-    }
-
-    /// Max file size:
-    pub fn file_size(mut self, file_size: usize) -> Self {
-        self.file_size = file_size;
-        self
-    }
+    // Setter methods of each field.
+    consuming_builder_field!(runtime_handle, Handle, Some);
+    consuming_builder_field!(filename_prefix, String);
+    consuming_builder_field!(rotate_range, usize);
+    consuming_builder_field!(log_path, PathBuf);
+    consuming_builder_field!(buffer_size, usize);
+    consuming_builder_field!(file_size, usize);
 
     /// Builds PcapngUciLoggerFactory
     pub fn build(self) -> Option<PcapngUciLoggerFactory> {
@@ -163,7 +136,7 @@ struct LogWriterActor {
     /// Maps chip id to interface id. The content follows the content of the component in
     /// PcapngUciLoggerFactory with the same name.
     chip_interface_id_map: Vec<String>,
-    current_file: BufferedFile,
+    current_file: Option<BufferedFile>,
     file_factory: FileFactory,
     file_size_limit: usize,
     log_receiver: mpsc::UnboundedReceiver<PcapngLoggerMessage>,
@@ -172,14 +145,23 @@ struct LogWriterActor {
 impl LogWriterActor {
     /// write data to file.
     fn write_once(&mut self, data: Vec<u8>) -> Option<()> {
-        if data.len() + self.current_file.file_size() > self.file_size_limit {
-            self.current_file = self
-                .file_factory
-                .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?;
+        // Create new file if the file is not created, or does not fit incoming data:
+        if self.current_file.is_none()
+            || data.len() + self.current_file.as_ref().unwrap().file_size() > self.file_size_limit
+        {
+            self.current_file = Some(
+                self.file_factory
+                    .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?,
+            );
         }
-        self.current_file.buffered_write(data)
+        self.current_file.as_mut().unwrap().buffered_write(data)
     }
 
+    /// Handle single new chip: stores chip in chip_interface_id_map and:
+    ///
+    /// a. Nothing extra if current_file is not created yet.
+    /// b. If current file exists:
+    ///    Insert IDB in current file if it fits, otherwise switch to new file.
     fn handle_new_chip(&mut self, chip_id: String, interface_id: u32) -> Option<()> {
         if self.chip_interface_id_map.contains(&chip_id)
             || self.chip_interface_id_map.len() as u32 != interface_id
@@ -191,17 +173,20 @@ impl LogWriterActor {
             return None;
         }
         self.chip_interface_id_map.push(chip_id.clone());
-        // Handle single new chip:
-        // Insert IDB in current file if it fits, otherwise switch to new file.
-        let idb_data = into_interface_description_block(chip_id)?;
-        if idb_data.len() + self.current_file.file_size() <= self.file_size_limit {
-            self.current_file.buffered_write(idb_data)
-        } else {
-            self.current_file = self
-                .file_factory
-                .build_file_with_metadata(&self.chip_interface_id_map, self.file_size_limit)?;
-            Some(())
+
+        if let Some(current_file) = &mut self.current_file {
+            let idb_data = into_interface_description_block(chip_id)?;
+            if idb_data.len() + current_file.file_size() <= self.file_size_limit {
+                current_file.buffered_write(idb_data)?;
+            } else {
+                self.current_file =
+                    Some(self.file_factory.build_file_with_metadata(
+                        &self.chip_interface_id_map,
+                        self.file_size_limit,
+                    )?);
+            }
         }
+        Some(())
     }
 
     async fn run(&mut self) {
@@ -216,10 +201,17 @@ impl LogWriterActor {
                 }
                 Some(PcapngLoggerMessage::ByteStream(data)) => {
                     if self.write_once(data).is_none() {
-                        error!(
-                            "UCI log: failed writting packet to log file {:?}",
-                            self.current_file.file
-                        );
+                        match &self.current_file {
+                            Some(current_file) => {
+                                error!(
+                                    "UCI log: failed writting packet to log file {:?}",
+                                    current_file.file
+                                );
+                            }
+                            None => {
+                                error!("UCI log: failed writting packet to log file: no log file.");
+                            }
+                        }
                         break;
                     }
                 }
@@ -243,17 +235,15 @@ impl LogWriter {
     ///
     /// runtime_handle must be a Handle to a multithread runtime that outlives LogWriterActor
     fn new(
-        mut file_factory: FileFactory,
+        file_factory: FileFactory,
         file_size_limit: usize,
         runtime_handle: Handle,
     ) -> Option<Self> {
         let chip_interface_id_map = Vec::new();
-        let current_file =
-            file_factory.build_file_with_metadata(&chip_interface_id_map, file_size_limit)?;
         let (log_sender, log_receiver) = mpsc::unbounded_channel();
         let mut log_writer_actor = LogWriterActor {
             chip_interface_id_map,
-            current_file,
+            current_file: None,
             file_factory,
             file_size_limit,
             log_receiver,
@@ -422,14 +412,11 @@ impl BufferedFile {
 
     /// Clears buffer.
     fn flush_buffer(&mut self) -> Option<()> {
-        match self.file.write(&self.buffer) {
-            Ok(write_size) => {
-                self.written_size += write_size;
-                self.buffer.clear();
-                Some(())
-            }
-            Err(_) => None,
-        }
+        self.file.write_all(&self.buffer).ok()?;
+        self.written_size += self.buffer.len();
+        self.buffer.clear();
+
+        self.file.flush().ok()
     }
 }
 
@@ -481,32 +468,54 @@ mod tests {
     }
 
     #[test]
+    fn test_no_file_write() {
+        let dir = tempdir().unwrap();
+        {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+            let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
+                .buffer_size(1024)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
+                .runtime_handle(runtime.handle().to_owned())
+                .build()
+                .unwrap();
+            let _logger_0 = file_manager.build_logger("logger 0").unwrap();
+            let _logger_1 = file_manager.build_logger("logger 1").unwrap();
+            // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
+            thread::sleep(time::Duration::from_millis(10));
+        }
+        // Expect no log file created as no packet is received.
+        let log_path = dir.as_ref().to_owned().join("log.pcapng");
+        assert!(fs::read(log_path).is_err());
+    }
+
+    #[test]
     fn test_single_file_write() {
         let dir = tempdir().unwrap();
         {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let mut logger_1 = file_manager.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
         // Expect file log.pcapng consist of SHB->IDB(logger 0)->EPB(packet 0)->IDB(logger 1)
         // ->EPB(packet 1)->EPB(packet 2)
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 6);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -524,20 +533,20 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_140 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(140)
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_140.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let mut logger_1 = file_manager_140.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
@@ -546,7 +555,7 @@ mod tests {
         // File 1: SHB->IDB->IDB->EPB (cannot fit next)
         // File 0: SHB->IDB->IDB->EPB
         let log_path = dir.as_ref().to_owned().join("log_2.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -554,7 +563,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x6); // EPB
         assert_eq!(block_info[3].0, 0x1); // IDB
         let log_path = dir.as_ref().to_owned().join("log_1.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -562,7 +571,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x1); // IDB
         assert_eq!(block_info[3].0, 0x6); // EPB
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -578,20 +587,20 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_144 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(144)
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_144.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             let mut logger_1 = file_manager_144.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
             thread::sleep(time::Duration::from_millis(10));
         }
@@ -599,7 +608,7 @@ mod tests {
         // File 1: SHB->IDB->EPB->EPB (cannot fit next)
         // File 0: SHB->IDB->IDB->EPB
         let log_path = dir.as_ref().to_owned().join("log_1.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -607,7 +616,7 @@ mod tests {
         assert_eq!(block_info[2].0, 0x6); // EPB
         assert_eq!(block_info[3].0, 0x6); // EPB
         let log_path = dir.as_ref().to_owned().join("log.pcapng");
-        let log_content = fs::read(&log_path).unwrap();
+        let log_content = fs::read(log_path).unwrap();
         let block_info = get_block_info(log_content).unwrap();
         assert_eq!(block_info.len(), 4);
         assert_eq!(block_info[0].0, 0x0A0D_0D0A); // SHB
@@ -624,20 +633,20 @@ mod tests {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_96 = PcapngUciLoggerFactoryBuilder::new()
                 .buffer_size(1024)
-                .filename_prefix("log")
-                .log_path(&dir)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.as_ref().to_owned())
                 .file_size(96) // Fails logging, as metadata takes 100
                 .runtime_handle(runtime.handle().to_owned())
                 .build()
                 .unwrap();
             let mut logger_0 = file_manager_96.build_logger("logger 0").unwrap();
             let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
-            logger_0.log_uci_packet(packet_0.into());
+            logger_0.log_uci_control_packet(packet_0.into());
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
-            logger_0.log_uci_packet(packet_2.into());
+            logger_0.log_uci_control_packet(packet_2.into());
             let mut logger_1 = file_manager_96.build_logger("logger 1").unwrap();
             let packet_1 = UciVendor_A_NotificationBuilder { opcode: 1, payload: None }.build();
-            logger_1.log_uci_packet(packet_1.into());
+            logger_1.log_uci_control_packet(packet_1.into());
         }
     }
 }

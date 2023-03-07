@@ -20,13 +20,10 @@ use num_traits::FromPrimitive;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AppConfigTlv, AppConfigTlvType, Controlee, CountryCode, DeviceConfigId, DeviceConfigTlv,
+    AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
     ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
 };
-use uwb_uci_packets::{
-    build_session_update_controller_multicast_list_cmd_v1,
-    build_session_update_controller_multicast_list_cmd_v2, ControleesV2,
-};
+use uwb_uci_packets::{build_session_update_controller_multicast_list_cmd, GroupId, MessageType};
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
 #[allow(missing_docs)]
@@ -65,48 +62,43 @@ pub enum UciCommand {
     SessionUpdateControllerMulticastList {
         session_id: SessionId,
         action: UpdateMulticastListAction,
-        controlees: Vec<Controlee>,
+        controlees: Controlees,
     },
-    SessionUpdateControllerMulticastListV2 {
-        session_id: SessionId,
-        action: UpdateMulticastListAction,
-        controlees: ControleesV2,
+    SessionUpdateActiveRoundsDtTag {
+        session_id: u32,
+        ranging_round_indexes: Vec<u8>,
     },
-    RangeStart {
-        session_id: SessionId,
-    },
-    RangeStop {
+    SessionStart {
         session_id: SessionId,
     },
-    RangeGetRangingCount {
+    SessionStop {
+        session_id: SessionId,
+    },
+    SessionGetRangingCount {
         session_id: SessionId,
     },
     AndroidSetCountryCode {
         country_code: CountryCode,
     },
     AndroidGetPowerStats,
-    RawVendorCmd {
+    RawUciCmd {
+        mt: u32,
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
     },
 }
 
-impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
+impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
     type Error = Error;
     fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
+            // UCI Session Config Commands
             UciCommand::SessionInit { session_id, session_type } => {
                 uwb_uci_packets::SessionInitCmdBuilder { session_id, session_type }.build().into()
             }
             UciCommand::SessionDeinit { session_id } => {
                 uwb_uci_packets::SessionDeinitCmdBuilder { session_id }.build().into()
-            }
-            UciCommand::RangeStart { session_id } => {
-                uwb_uci_packets::RangeStartCmdBuilder { session_id }.build().into()
-            }
-            UciCommand::RangeStop { session_id } => {
-                uwb_uci_packets::RangeStopCmdBuilder { session_id }.build().into()
             }
             UciCommand::CoreGetDeviceInfo => {
                 uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into()
@@ -116,19 +108,10 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 uwb_uci_packets::SessionGetStateCmdBuilder { session_id }.build().into()
             }
             UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
-                build_session_update_controller_multicast_list_cmd_v1(
-                    session_id, action, controlees,
-                )
-                .into()
+                build_session_update_controller_multicast_list_cmd(session_id, action, controlees)
+                    .map_err(|_| Error::BadParameters)?
+                    .into()
             }
-            UciCommand::SessionUpdateControllerMulticastListV2 {
-                session_id,
-                action,
-                controlees,
-            } => build_session_update_controller_multicast_list_cmd_v2(
-                session_id, action, controlees,
-            )
-            .into(),
             UciCommand::CoreSetConfig { config_tlvs } => {
                 uwb_uci_packets::SetConfigCmdBuilder { tlvs: config_tlvs }.build().into()
             }
@@ -153,11 +136,19 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
                 .build()
                 .into()
             }
+            UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
+                uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+                    session_id,
+                    ranging_round_indexes,
+                }
+                .build()
+                .into()
+            }
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
-            UciCommand::RawVendorCmd { gid, oid, payload } => {
-                build_uci_vendor_cmd_packet(gid, oid, payload)?
+            UciCommand::RawUciCmd { mt, gid, oid, payload } => {
+                build_raw_uci_cmd_packet(mt, gid, oid, payload)?
             }
             UciCommand::SessionGetCount => {
                 uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into()
@@ -172,20 +163,27 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciCommandPacket {
             UciCommand::DeviceReset { reset_config } => {
                 uwb_uci_packets::DeviceResetCmdBuilder { reset_config }.build().into()
             }
-            UciCommand::RangeGetRangingCount { session_id } => {
-                uwb_uci_packets::RangeGetRangingCountCmdBuilder { session_id }.build().into()
+            // UCI Session Control Commands
+            UciCommand::SessionStart { session_id } => {
+                uwb_uci_packets::SessionStartCmdBuilder { session_id }.build().into()
+            }
+            UciCommand::SessionStop { session_id } => {
+                uwb_uci_packets::SessionStopCmdBuilder { session_id }.build().into()
+            }
+            UciCommand::SessionGetRangingCount { session_id } => {
+                uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
             }
         };
         Ok(packet)
     }
 }
 
-fn build_uci_vendor_cmd_packet(
+fn build_raw_uci_cmd_packet(
+    mt: u32,
     gid: u32,
     oid: u32,
     payload: Vec<u8>,
-) -> Result<uwb_uci_packets::UciCommandPacket> {
-    use uwb_uci_packets::GroupId;
+) -> Result<uwb_uci_packets::UciControlPacketPacket> {
     let group_id = GroupId::from_u32(gid).ok_or_else(|| {
         error!("Invalid GroupId: {}", gid);
         Error::BadParameters
@@ -195,26 +193,12 @@ fn build_uci_vendor_cmd_packet(
         error!("Invalid opcod: {}", oid);
         Error::BadParameters
     })?;
-    let packet = match group_id {
-        GroupId::VendorReserved9 => {
-            uwb_uci_packets::UciVendor_9_CommandBuilder { opcode, payload }.build().into()
-        }
-        GroupId::VendorReservedA => {
-            uwb_uci_packets::UciVendor_A_CommandBuilder { opcode, payload }.build().into()
-        }
-        GroupId::VendorReservedB => {
-            uwb_uci_packets::UciVendor_B_CommandBuilder { opcode, payload }.build().into()
-        }
-        GroupId::VendorReservedE => {
-            uwb_uci_packets::UciVendor_E_CommandBuilder { opcode, payload }.build().into()
-        }
-        GroupId::VendorReservedF => {
-            uwb_uci_packets::UciVendor_F_CommandBuilder { opcode, payload }.build().into()
-        }
-        _ => {
-            error!("Invalid vendor gid {:?}", gid);
-            return Err(Error::BadParameters);
-        }
-    };
-    Ok(packet)
+    let message_type = MessageType::from_u32(mt).ok_or_else(|| {
+        error!("Invalid MessageType: {}", mt);
+        Error::BadParameters
+    })?;
+    match uwb_uci_packets::build_uci_control_packet(message_type, group_id, opcode, payload) {
+        Some(cmd) => Ok(cmd),
+        None => Err(Error::BadParameters),
+    }
 }

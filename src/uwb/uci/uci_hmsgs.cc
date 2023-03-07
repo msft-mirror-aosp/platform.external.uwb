@@ -204,6 +204,11 @@ uint8_t uci_snd_session_init_cmd(uint32_t session_id, uint8_t sessionType) {
   UINT32_TO_STREAM(pp, session_id);
   UINT8_TO_STREAM(pp, sessionType);
 
+  data_tx_cb.tx_data_pkt[data_tx_cb.no_of_sessions].session_id = session_id;
+  data_tx_cb.tx_data_pkt[data_tx_cb.no_of_sessions].credit_available = 1;
+  phUwb_GKI_init_q(&data_tx_cb.tx_data_pkt[data_tx_cb.no_of_sessions].tx_data_pkt_q);
+  data_tx_cb.no_of_sessions++;
+
   uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
 }
@@ -232,6 +237,14 @@ uint8_t uci_snd_session_deinit_cmd(uint32_t session_id) {
   UINT8_TO_STREAM(pp, 0x00);
   UINT8_TO_STREAM(pp, UCI_MSG_SESSION_DEINIT_CMD_SIZE);
   UINT32_TO_STREAM(pp, session_id);
+
+  for(int i=0; i < data_tx_cb.no_of_sessions; i++) {
+    if(data_tx_cb.tx_data_pkt[i].session_id == session_id)
+      data_tx_cb.tx_data_pkt[i].session_id = 0;
+  }
+  if (data_tx_cb.no_of_sessions > 0) {
+     data_tx_cb.no_of_sessions--;
+  }
 
   uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
@@ -526,9 +539,44 @@ uint8_t uci_snd_multicast_list_update_cmd(uint32_t session_id, uint8_t action,
   UINT8_TO_STREAM(pp, action);
   UINT8_TO_STREAM(pp, noOfControlees);
   for (uint8_t i = 0; i < noOfControlees; i++) {
-    UINT16_TO_BE_STREAM(pp, shortAddressList[i]);
+    UINT16_TO_STREAM(pp, shortAddressList[i]);
     UINT32_TO_STREAM(pp, subSessionIdList[i]);
   }
+
+  uwb_ucif_send_cmd(p);
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
+** Function         uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd
+**
+** Description      compose and send SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_CMD command
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_snd_configure_dt_anchor_for_rr_rdm_list_cmd(uint32_t session_id, uint8_t rr_rdm_count, uint8_t length, uint8_t* data) {
+  UWB_HDR* p;
+  uint8_t* pp;
+  uint16_t total_size = 0;
+
+  total_size = sizeof(session_id) + sizeof(rr_rdm_count) + length;
+  if ((p = UCI_GET_CMD_BUF(total_size)) == NULL) return (UCI_STATUS_FAILED);
+  p->event = BT_EVT_TO_UWB_UCI;
+  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + total_size);
+
+  p->offset = UCI_MSG_OFFSET_SIZE;
+  p->layer_specific = 0;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_SESSION_MANAGE);
+  UCI_MSG_BLD_HDR1(pp, UCI_MSG_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_LIST);
+  UINT8_TO_STREAM(pp, 0x00);
+  UINT8_TO_STREAM(pp, total_size);
+  UINT32_TO_STREAM(pp, session_id);
+  UINT8_TO_STREAM(pp, rr_rdm_count);
+  ARRAY_TO_STREAM(pp, data, length);
 
   uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
@@ -558,7 +606,7 @@ uint8_t uci_snd_set_country_code_cmd(uint8_t *country_code) {
   UCI_MSG_BLD_HDR1(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE);
   UINT8_TO_STREAM(pp, 0x00);
   UINT8_TO_STREAM(pp, UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
-  ARRAY8_TO_STREAM(pp, country_code);
+  ARRAY8_TO_STREAM(pp, country_code, UCI_MSG_ANDROID_SET_COUNTRY_CODE_CMD_SIZE);
   uwb_ucif_send_cmd(p);
 
   return (UCI_STATUS_OK);
@@ -846,6 +894,138 @@ uint8_t uci_snd_test_stop_session_cmd(void) {
   UCI_MSG_BLD_HDR1(pp, UCI_MSG_TEST_STOP_SESSION);
   UINT8_TO_STREAM(pp, 0x00);
   UINT8_TO_STREAM(pp, UCI_MSG_TEST_STOP_SESSION_CMD_SIZE);
+
+  uwb_ucif_send_cmd(p);
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
+** Function         uci_send_data_frame
+**
+** Description      compose and send data packets
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_send_data_frame(uint32_t session_id, uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
+                            uint16_t data_len, uint8_t* p_data) {
+  UCI_TRACE_I("uci_send_data_frame()");
+  UWB_HDR* p;
+  uint8_t* pp;
+  uint16_t uci_pkt_len;
+  uint8_t pbf = 1;
+  tUWB_RESPONSE evt_data;
+  uint16_t max_supported_uci_payload;
+  uint16_t starIndex = 0;
+  bool isFirstSegment = true;
+
+  int16_t total_size = sizeof(session_id) + EXTENDED_ADDRESS_LEN + data_len +
+                       sizeof(dest_end_point) + sizeof(uint8_t) +
+                       sizeof(data_len);
+  data_tx_cb.curr_session_id = session_id;
+
+  for (int i = 0; i < data_tx_cb.no_of_sessions; i++) {
+    if (data_tx_cb.curr_session_id == data_tx_cb.tx_data_pkt[i].session_id) {
+      data_tx_cb.curr_session_idx = i;
+    }
+  }
+
+
+  if((p_data == nullptr) || (p_addr == nullptr)){
+    evt_data.status = UCI_STATUS_FAILED;
+    (*uwb_cb.p_resp_cback)(UWB_SEND_DATA_STATUS_EVT, &evt_data);
+    return (UCI_STATUS_FAILED);
+  }
+
+  max_supported_uci_payload = data_tx_cb.max_data_pkt_payload_size;
+  while (data_len > 0) {
+    if (total_size <= max_supported_uci_payload) {
+      pbf = 0; /* last fragment */
+      uci_pkt_len = total_size;
+    } else { /* Handling PBF as per generic specification*/
+      pbf = 1;
+      uci_pkt_len = max_supported_uci_payload;
+    }
+    if ((p = UCI_GET_CMD_BUF(uci_pkt_len)) == NULL) {
+      evt_data.status = UCI_STATUS_FAILED;
+      (*uwb_cb.p_resp_cback)(UWB_SEND_DATA_STATUS_EVT, &evt_data);
+    }
+
+    p->event = BT_EVT_TO_UWB_UCI;
+    p->len = uci_pkt_len + UCI_MSG_HDR_SIZE;
+    pp = (uint8_t*)(p + 1) + p->offset;
+
+    UCI_DATA_PBLD_HDR(pp, pbf, uci_pkt_len);
+
+    if (isFirstSegment) {
+      UINT32_TO_STREAM(pp, session_id);
+      ARRAY_TO_STREAM(pp, p_addr, EXTENDED_ADDRESS_LEN);
+      UINT8_TO_STREAM(pp, dest_end_point);
+      UINT8_TO_STREAM(pp, sequence_num);
+      uci_pkt_len -= (sizeof(session_id) + EXTENDED_ADDRESS_LEN + sizeof(dest_end_point) +
+                      sizeof(data_len) + sizeof(uint8_t));
+    }
+    if(!isFirstSegment){
+      uci_pkt_len -= sizeof(data_len);
+    }
+    UINT16_TO_STREAM(pp, uci_pkt_len);
+
+    ARRAY_TO_STREAM(pp, (p_data + starIndex), uci_pkt_len);
+    starIndex += uci_pkt_len;
+    data_len -= uci_pkt_len;
+    total_size = sizeof(data_len) + data_len;
+
+    uwb_ucif_send_data_frame(p);
+    isFirstSegment = false;
+  }
+  evt_data.status = UCI_STATUS_OK;
+  (*uwb_cb.p_resp_cback)(UWB_SEND_DATA_STATUS_EVT, &evt_data);
+  return (UCI_STATUS_OK);
+}
+
+/*******************************************************************************
+**
+** Function         uci_send_range_round_index_update_cmd
+**
+** Description      compose and send range round index update command
+**
+** Returns          status
+**
+*******************************************************************************/
+uint8_t uci_send_range_round_index_update_cmd(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_active_rngIndex,
+                                 uint8_t rng_round_index_len, uint8_t* p_rng_round_index) {
+  UWB_HDR* p;
+  uint8_t* pp;
+  uint16_t total_size;
+  uint8_t oid;
+
+  total_size = sizeof(session_id) + sizeof(number_of_active_rngIndex) + rng_round_index_len;
+
+  if ((p = UCI_GET_CMD_BUF(total_size)) == NULL) return (UCI_STATUS_FAILED);
+
+  p->event = BT_EVT_TO_UWB_UCI;
+
+  p->len = (uint16_t) (UCI_MSG_HDR_SIZE + total_size);
+
+  p->offset = UCI_MSG_OFFSET_SIZE;
+  p->layer_specific = 0;
+  pp = (uint8_t*)(p + 1) + p->offset;
+
+  if(dlTdoaRole == 0x00) {
+    oid = UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_ANCHOR;
+  } else {
+    oid = UCI_MSG_SESSION_UPDATE_ACTIVE_ROUNDS_OF_DT_TAG;
+  }
+
+  UCI_MSG_BLD_HDR0(pp, UCI_MT_CMD, UCI_GID_SESSION_MANAGE);
+  UCI_MSG_BLD_HDR1(pp, oid);
+  UINT8_TO_STREAM(pp, 0x00);
+  UINT8_TO_STREAM(pp, total_size);
+
+  UINT32_TO_STREAM(pp, session_id);
+  UINT8_TO_STREAM(pp, number_of_active_rngIndex);
+  ARRAY_TO_STREAM(pp, p_rng_round_index, rng_round_index_len);
 
   uwb_ucif_send_cmd(p);
   return (UCI_STATUS_OK);
