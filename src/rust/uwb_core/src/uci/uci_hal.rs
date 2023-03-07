@@ -18,7 +18,7 @@ use std::convert::TryInto;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{Packet, UciCommandPacket, UciPacketHalPacket, UciPacketPacket};
+use uwb_uci_packets::{Packet, UciControlPacketHalPacket, UciControlPacketPacket};
 
 use crate::error::Result;
 use crate::params::uci_packets::SessionId;
@@ -37,7 +37,7 @@ pub trait UciHal: 'static + Send {
     ///
     /// All the other API should be called after the open() completes successfully. Once the method
     /// completes successfully, the UciHal instance should store |packet_sender| and send the UCI
-    /// packets (responses or notifications) back to the caller via the |packet_sender|.
+    /// packets (responses, notifications, data) back to the caller via the |packet_sender|.
     async fn open(&mut self, packet_sender: mpsc::UnboundedSender<UciHalPacket>) -> Result<()>;
 
     /// Close the UCI HAL.
@@ -54,9 +54,8 @@ pub trait UciHal: 'static + Send {
         // A UCI command message may consist of multiple UCI packets when the payload is over the
         // maximum packet size. We convert the command into list of UciHalPacket, then send the
         // packets via send_packet().
-        let packet: UciCommandPacket = cmd.try_into()?;
-        let packet: UciPacketPacket = packet.into();
-        let fragmented_packets: Vec<UciPacketHalPacket> = packet.into();
+        let packet: UciControlPacketPacket = cmd.try_into()?;
+        let fragmented_packets: Vec<UciControlPacketHalPacket> = packet.into();
         for packet in fragmented_packets.into_iter() {
             self.send_packet(packet.to_vec()).await?;
         }

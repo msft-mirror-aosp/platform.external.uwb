@@ -131,12 +131,13 @@ enum ReasonCode {
   STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS = 0;
   MAX_RANGING_ROUND_RETRY_COUNT_REACHED = 1;
   MAX_NUMBER_OF_MEASUREMENTS_REACHED = 2;
-  ERROR_SLOT_LENGTH_NOT_SUPPORTED = 20;
-  ERROR_INSUFFICIENT_SLOTS_PER_RR = 21;
-  ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED = 22;
-  ERROR_INVALID_RANGING_INTERVAL = 23;
-  ERROR_INVALID_STS_CONFIG = 24;
-  ERROR_INVALID_RFRAME_CONFIG = 25;
+  ERROR_INVALID_UL_TDOA_RANDOM_WINDOW = 29;
+  ERROR_SLOT_LENGTH_NOT_SUPPORTED = 32;
+  ERROR_INSUFFICIENT_SLOTS_PER_RR = 33;
+  ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED = 34;
+  ERROR_INVALID_RANGING_INTERVAL = 35;
+  ERROR_INVALID_STS_CONFIG = 36;
+  ERROR_INVALID_RFRAME_CONFIG = 37;
 }
 
 // Represent uwb_uci_packets::RangingMeasurementType.
@@ -158,6 +159,8 @@ enum SessionType {
 enum UpdateMulticastListAction {
   ADD_CONTROLEE = 0;
   REMOVE_CONTROLEE = 1;
+  ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY = 2;
+  ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 3;
 }
 
 // Represent uwb_core::params::fira_app_config_params::DeviceType.
@@ -385,13 +388,9 @@ message Controlee {
   uint32 subsession_id = 2;
 }
 
-// TODO(b/246678053): Should this be split into separate message types ?
-//
 // Represent uwb_uci_packets::ShortAddressTwoWayRangingMeasurement or
-// uwb_uci_packets::ExtendedAddressTwoWayRangingMeasurement or
-// uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement or
-// uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement.
-message RangingMeasurement {
+// uwb_uci_packets::ExtendedAddressTwoWayRangingMeasurement.
+message TwoWayRangingMeasurement {
   uint64 mac_address = 1;
   StatusCode status = 2;
   uint32 nlos = 3;
@@ -406,9 +405,45 @@ message RangingMeasurement {
   uint32 aoa_destination_elevation_fom = 12;
   uint32 slot_index = 13;
   uint32 rssi = 14;
-  uint32 frame_sequence_number = 15;
-  uint32 block_index = 16;
-  OwrAoaStatusCode owr_aoa_status_code = 17;
+}
+
+// Represent uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement or
+// uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement.
+message OwrAoaRangingMeasurement {
+  uint64 mac_address = 1;
+  OwrAoaStatusCode owr_aoa_status_code = 2;
+  uint32 nlos = 3;
+  uint32 block_index = 4;
+  uint32 frame_sequence_number = 5;
+  uint32 aoa_azimuth = 6;
+  uint32 aoa_azimuth_fom = 7;
+  uint32 aoa_elevation = 8;
+  uint32 aoa_elevation_fom = 9;
+}
+
+// Represent uwb_uci_packets::ShortAddressDlTdoaRangingMeasurement or
+// uwb_uci_packets::ExtendedAddressDlTdoaRangingMeasurement.
+message DlTDoARangingMeasurement {
+  uint64 mac_address = 1;
+  StatusCode status = 2;
+  uint32 message_control = 3;
+  uint32 block_index = 4;
+  uint32 round_index = 5;
+  uint32 nlos = 6;
+  uint32 aoa_azimuth = 7;
+  uint32 aoa_azimuth_fom = 8;
+  uint32 aoa_elevation = 9;
+  uint32 aoa_elevation_fom = 10;
+  uint32 rssi = 11;
+  uint64 tx_timestamp = 12;
+  uint64 rx_timestamp = 13;
+  uint32 anchor_cfo = 14;
+  uint32 cfo = 15;
+  uint32 initiator_reply_time = 16;
+  uint32 responder_reply_time = 17;
+  uint32 initiator_responder_tof = 18;
+  repeated uint32 dt_anchor_location = 19;
+  repeated uint32 ranging_rounds = 20;
 }
 
 // Represent uwb_core::uci::notification::SessionRangeData;
@@ -417,7 +452,9 @@ message SessionRangeData {
   uint32 session_id = 2;
   uint32 current_ranging_interval_ms = 3;
   RangingMeasurementType ranging_measurement_type = 4;
-  repeated RangingMeasurement ranging_measurements = 5;
+  repeated TwoWayRangingMeasurement twoway_ranging_measurements = 5;
+  repeated DlTDoARangingMeasurement dltdoa_ranging_measurements = 6;
+  OwrAoaRangingMeasurement owraoa_ranging_measurement = 7;
 }
 
 // Represent uwb_uci_packets::PowerStats;
@@ -546,6 +583,7 @@ message SendVendorCmdRequest {
   uint32 gid = 1;
   uint32 oid = 2;
   bytes payload = 3;
+  uint32 mt = 4;
 }
 
 // Response of the UwbService::SendVendorCmd() method.

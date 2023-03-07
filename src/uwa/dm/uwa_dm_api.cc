@@ -1,7 +1,7 @@
 /******************************************************************************
  *
  *  Copyright (C) 2010-2014 Broadcom Corporation
- *  Copyright 2018-2020 NXP
+ *  Copyright 2018-2022 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -413,6 +413,45 @@ tUWA_STATUS UWA_GetAppConfig(uint32_t session_id, uint8_t noOfParams,
   return (UWA_STATUS_FAILED);
 }
 
+
+/*******************************************************************************
+**
+** Function         UWA_UpdateRangingRoundIndex
+**
+** Description      Update the Ranging Round Index for the given session for
+**                  TDoA Feature,The result is reported with an
+**                  UWA_DM_SESSION_ACTIVE_ROUNDS_INDEX_UPDATE_REVT in the tUWA_DM_CBACK
+**                  callback.
+**
+** Returns          UWA_STATUS_OK if command is sent successfully
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+tUWA_STATUS UWA_UpdateRangingRoundIndex(uint8_t dlTdoaRole, uint32_t session_id, uint8_t number_of_active_rngIndex,
+                                    uint8_t rng_round_index_len, uint8_t* p_rng_round_index) {
+  tUWA_DM_API_UPDATE_ACTIVE_RNG_INDEX* p_msg;
+
+  if ((p_msg = (tUWA_DM_API_UPDATE_ACTIVE_RNG_INDEX*)phUwb_GKI_getbuf(
+           (uint16_t)(sizeof(tUWA_DM_API_UPDATE_ACTIVE_RNG_INDEX) + rng_round_index_len))) != NULL)
+  {
+    p_msg->hdr.event = UWA_DM_API_UPDATE_ACTIVE_RNG_INDEX_EVT;
+    p_msg->session_id = session_id;
+    p_msg->dlTdoaRole = dlTdoaRole;
+    p_msg->number_of_rng_index = number_of_active_rngIndex;
+    p_msg->length = rng_round_index_len;
+    p_msg->p_rng_index = (uint8_t*)(p_msg + 1);
+
+    /* Copy the param IDs */
+    memcpy(p_msg->p_rng_index, p_rng_round_index, rng_round_index_len);
+
+    uwa_sys_sendmsg(p_msg);
+
+    return (UWA_STATUS_OK);
+  }
+
+  return (UWA_STATUS_FAILED);
+}
+
 /*******************************************************************************
 **
 ** Function         UWA_StartRangingSession
@@ -590,6 +629,38 @@ extern tUWA_STATUS UWA_ControllerMulticastListUpdate(
       memcpy(p_msg->subsession_id_list, subSessionIdList,
              (noOfControlees * SESSION_ID_LEN));
     }
+    uwa_sys_sendmsg(p_msg);
+
+    return UWA_STATUS_OK;
+  }
+  return UWA_STATUS_FAILED;
+}
+
+/*******************************************************************************
+**
+** Function         UWA_ConfigureDTAnchorForRrRdmList
+**
+** Description      This function is called to Configure DT Anchor RR RDM List Update.
+**                  The result is reported with an
+**                  UWA_SESSION_CONFIGURE_DT_ANCHOR_RR_RDM_REVT in the tUWA_DM_CBACK
+**                  callback.
+** Returns          UWA_STATUS_OK if command is successfully initiated
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+tUWA_STATUS UWA_ConfigureDTAnchorForRrRdmList(uint32_t session_id, uint8_t noOfParams, uint8_t rrRdmConfigParamLen , uint8_t rrRdmConfigParam[]) {
+  tUWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST* p_msg;
+  p_msg = (tUWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST*)phUwb_GKI_getbuf(sizeof(tUWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST));
+
+  if (p_msg != NULL) {
+    p_msg->hdr.event = UWA_DM_API_CONFIGURE_DT_ANCHOR_RR_RDM_LIST_EVT;
+    p_msg->session_id = session_id;
+    p_msg->rr_rdm_count = noOfParams;
+    p_msg->length = rrRdmConfigParamLen;
+    p_msg->p_data= (uint8_t*)(p_msg + 1);
+
+    memcpy(p_msg->p_data, rrRdmConfigParam, (rrRdmConfigParamLen));
+
     uwa_sys_sendmsg(p_msg);
 
     return UWA_STATUS_OK;
@@ -928,4 +999,43 @@ tUWA_STATUS UWA_SendRawCommand(uint16_t cmd_params_len, uint8_t* p_cmd_params,
   }
 
   return UWA_STATUS_FAILED;
+}
+
+/*******************************************************************************
+**
+** Function         UWA_SendUwbDataFrame
+**
+** Description      This function is called to send UWB data over UWB RF interafce  .
+**
+** Returns          UWA_STATUS_OK if data sucessfully accepeted by UWB subsystem
+**                  UWA_STATUS_FAILED otherwise
+**
+*******************************************************************************/
+tUWA_STATUS UWA_SendUwbData(uint32_t session_id,
+                            uint8_t* p_addr, uint8_t dest_end_point, uint8_t sequence_num,
+                            uint16_t data_len,
+                            uint8_t* p_data) {
+  tUWA_DM_API_SEND_DATA_FRAME* p_msg;
+  UCI_TRACE_I("UWA_SendUwbDataFrame: data_len = %d", data_len);
+  if ((data_len == 0) || (p_data == nullptr) || (p_addr == nullptr))
+    return (UWA_STATUS_FAILED);
+
+  p_msg = (tUWA_DM_API_SEND_DATA_FRAME*)phUwb_GKI_getbuf(sizeof(tUWA_DM_API_SEND_DATA_FRAME) + data_len);
+  if (p_msg != nullptr) {
+    p_msg->hdr.event = UWA_DM_API_SEND_DATA_FRAME_EVT;
+    p_msg->session_id = session_id;
+    memcpy(p_msg->p_addr, p_addr, EXTENDED_ADDRESS_LEN);
+    p_msg->dest_end_point = dest_end_point;
+    p_msg->sequence_num = sequence_num;
+    p_msg->data_len = data_len;
+
+    p_msg->p_data = (uint8_t*)(p_msg + 1);
+    memcpy(p_msg->p_data, p_data, data_len);
+
+    uwa_sys_sendmsg(p_msg);
+
+    return (UWA_STATUS_OK);
+  }
+  return UWA_STATUS_FAILED;
+
 }

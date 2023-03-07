@@ -59,6 +59,8 @@ pub trait UwbServiceCallback: 'static {
 
     /// Notify the vendor notification is received.
     fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>);
+
+    // TODO(b/270443790): In the future, add a callback here to notify the Data Rx packet.
 }
 
 /// A placeholder implementation for UwbServiceCallback that does nothing.
@@ -227,8 +229,14 @@ impl UwbService {
     }
 
     /// Send a raw UCI message.
-    pub fn raw_uci_cmd(&self, gid: u32, oid: u32, payload: Vec<u8>) -> Result<RawUciMessage> {
-        match self.block_on_cmd(Command::RawUciCmd { gid, oid, payload })? {
+    pub fn raw_uci_cmd(
+        &self,
+        mt: u32,
+        gid: u32,
+        oid: u32,
+        payload: Vec<u8>,
+    ) -> Result<RawUciMessage> {
+        match self.block_on_cmd(Command::RawUciCmd { mt, gid, oid, payload })? {
             Response::RawUciMessage(msg) => Ok(msg),
             _ => panic!("raw_uci_cmd() should return RawUciMessage"),
         }
@@ -407,8 +415,8 @@ impl<C: UwbServiceCallback, U: UciManager> UwbServiceActor<C, U> {
                 let stats = self.uci_manager.android_get_power_stats().await?;
                 Ok(Response::PowerStats(stats))
             }
-            Command::RawUciCmd { gid, oid, payload } => {
-                let msg = self.uci_manager.raw_uci_cmd(gid, oid, payload).await?;
+            Command::RawUciCmd { mt, gid, oid, payload } => {
+                let msg = self.uci_manager.raw_uci_cmd(mt, gid, oid, payload).await?;
                 Ok(Response::RawUciMessage(msg))
             }
             Command::GetParams { session_id } => {
@@ -542,6 +550,7 @@ enum Command {
     },
     AndroidGetPowerStats,
     RawUciCmd {
+        mt: u32,
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
@@ -749,6 +758,7 @@ mod tests {
 
     #[test]
     fn test_send_raw_cmd() {
+        let mt = 0x01;
         let gid = 0x09;
         let oid = 0x35;
         let cmd_payload = vec![0x12, 0x34];
@@ -756,6 +766,7 @@ mod tests {
 
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_raw_uci_cmd(
+            mt,
             gid,
             oid,
             cmd_payload.clone(),
@@ -763,7 +774,7 @@ mod tests {
         );
         let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
-        let result = service.raw_uci_cmd(gid, oid, cmd_payload).unwrap();
+        let result = service.raw_uci_cmd(mt, gid, oid, cmd_payload).unwrap();
         assert_eq!(result, RawUciMessage { gid, oid, payload: resp_payload });
     }
 

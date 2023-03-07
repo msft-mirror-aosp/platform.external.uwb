@@ -35,6 +35,8 @@ rust_test {
             test_suites: [
                 "general-tests",
             ],
+           // See b/268061150
+           stem: "libuwb_uci_packet_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -50,6 +52,7 @@ rust_test {
         },
     },
     auto_gen_config: true,
+    min_sdk_version: "33",
 }
 
 rust_library {
@@ -110,6 +113,16 @@ rust_library {
     ],
 }
 
+// Builds uwb_core library with "mock-utils" enabled.
+// This enables mock methods to be used for testing external crates.
+rust_library {
+    name: "libuwb_core_with_mock",
+    defaults: ["libuwb_core_defaults"],
+    crate_name: "uwb_core",
+    features: ["mock-utils"],
+    host_supported: true,
+}
+
 rust_test {
     name: "libuwb_core_tests",
     defaults: ["libuwb_core_defaults"],
@@ -136,6 +149,8 @@ rust_test {
                 "liblog",
                 "libutils",
             ],
+            // See b/268061150
+            stem: "libuwb_core_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -151,6 +166,7 @@ rust_test {
         },
     },
     auto_gen_config: true,
+    min_sdk_version: "33",
 }
 
 rust_binary {
@@ -236,8 +252,8 @@ rust_fuzz {
     },
 }
 
-rust_library {
-    name: "libuci_hal_android",
+rust_defaults {
+    name: "libuci_hal_android_defaults",
     crate_name: "uci_hal_android",
     lints: "android",
     clippy_lints: "android",
@@ -251,7 +267,6 @@ rust_library {
         "liblog_rust",
         "libthiserror",
         "libtokio",
-        "libuwb_core",
         "libuwb_uci_packets",
     ],
     target: {
@@ -271,6 +286,25 @@ rust_library {
     host_supported: true,
     srcs: [
         "rust/uci_hal_android/lib.rs",
+    ],
+}
+
+rust_library {
+    name: "libuci_hal_android",
+    defaults: ["libuci_hal_android_defaults"],
+    rustlibs: [
+        "libuwb_core",
+    ],
+}
+
+// uci_hal_android built with uwb_core_with_mock.
+// Used to replace uci_hal_android in place where mock version of uwb_core is
+// used.
+rust_library {
+    name: "libuci_hal_android_with_mock",
+    defaults: ["libuci_hal_android_defaults"],
+    rustlibs: [
+        "libuwb_core_with_mock",
     ],
 }
 
