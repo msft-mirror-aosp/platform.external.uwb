@@ -384,17 +384,20 @@ packet UciPacketHal {
     _body_
 }
 
+// The UciDataPacketHal must be declared before the UciControlPacketHal for correct parsing to
+// happen. This is required as the Data packet specifies a value for the 'message_type' constraint,
+// while the Control packet does not (as it encompasses multiple 'message_type' values).
+packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
+    _reserved_: 8,
+    _size_(_payload_): 16,
+    _payload_,
+}
+
 packet UciControlPacketHal: UciPacketHal {
     opcode: 6,
     _reserved_: 2,
     _reserved_: 8,
     _size_(_payload_): 8,
-    _payload_,
-}
-
-packet UciDataPacketHal: UciPacketHal (message_type = DATA) {
-    _reserved_: 8,
-    _size_(_payload_): 16,
     _payload_,
 }
 
@@ -444,7 +447,7 @@ packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type =
     dest_mac_address: 64,
     dest_fira_component: FiraComponent,
     uci_sequence_number: 8,
-    _size_(data): 32,
+    _size_(data): 16,
     data: 8[]
 }
 
@@ -455,7 +458,7 @@ packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV, message_type =
     source_mac_address: 64,
     source_fira_component: FiraComponent,
     dest_fira_component: FiraComponent,
-    _size_(data): 32,
+    _size_(data): 16,
     data: 8[]
 }
 
