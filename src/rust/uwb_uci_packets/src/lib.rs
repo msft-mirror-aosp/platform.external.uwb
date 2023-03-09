@@ -32,7 +32,7 @@ const MAX_PAYLOAD_LEN: usize = 255;
 // Real UCI packet header len.
 pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
-const UCI_PACKET_HEADER_LEN: usize = 7;
+pub const UCI_PACKET_HEADER_LEN: usize = 7;
 // Unfragmented UCI DATA_MESSAGE_SND packet header len.
 const UCI_DATA_SND_PACKET_HEADER_LEN: usize = 6;
 
