@@ -135,6 +135,7 @@ enum StatusCode : 8 {
     // Vendor Specific Status Codes
     UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
     UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
+    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
 }
 
 // This needs a separate type as the Status code values in an OWR for AOA
@@ -343,6 +344,8 @@ enum ReasonCode : 8 {
     ERROR_INVALID_RANGING_INTERVAL = 0x23,
     ERROR_INVALID_STS_CONFIG = 0x24,
     ERROR_INVALID_RFRAME_CONFIG = 0x25,
+    ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
+    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
 }
 
 enum MulticastUpdateStatusCode : 8 {
