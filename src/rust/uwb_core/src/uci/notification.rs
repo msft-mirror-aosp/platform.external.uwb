@@ -24,7 +24,7 @@ use crate::params::uci_packets::{
     ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, FiraComponent, RangingMeasurementType, RawUciMessage,
-    ReasonCode, SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
+    SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
@@ -58,7 +58,7 @@ pub enum SessionNotification {
         /// uwb_uci_packets::SessionState.
         session_state: SessionState,
         /// uwb_uci_packets::Reasoncode.
-        reason_code: ReasonCode,
+        reason_code: u8,
     },
     /// SessionUpdateControllerMulticastListNtf equivalent.
     UpdateControllerMulticastList {
@@ -727,7 +727,9 @@ mod tests {
         let session_status_ntf = uwb_uci_packets::SessionStatusNtfBuilder {
             session_id: 0x20,
             session_state: uwb_uci_packets::SessionState::SessionStateActive,
-            reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+            reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
+                .to_u8()
+                .unwrap(),
         }
         .build();
         let session_notification_packet =
@@ -741,7 +743,9 @@ mod tests {
             UciNotification::Session(SessionNotification::Status {
                 session_id: 0x20,
                 session_state: uwb_uci_packets::SessionState::SessionStateActive,
-                reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+                reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
+                    .to_u8()
+                    .unwrap(),
             })
         );
     }
