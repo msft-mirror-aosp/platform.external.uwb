@@ -145,6 +145,7 @@ enum_mapping! {
     UCI_STATUS_DATA_RX_CRC_ERROR => UciStatusDataRxCrcError,
     UCI_STATUS_ERROR_CCC_SE_BUSY => UciStatusErrorCccSeBusy,
     UCI_STATUS_ERROR_CCC_LIFECYCLE => UciStatusErrorCccLifecycle,
+    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => UciStatusErrorStoppedDueToOtherSessionConflict,
 }
 
 enum_mapping! {
@@ -180,6 +181,8 @@ enum_mapping! {
     ERROR_INVALID_RANGING_INTERVAL => ErrorInvalidRangingInterval,
     ERROR_INVALID_STS_CONFIG => ErrorInvalidStsConfig,
     ERROR_INVALID_RFRAME_CONFIG => ErrorInvalidRframeConfig,
+    ERROR_INVALID_CHANNEL_WITH_AOA => ErrorInvalidChannelWithAoa,
+    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => ErrorStoppedDueToOtherSessionConflict,
 }
 
 enum_mapping! {
