@@ -26,6 +26,7 @@ use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, U
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
 use crate::utils::clean_mpsc_receiver;
+use num_traits::FromPrimitive;
 
 const MAX_SESSION_COUNT: usize = 5;
 
@@ -295,6 +296,16 @@ impl<T: UciManager> SessionManagerActor<T> {
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
             UciSessionNotification::Status { session_id, session_state, reason_code } => {
+                let reason_code = match ReasonCode::from_u8(reason_code) {
+                    Some(r) => r,
+                    None => {
+                        error!(
+                            "Received unknown reason_code {:?} in UciSessionNotification",
+                            reason_code
+                        );
+                        return;
+                    }
+                };
                 if session_state == SessionState::SessionStateDeinit {
                     debug!("Session {} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
@@ -435,6 +446,7 @@ pub(crate) mod test_utils {
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
+    use num_traits::ToPrimitive;
 
     pub(crate) fn generate_params() -> AppConfigParams {
         FiraAppConfigParamsBuilder::new()
@@ -504,7 +516,7 @@ pub(crate) mod test_utils {
         UciNotification::Session(UciSessionNotification::Status {
             session_id,
             session_state,
-            reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+            reason_code: ReasonCode::StateChangeWithSessionManagementCommands.to_u8().unwrap(),
         })
     }
 
@@ -545,7 +557,7 @@ mod tests {
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
         AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
-        SetAppConfigResponse, StatusCode,
+        ReasonCode, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
     use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
