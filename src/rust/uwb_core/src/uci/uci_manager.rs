@@ -1317,7 +1317,9 @@ mod tests {
                     session_id,
                     session_state: uwb_uci_packets::SessionState::SessionStateInit,
                     reason_code:
-                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
+                            .to_u8()
+                            .unwrap(),
                 });
                 resp.append(&mut notf);
 
