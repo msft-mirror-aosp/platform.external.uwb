@@ -30,9 +30,7 @@ pub use uwb_uci_packets::{
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
     UpdateMulticastListAction,
 };
-pub(crate) use uwb_uci_packets::{
-    UciControlPacketPacket, UciDataPacketHalPacket, UciDataPacketPacket, UciDataSndPacket,
-};
+pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal, UciDataSnd};
 
 use crate::error::Error;
 
@@ -205,8 +203,8 @@ pub struct RawUciMessage {
     pub payload: Vec<u8>,
 }
 
-impl From<UciControlPacketPacket> for RawUciMessage {
-    fn from(packet: UciControlPacketPacket) -> Self {
+impl From<UciControlPacket> for RawUciMessage {
+    fn from(packet: UciControlPacket) -> Self {
         Self {
             gid: packet.get_group_id() as u32,
             oid: packet.get_opcode() as u32,
