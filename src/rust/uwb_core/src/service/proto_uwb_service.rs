@@ -267,7 +267,7 @@ impl<C: ProtoUwbServiceCallback> UwbServiceCallback for C {
     }
 
     fn on_uci_device_status_changed(&mut self, state: DeviceState) {
-        debug!("UCI device status is changed: {}", state);
+        debug!("UCI device status is changed: {:?}", state);
         let mut msg = UciDeviceStatusChangedSignal::new();
         msg.set_state(state.into());
         if let Ok(payload) = write_to_bytes(&msg) {
