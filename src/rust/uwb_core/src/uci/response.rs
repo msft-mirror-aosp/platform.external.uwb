@@ -20,7 +20,7 @@ use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
     PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, StatusCode, UciControlPacketPacket,
+    SetAppConfigResponse, StatusCode, UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -88,9 +88,9 @@ impl UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::UciResponse> for UciResponse {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciResponsePacket) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::UciResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
             UciResponseChild::CoreResponse(evt) => evt.try_into(),
@@ -107,11 +107,9 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::CoreResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::CoreResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::CoreResponseChild;
         match evt.specialize() {
             CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(UciResponse::CoreGetDeviceInfo(
@@ -144,10 +142,10 @@ impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionConfigResponsePacket,
+        evt: uwb_uci_packets::SessionConfigResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigResponseChild;
         match evt.specialize() {
@@ -198,10 +196,10 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionControlResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionControlResponsePacket,
+        evt: uwb_uci_packets::SessionControlResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionControlResponseChild;
         match evt.specialize() {
@@ -221,11 +219,9 @@ impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::AndroidResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::AndroidResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::AndroidResponseChild;
         match evt.specialize() {
             AndroidResponseChild::AndroidSetCountryCodeRsp(evt) => {
@@ -241,9 +237,9 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
     }
 }
 
-fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
+fn raw_response(evt: uwb_uci_packets::UciResponse) -> Result<UciResponse> {
     let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
     let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
-    let packet: UciControlPacketPacket = evt.into();
+    let packet: UciControlPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
