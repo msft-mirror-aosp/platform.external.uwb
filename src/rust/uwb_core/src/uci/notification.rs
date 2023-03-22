@@ -456,6 +456,8 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::*;
     use crate::params::uci_packets::OwrAoaStatusCode;
 
@@ -549,6 +551,7 @@ mod tests {
                 rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 two_way_ranging_measurements: vec![extended_measurement.clone()],
+                vendor_data: vec![],
             }
             .build();
         let raw_ranging_data =
@@ -598,6 +601,7 @@ mod tests {
             rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             two_way_ranging_measurements: vec![short_measurement.clone()],
+            vendor_data: vec![0x02, 0x01],
         }
         .build();
         let raw_ranging_data =
@@ -643,6 +647,7 @@ mod tests {
                 rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 owr_aoa_ranging_measurements: vec![extended_measurement.clone()],
+                vendor_data: vec![],
             }
             .build();
         let raw_ranging_data =
@@ -687,6 +692,7 @@ mod tests {
             rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             owr_aoa_ranging_measurements: vec![short_measurement.clone()],
+            vendor_data: vec![],
         }
         .build();
         let raw_ranging_data =
