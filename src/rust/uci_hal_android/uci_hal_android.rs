@@ -39,10 +39,10 @@ use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder};
 
 use crate::error::{Error, Result};
 
-fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
+fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacket>>(
     builder: T,
 ) -> Vec<UciHalPacket> {
-    let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
+    let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
     packets.into_iter().map(|packet| packet.into()).collect()
 }
 

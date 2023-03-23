@@ -28,8 +28,8 @@ use crate::params::uci_packets::{
     CreditAvailability, DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigTlv, DeviceState,
     FiraComponent, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RawUciMessage,
     ResetConfig, SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, UciControlPacketPacket, UciDataPacketHalPacket, UciDataPacketPacket,
-    UciDataSndPacket, UpdateMulticastListAction,
+    SetAppConfigResponse, UciControlPacket, UciDataPacket, UciDataPacketHal, UciDataSnd,
+    UpdateMulticastListAction,
 };
 use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
@@ -150,7 +150,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
 pub struct UciManagerImpl {
     cmd_sender: mpsc::UnboundedSender<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
     data_packet_sender:
-        mpsc::UnboundedSender<(UciDataSndPacket, oneshot::Sender<DataTransferNtfStatusCode>)>,
+        mpsc::UnboundedSender<(UciDataSnd, oneshot::Sender<DataTransferNtfStatusCode>)>,
 }
 
 impl UciManagerImpl {
@@ -500,7 +500,7 @@ struct RawCmdSignature {
 }
 
 impl RawCmdSignature {
-    pub fn is_same_signature(&self, packet: &UciControlPacketPacket) -> bool {
+    pub fn is_same_signature(&self, packet: &UciControlPacket) -> bool {
         packet.get_group_id() == self.gid && packet.get_opcode() == self.oid
     }
 }
@@ -516,7 +516,7 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // Receive Data packets (to be sent to UWBS) and the corresponding status sender from
     // UciManager.
     data_packet_receiver:
-        mpsc::UnboundedReceiver<(UciDataSndPacket, oneshot::Sender<DataTransferNtfStatusCode>)>,
+        mpsc::UnboundedReceiver<(UciDataSnd, oneshot::Sender<DataTransferNtfStatusCode>)>,
 
     // Set to true when |hal| is opened successfully.
     is_hal_opened: bool,
@@ -565,7 +565,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             oneshot::Sender<Result<UciResponse>>,
         )>,
         data_packet_receiver: mpsc::UnboundedReceiver<(
-            UciDataSndPacket,
+            UciDataSnd,
             oneshot::Sender<DataTransferNtfStatusCode>,
         )>,
     ) -> Self {
@@ -747,7 +747,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
-    async fn handle_data_packet_send(&mut self, data_packet: UciDataSndPacket) {
+    async fn handle_data_packet_send(&mut self, data_packet: UciDataSnd) {
         // We expect data Credit should be available when we start here, for all UWB Sessions as:
         // - it's available by default for a UWB Session when it becomes active, and,
         // - Data packet send completed for earlier packets only after the host received both
@@ -758,7 +758,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         // credit availability here (before sending any data packet fragment). The map should also
         // be updated (in handle_notification()), when UWBS unilaterally sends a DATA_CREDIT_NTF.
         let data_packet_session_id = data_packet.get_session_id();
-        let fragmented_packets: Vec<UciDataPacketHalPacket> = data_packet.into();
+        let fragmented_packets: Vec<UciDataPacketHal> = data_packet.into();
         for packet in fragmented_packets.into_iter() {
             let (data_credit_ntf_sender, data_credit_ntf_receiver) = oneshot::channel();
             self.data_credit_ntf_sender = Some(data_credit_ntf_sender);
@@ -947,7 +947,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
-    fn handle_data_rcv(&mut self, packet: UciDataPacketPacket) {
+    fn handle_data_rcv(&mut self, packet: UciDataPacket) {
         match packet.try_into() {
             Ok(data_rcv) => {
                 let _ = self.data_rcv_notf_sender.send(data_rcv);
@@ -1050,10 +1050,10 @@ mod tests {
 
     // TODO(b/261886903): Check if this should be in a common library file as same function
     // is defined in uci_hal_android.rs also.
-    fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
+    fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
-        let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
+        let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
         packets.into_iter().map(|packet| packet.into()).collect()
     }
 
@@ -1317,7 +1317,9 @@ mod tests {
                     session_id,
                     session_state: uwb_uci_packets::SessionState::SessionStateInit,
                     reason_code:
-                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands,
+                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
+                            .to_u8()
+                            .unwrap(),
                 });
                 resp.append(&mut notf);
 
