@@ -456,8 +456,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
-
     use super::*;
     use crate::params::uci_packets::OwrAoaStatusCode;
 
