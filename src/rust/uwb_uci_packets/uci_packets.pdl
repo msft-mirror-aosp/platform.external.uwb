@@ -959,7 +959,11 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
     rssi: 8,
-    _reserved_: 88,
+    // b/272301550: The pdl compiler cannot handle individual fields
+    // larger than 64 bit. The work around is to split the 88 bit
+    // field into two.
+    _reserved_: 64,
+    _reserved_: 24,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -1026,6 +1030,7 @@ packet SessionInfoNtf : SessionControlNotification (opcode = 0x0) { // SESSION_I
 packet ShortMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ShortAddressTwoWayRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ShortMacTwoWaySessionInfoNtf {
@@ -1035,6 +1040,7 @@ test ShortMacTwoWaySessionInfoNtf {
 packet ExtendedMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ExtendedAddressTwoWayRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ExtendedMacTwoWaySessionInfoNtf {
@@ -1062,6 +1068,7 @@ test ExtendedMacDlTDoASessionInfoNtf {
 packet ShortMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ShortAddressOwrAoaRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ShortMacOwrAoaSessionInfoNtf {
@@ -1072,6 +1079,7 @@ test ShortMacOwrAoaSessionInfoNtf {
 packet ExtendedMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ExtendedAddressOwrAoaRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ExtendedMacOwrAoaSessionInfoNtf {
