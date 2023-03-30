@@ -69,10 +69,7 @@ rust_library {
 
 genrule {
     name: "UwbGeneratedPackets_rust",
-    tools: [
-        "bluetooth_packetgen",
-    ],
-    cmd: "$(location bluetooth_packetgen) --include=external/uwb/src --out=$(genDir) $(in) --rust",
+    defaults: ["pdl_rust_generator_defaults"],
     srcs: [
         "rust/uwb_uci_packets/uci_packets.pdl",
     ],
@@ -312,7 +309,7 @@ rust_library {
 genrule {
     name: "uwb_core_artifacts",
     tools: [
-        "bluetooth_packetgen",
+        "pdl",
         "soong_zip",
     ],
     cmd:
@@ -324,10 +321,9 @@ genrule {
         "      $(genDir)/artifacts;" +
 
         // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
-        "$(location bluetooth_packetgen) --rust " +
-        "      --include=external/uwb/src/rust" +
-        "      --out=$(genDir)/artifacts " +
-        "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl;" +
+        "$(location pdl) --output-format rust " +
+        "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl " +
+        "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs;" +
 
         // Pack the artifacts directory and clean up the directory.
         "$(location soong_zip) -o $(out) " +
