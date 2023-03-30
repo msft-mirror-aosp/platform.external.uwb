@@ -206,7 +206,7 @@ pub struct RawUciMessage {
 impl From<UciControlPacket> for RawUciMessage {
     fn from(packet: UciControlPacket) -> Self {
         Self {
-            gid: packet.get_group_id() as u32,
+            gid: packet.get_group_id().into(),
             oid: packet.get_opcode() as u32,
             payload: packet.to_raw_payload(),
         }

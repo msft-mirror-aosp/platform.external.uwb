@@ -17,7 +17,6 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, error, warn};
-use num_traits::{FromPrimitive, ToPrimitive};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::uci::command::UciCommand;
@@ -742,9 +741,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 // Remember that this command is a raw UCI command, we'll use this later
                 // to send a raw UCI response.
                 if let UciCommand::RawUciCmd { mt: _, gid, oid, payload: _ } = cmd.clone() {
-                    let gid = GroupId::from_u32(gid);
-                    let oid = oid.to_u8();
-                    if oid.is_none() || gid.is_none() {
+                    let gid = u8::try_from(gid).or(Err(0)).and_then(GroupId::try_from);
+                    let oid = u8::try_from(oid);
+                    if oid.is_err() || gid.is_err() {
                         let _ = result_sender.send(Err(Error::BadParameters));
                         return;
                     }
@@ -1318,29 +1317,29 @@ mod tests {
         let session_id = 0x123;
         let session_type = SessionType::FiraRangingSession;
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
-            move |hal| {
-                let cmd = UciCommand::SessionInit { session_id, session_type };
-                let mut resp = into_uci_hal_packets(uwb_uci_packets::SessionInitRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                });
-                let mut notf = into_uci_hal_packets(uwb_uci_packets::SessionStatusNtfBuilder {
-                    session_id,
-                    session_state: uwb_uci_packets::SessionState::SessionStateInit,
-                    reason_code:
-                        uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
-                            .to_u8()
-                            .unwrap(),
-                });
-                resp.append(&mut notf);
+        let (uci_manager, mut mock_hal) =
+            setup_uci_manager_with_open_hal(
+                move |hal| {
+                    let cmd = UciCommand::SessionInit { session_id, session_type };
+                    let mut resp = into_uci_hal_packets(uwb_uci_packets::SessionInitRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    });
+                    let mut notf = into_uci_hal_packets(uwb_uci_packets::SessionStatusNtfBuilder {
+                        session_id,
+                        session_state: uwb_uci_packets::SessionState::SessionStateInit,
+                        reason_code:
+                            uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
+                                .into(),
+                    });
+                    resp.append(&mut notf);
 
-                hal.expected_send_command(cmd, resp, Ok(()));
-                hal.expected_notify_session_initialized(session_id, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-        )
-        .await;
+                    hal.expected_send_command(cmd, resp, Ok(()));
+                    hal.expected_notify_session_initialized(session_id, Ok(()));
+                },
+                UciLoggerMode::Disabled,
+                mpsc::unbounded_channel::<UciLogEvent>().0,
+            )
+            .await;
 
         let result = uci_manager.session_init(session_id, session_type).await;
         assert!(result.is_ok());
