@@ -26,7 +26,6 @@ use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, U
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
 use crate::uci::uci_manager::UciManager;
 use crate::utils::clean_mpsc_receiver;
-use num_traits::FromPrimitive;
 
 const MAX_SESSION_COUNT: usize = 5;
 
@@ -296,9 +295,9 @@ impl<T: UciManager> SessionManagerActor<T> {
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
             UciSessionNotification::Status { session_id, session_state, reason_code } => {
-                let reason_code = match ReasonCode::from_u8(reason_code) {
-                    Some(r) => r,
-                    None => {
+                let reason_code = match ReasonCode::try_from(reason_code) {
+                    Ok(r) => r,
+                    Err(_) => {
                         error!(
                             "Received unknown reason_code {:?} in UciSessionNotification",
                             reason_code
@@ -446,7 +445,6 @@ pub(crate) mod test_utils {
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
-    use num_traits::ToPrimitive;
 
     pub(crate) fn generate_params() -> AppConfigParams {
         FiraAppConfigParamsBuilder::new()
@@ -516,7 +514,7 @@ pub(crate) mod test_utils {
         UciNotification::Session(UciSessionNotification::Status {
             session_id,
             session_state,
-            reason_code: ReasonCode::StateChangeWithSessionManagementCommands.to_u8().unwrap(),
+            reason_code: ReasonCode::StateChangeWithSessionManagementCommands.into(),
         })
     }
 
