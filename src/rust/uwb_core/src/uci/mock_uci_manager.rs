@@ -279,6 +279,20 @@ impl MockUciManager {
         );
     }
 
+    /// Prepare Mock to expect for session_query_max_data_size.
+    ///
+    /// MockUciManager expects call, returns out as response.
+    pub fn expect_session_query_max_data_size(
+        &mut self,
+        expected_session_id: SessionId,
+        out: Result<u16>,
+    ) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::SessionQueryMaxDataSize { expected_session_id, out });
+    }
+
     /// Prepare Mock to expect range_start.
     ///
     /// MockUciManager expects call with parameters, returns out as response, followed by notfs
@@ -738,6 +752,23 @@ impl UciManager for MockUciManager {
         }
     }
 
+     async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionQueryMaxDataSize {expected_session_id, out})
+                if expected_session_id == session_id =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn range_start(&self, session_id: SessionId) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
@@ -957,6 +988,10 @@ enum ExpectedCall {
         expected_session_id: u32,
         expected_ranging_round_indexes: Vec<u8>,
         out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+    },
+    SessionQueryMaxDataSize {
+        expected_session_id: SessionId,
+        out: Result<u16>,
     },
     RangeStart {
         expected_session_id: SessionId,
