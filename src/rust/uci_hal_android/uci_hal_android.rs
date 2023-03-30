@@ -29,7 +29,7 @@ use android_hardware_uwb::binder::{
 };
 use async_trait::async_trait;
 use binder_tokio::{Tokio, TokioRuntime};
-use log::error;
+use log::{debug, error};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_core::error::{Error as UwbCoreError, Result as UwbCoreResult};
@@ -71,6 +71,7 @@ fn send_device_state_error_notification(
 struct RawUciCallback {
     uci_sender: mpsc::UnboundedSender<UciHalPacket>,
     hal_open_result_sender: mpsc::Sender<Result<()>>,
+    hal_core_init_result_sender: mpsc::Sender<Result<()>>,
     hal_close_result_sender: mpsc::Sender<Result<()>>,
 }
 
@@ -78,9 +79,15 @@ impl RawUciCallback {
     pub fn new(
         uci_sender: mpsc::UnboundedSender<UciHalPacket>,
         hal_open_result_sender: mpsc::Sender<Result<()>>,
+        hal_core_init_result_sender: mpsc::Sender<Result<()>>,
         hal_close_result_sender: mpsc::Sender<Result<()>>,
     ) -> Self {
-        Self { uci_sender, hal_open_result_sender, hal_close_result_sender }
+        Self {
+            uci_sender,
+            hal_open_result_sender,
+            hal_core_init_result_sender,
+            hal_close_result_sender,
+        }
     }
 }
 
@@ -89,6 +96,7 @@ impl Interface for RawUciCallback {}
 #[async_trait]
 impl IUwbClientCallbackAsyncServer for RawUciCallback {
     async fn onHalEvent(&self, event: UwbEvent, _event_status: UwbStatus) -> BinderResult<()> {
+        debug!("onHalEvent: {:?}, {:?}", event, _event_status);
         match event {
             // UwbEvent::ERROR is processed differently by UciHalAndroid depending on its state.
             //
@@ -109,10 +117,16 @@ impl IUwbClientCallbackAsyncServer for RawUciCallback {
                 send_device_state_error_notification(&self.uci_sender)
                     .map_err(|e| BinderStatus::from(Error::from(e)))
             }
-            UwbEvent::POST_INIT_CPLT => self.hal_open_result_sender.try_send(Ok(())).map_err(|e| {
-                error!("Failed sending POST_INIT_CPLT: {:?}", e);
+            UwbEvent::OPEN_CPLT => self.hal_open_result_sender.try_send(Ok(())).map_err(|e| {
+                error!("Failed sending OPEN_CPLT: {:?}", e);
                 BinderStatus::new_exception(ExceptionCode::TRANSACTION_FAILED, None)
             }),
+            UwbEvent::POST_INIT_CPLT => {
+                self.hal_core_init_result_sender.try_send(Ok(())).map_err(|e| {
+                    error!("Failed sending POST_INIT_CPLT: {:?}", e);
+                    BinderStatus::new_exception(ExceptionCode::TRANSACTION_FAILED, None)
+                })
+            }
             UwbEvent::CLOSE_CPLT => self.hal_close_result_sender.try_send(Ok(())).map_err(|e| {
                 error!("Failed sending CLOSE_CPLT: {:?}", e);
                 BinderStatus::new_exception(ExceptionCode::TRANSACTION_FAILED, None)
@@ -201,20 +215,30 @@ impl UciHal for UciHalAndroid {
 
         // Connect callback to packet_sender.
         let (hal_open_result_sender, mut hal_open_result_receiver) = mpsc::channel::<Result<()>>(1);
+        let (hal_core_init_result_sender, mut hal_core_init_result_receiver) =
+            mpsc::channel::<Result<()>>(1);
         let (hal_close_result_sender, hal_close_result_receiver) = mpsc::channel::<Result<()>>(1);
         let m_cback = BnUwbClientCallback::new_async_binder(
             RawUciCallback::new(
                 packet_sender.clone(),
                 hal_open_result_sender,
+                hal_core_init_result_sender,
                 hal_close_result_sender,
             ),
             TokioRuntime(Handle::current()),
             BinderFeatures::default(),
         );
+        // Open and wait for OPEN_CPLT.
+        debug!("Trigger IUwbChip.open()");
         i_uwb_chip.open(&m_cback).await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
+        if (hal_open_result_receiver.recv().await).is_none() {
+            error!("OPEN_CPLT event is not received");
+            return Err(UwbCoreError::Unknown);
+        }
         // Initialize core and wait for POST_INIT_CPLT.
+        debug!("Trigger IUwbChip.coreInit()");
         i_uwb_chip.coreInit().await.map_err(|e| UwbCoreError::from(Error::from(e)))?;
-        match hal_open_result_receiver.recv().await {
+        match hal_core_init_result_receiver.recv().await {
             Some(Ok(())) => {
                 // Workaround while http://b/243140882 is not fixed:
                 // Send DEVICE_STATE_READY notification as chip is not sending this notification.
