@@ -116,6 +116,8 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         ranging_round_indexes: Vec<u8>,
     ) -> Result<SessionUpdateActiveRoundsDtTagResponse>;
 
+    async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16>;
+
     async fn range_start(&self, session_id: SessionId) -> Result<()>;
     async fn range_stop(&self, session_id: SessionId) -> Result<()>;
     async fn range_get_ranging_count(&self, session_id: SessionId) -> Result<usize>;
@@ -387,6 +389,15 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateActiveRoundsDtTag(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        let cmd = UciCommand::SessionQueryMaxDataSize { session_id };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionQueryMaxDataSize(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }

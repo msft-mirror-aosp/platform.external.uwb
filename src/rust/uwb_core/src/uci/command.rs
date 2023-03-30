@@ -68,6 +68,9 @@ pub enum UciCommand {
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
     },
+    SessionQueryMaxDataSize {
+        session_id: SessionId,
+    },
     SessionStart {
         session_id: SessionId,
     },
@@ -172,6 +175,9 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             }
             UciCommand::SessionGetRangingCount { session_id } => {
                 uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
+            }
+            UciCommand::SessionQueryMaxDataSize { session_id } => {
+                uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id }.build().into()
             }
         };
         Ok(packet)
