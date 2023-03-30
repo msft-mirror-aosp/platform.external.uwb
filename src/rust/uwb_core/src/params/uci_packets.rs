@@ -30,7 +30,7 @@ pub use uwb_uci_packets::{
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
     UpdateMulticastListAction,
 };
-pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal, UciDataSnd};
+pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
 use crate::error::Error;
 
