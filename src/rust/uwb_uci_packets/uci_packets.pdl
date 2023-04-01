@@ -253,6 +253,7 @@ enum AppConfigTlvType : 8 {
     CCC_UWB_CONFIG_ID = 0xA4,
     CCC_PULSESHAPE_COMBO = 0xA5,
     CCC_URSK_TTL = 0xA6,
+    CCC_LAST_INDEX_USED  = 0xA8,
 
     // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
     NB_OF_RANGE_MEASUREMENTS = 0xE3,
