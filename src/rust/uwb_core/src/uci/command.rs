@@ -68,6 +68,9 @@ pub enum UciCommand {
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
     },
+    SessionQueryMaxDataSize {
+        session_id: SessionId,
+    },
     SessionStart {
         session_id: SessionId,
     },
@@ -89,7 +92,7 @@ pub enum UciCommand {
     },
 }
 
-impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
+impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
     type Error = Error;
     fn try_from(cmd: UciCommand) -> std::result::Result<Self, Self::Error> {
         let packet = match cmd {
@@ -173,6 +176,9 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacketPacket {
             UciCommand::SessionGetRangingCount { session_id } => {
                 uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
             }
+            UciCommand::SessionQueryMaxDataSize { session_id } => {
+                uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id }.build().into()
+            }
         };
         Ok(packet)
     }
@@ -183,7 +189,7 @@ fn build_raw_uci_cmd_packet(
     gid: u32,
     oid: u32,
     payload: Vec<u8>,
-) -> Result<uwb_uci_packets::UciControlPacketPacket> {
+) -> Result<uwb_uci_packets::UciControlPacket> {
     let group_id = GroupId::from_u32(gid).ok_or_else(|| {
         error!("Invalid GroupId: {}", gid);
         Error::BadParameters
