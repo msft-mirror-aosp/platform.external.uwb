@@ -198,7 +198,7 @@ rust_library {
         ":include_uwb_core_proto",
     ],
     rustlibs: [
-        "libprotobuf",
+        "libprotobuf_deprecated",
     ],
     features: ["proto"],
     host_supported: true,
