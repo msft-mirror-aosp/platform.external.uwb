@@ -16,7 +16,6 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use num_traits::FromPrimitive;
 use protobuf::RepeatedField;
 use zeroize::Zeroize;
 
@@ -494,7 +493,7 @@ impl From<ShortAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasuremen
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
         result.set_status(
-            StatusCode::from_u8(item.measurement.status)
+            StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
@@ -533,7 +532,7 @@ impl From<ExtendedAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasure
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
         result.set_status(
-            StatusCode::from_u8(item.measurement.status)
+            StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
