@@ -135,6 +135,7 @@ enum StatusCode : 8 {
     // Vendor Specific Status Codes
     UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
     UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
+    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
 }
 
 // This needs a separate type as the Status code values in an OWR for AOA
@@ -252,6 +253,7 @@ enum AppConfigTlvType : 8 {
     CCC_UWB_CONFIG_ID = 0xA4,
     CCC_PULSESHAPE_COMBO = 0xA5,
     CCC_URSK_TTL = 0xA6,
+    CCC_LAST_INDEX_USED  = 0xA8,
 
     // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
     NB_OF_RANGE_MEASUREMENTS = 0xE3,
@@ -294,6 +296,8 @@ enum CapTlvType : 8 {
     SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
     SUPPORTED_RSSI_REPORTING = 0xE6,
     SUPPORTED_DIAGNOSTICS = 0xE7,
+    SUPPORTED_MIN_SLOT_DURATION_RSTU = 0xE8,
+    SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xE9,
 
     // CCC specific
     CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
@@ -304,6 +308,7 @@ enum CapTlvType : 8 {
     CCC_SUPPORTED_UWB_CONFIGS = 0xA5,
     CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA6,
     CCC_SUPPORTED_RAN_MULTIPLIER = 0xA7,
+    CCC_SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xA8,
 
     SUPPORTED_POWER_STATS = 0xC0,
 }
@@ -336,13 +341,48 @@ enum ReasonCode : 8 {
     STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS = 0x00,
     MAX_RANGING_ROUND_RETRY_COUNT_REACHED = 0x01,
     MAX_NUMBER_OF_MEASUREMENTS_REACHED = 0x02,
+    SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL = 0x03,
+    SESSION_RESUMED_DUE_TO_INBAND_SIGNAL = 0x04,
+    SESSION_STOPPED_DUE_TO_INBAND_SIGNAL = 0x05,
     ERROR_INVALID_UL_TDOA_RANDOM_WINDOW = 0x1D,
+    ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED = 0x1E,
+    ERROR_TX_DELAY_NOT_SUPPORTED = 0x1F,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED = 0x20,
     ERROR_INSUFFICIENT_SLOTS_PER_RR = 0x21,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED = 0x22,
-    ERROR_INVALID_RANGING_INTERVAL = 0x23,
+    ERROR_INVALID_RANGING_DURATION = 0x23,
     ERROR_INVALID_STS_CONFIG = 0x24,
     ERROR_INVALID_RFRAME_CONFIG = 0x25,
+    ERROR_HUS_NOT_ENOUGH_SLOTS = 0x26,
+    ERROR_HUS_CFP_PHASE_TOO_SHORT = 0x27,
+    ERROR_HUS_CAP_PHASE_TOO_SHORT = 0x28,
+    ERROR_HUS_OTHERS = 0x29,
+    ERROR_STATUS_SESSION_KEY_NOT_FOUND = 0x2A,
+    ERROR_STATUS_SUB_SESSION_KEY_NOT_FOUND = 0x2B,
+    ERROR_INVALID_PREAMBLE_CODE_INDEX = 0x2C,
+    ERROR_INVALID_SFD_ID = 0x2D,
+    ERROR_INVALID_PSDU_DATA_RATE = 0x2E,
+    ERROR_INVALID_PHR_DATA_RATE = 0x2F,
+    ERROR_INVALID_PREAMBLE_DURATION = 0x30,
+    ERROR_INVALID_STS_LENGTH = 0x31,
+    ERROR_INVALID_NUM_OF_STS_SEGMENTS = 0x32,
+    ERROR_INVALID_NUM_OF_CONTROLEES = 0x33,
+    ERROR_MAX_RANGING_REPLY_TIME_EXCEEDED = 0x34,
+    ERROR_INVALID_DST_ADDRESS_LIST = 0x35,
+    ERROR_INVALID_OR_NOT_FOUND_SUB_SESSION_ID = 0x36,
+    ERROR_INVALID_RESULT_REPORT_CONFIG = 0x37,
+    ERROR_INVALID_RANGING_ROUND_CONTROL_CONFIG = 0x38,
+    ERROR_INVALID_RANGING_ROUND_USAGE = 0x39,
+    ERROR_INVALID_MULTI_NODE_MODE = 0x3A,
+    ERROR_RDS_FETCH_FAILURE = 0x3B,
+    ERROR_REF_UWB_SESSION_DOES_NOT_EXIST = 0x3C,
+    ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH = 0x3D,
+    ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME = 0x3E,
+    ERROR_REF_UWB_SESSION_LOST = 0x3F,
+    // TODO(b/272775225): Add a range for the vendor specific space, after PDL supports
+    // this feature (requested in b/267339120).
+    ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
+    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
 }
 
 enum MulticastUpdateStatusCode : 8 {
@@ -685,11 +725,14 @@ test SessionDeinitRsp {
 packet SessionStatusNtf : SessionConfigNotification (opcode = 0x2) { //SESSION_STATUS_NTF
     session_id: 32,
     session_state: SessionState,
-    reason_code: ReasonCode,
+    // TODO(b/272775225): Switch back to the enum type ReasonCode, once PDL supports defining a
+    // range inside an enum (for the vendor-specific space), in b/267339120.
+    reason_code: 8,
 }
 
 test SessionStatusNtf {
     "\x61\x02\x00\x06\x00\x00\x00\x01\x02\x03\x04\x02\x21",
+    "\x61\x02\x00\x06\x00\x00\x00\x01\x02\x03\x04\x01\x82", // Vendor Specific Reason Code
 }
 
 struct AppConfigTlv {
@@ -886,6 +929,23 @@ test DataTransferStatusNtf {
     "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00",
 }
 
+packet SessionQueryMaxDataSizeCmd : SessionConfigCommand (opcode = 0xB) { //QUERY_MAX_DATA_SIZE
+    session_id: 32,
+}
+
+test SessionQueryMaxDataSizeCmd {
+ "\x21\x0B\x00\x04\x00\x00\x00\x00",
+}
+
+packet SessionQueryMaxDataSizeRsp : SessionConfigResponse (opcode = 0xB) { //QUER_MAX_DATA_SIZE
+    session_id: 32,
+    max_data_size: 16,
+}
+
+test SessionQueryMaxDataSizeRsp {
+  "\x41\x0B\x00\x06\x00\x00\x00\x00\x0E7\0x07",
+}
+
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
     session_id: 32,
 }
@@ -917,7 +977,11 @@ struct ShortAddressTwoWayRangingMeasurement {
     aoa_destination_elevation_fom: 8,
     slot_index: 8,
     rssi: 8,
-    _reserved_: 88,
+    // b/272301550: The pdl compiler cannot handle individual fields
+    // larger than 64 bit. The work around is to split the 88 bit
+    // field into two.
+    _reserved_: 64,
+    _reserved_: 24,
 }
 
 struct ExtendedAddressTwoWayRangingMeasurement {
@@ -984,6 +1048,7 @@ packet SessionInfoNtf : SessionControlNotification (opcode = 0x0) { // SESSION_I
 packet ShortMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = SHORT_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ShortAddressTwoWayRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ShortMacTwoWaySessionInfoNtf {
@@ -993,6 +1058,7 @@ test ShortMacTwoWaySessionInfoNtf {
 packet ExtendedMacTwoWaySessionInfoNtf : SessionInfoNtf (ranging_measurement_type = TWO_WAY, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(two_way_ranging_measurements) : 8,
     two_way_ranging_measurements : ExtendedAddressTwoWayRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ExtendedMacTwoWaySessionInfoNtf {
@@ -1020,6 +1086,7 @@ test ExtendedMacDlTDoASessionInfoNtf {
 packet ShortMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = SHORT_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ShortAddressOwrAoaRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ShortMacOwrAoaSessionInfoNtf {
@@ -1030,6 +1097,7 @@ test ShortMacOwrAoaSessionInfoNtf {
 packet ExtendedMacOwrAoaSessionInfoNtf : SessionInfoNtf (ranging_measurement_type = OWR_AOA, mac_address_indicator = EXTENDED_ADDRESS) {
     _count_(owr_aoa_ranging_measurements) : 8,
     owr_aoa_ranging_measurements : ExtendedAddressOwrAoaRangingMeasurement[],
+    vendor_data: 8[],
 }
 
 test ExtendedMacOwrAoaSessionInfoNtf {
