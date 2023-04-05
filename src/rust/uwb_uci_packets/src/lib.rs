@@ -22,6 +22,8 @@
 use std::cmp;
 
 use log::error;
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use zeroize::Zeroize;
 
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
@@ -32,7 +34,7 @@ const MAX_PAYLOAD_LEN: usize = 255;
 // Real UCI packet header len.
 pub const UCI_PACKET_HAL_HEADER_LEN: usize = 4;
 // Unfragmented UCI packet header len.
-const UCI_PACKET_HEADER_LEN: usize = 7;
+pub const UCI_PACKET_HEADER_LEN: usize = 7;
 // Unfragmented UCI DATA_MESSAGE_SND packet header len.
 const UCI_DATA_SND_PACKET_HEADER_LEN: usize = 6;
 
@@ -246,19 +248,19 @@ generate_extract_func!(extract_u64, u64);
 // keep the two enums in sync, for any additional values defined in the UCI spec).
 impl From<GroupId> for GroupIdOrDataPacketFormat {
     fn from(gid: GroupId) -> Self {
-        GroupIdOrDataPacketFormat::from_u8(gid.to_u8().unwrap()).unwrap()
+        GroupIdOrDataPacketFormat::try_from(u8::from(gid)).unwrap()
     }
 }
 
 impl From<GroupIdOrDataPacketFormat> for GroupId {
     fn from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Self {
-        GroupId::from_u8(gid_or_dpf.to_u8().unwrap()).unwrap()
+        GroupId::try_from(u8::from(gid_or_dpf)).unwrap()
     }
 }
 
 impl From<DataPacketFormat> for GroupIdOrDataPacketFormat {
     fn from(dpf: DataPacketFormat) -> Self {
-        GroupIdOrDataPacketFormat::from_u8(dpf.to_u8().unwrap()).unwrap()
+        GroupIdOrDataPacketFormat::try_from(u8::from(dpf)).unwrap()
     }
 }
 
@@ -268,7 +270,7 @@ impl TryFrom<GroupIdOrDataPacketFormat> for DataPacketFormat {
     type Error = Error;
 
     fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self> {
-        DataPacketFormat::from_u8(gid_or_dpf.to_u8().unwrap()).ok_or(Error::InvalidPacketError)
+        DataPacketFormat::try_from(u8::from(gid_or_dpf)).or(Err(Error::InvalidPacketError))
     }
 }
 
@@ -295,8 +297,8 @@ impl UciControlPacketHeader {
 
 // This function parses the packet bytes to return the Control Packet Opcode (OID) field. The
 // caller should check that the packet bytes represent a UCI control packet. The code will not
-// panic because UciPacketHalPacket::to_bytes() should always be larger then the place we access.
-fn get_opcode_from_uci_control_packet(packet: &UciPacketHalPacket) -> u8 {
+// panic because UciPacketHal::to_bytes() should always be larger then the place we access.
+fn get_opcode_from_uci_control_packet(packet: &UciPacketHal) -> u8 {
     packet.clone().to_bytes()[UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION]
         & UCI_CONTROL_PACKET_HEADER_OPCODE_MASK
 }
@@ -317,35 +319,35 @@ pub fn build_uci_control_packet(
     group_id: GroupId,
     opcode: u8,
     payload: Option<Bytes>,
-) -> Option<UciControlPacketPacket> {
+) -> Option<UciControlPacket> {
     if !is_uci_control_packet(message_type) {
-        error!("Only control packets are allowed, MessageType: {}", message_type);
+        error!("Only control packets are allowed, MessageType: {message_type:?}");
         return None;
     }
     Some(UciControlPacketBuilder { group_id, message_type, opcode, payload }.build())
 }
 
 // Ensure that the new packet fragment belong to the same packet.
-fn is_same_control_packet(header: &UciControlPacketHeader, packet: &UciPacketHalPacket) -> bool {
+fn is_same_control_packet(header: &UciControlPacketHeader, packet: &UciPacketHal) -> bool {
     is_uci_control_packet(header.message_type)
         && header.message_type == packet.get_message_type()
         && header.group_id == packet.get_group_id_or_data_packet_format().into()
         && header.opcode == get_opcode_from_uci_control_packet(packet)
 }
 
-impl UciControlPacketPacket {
+impl UciControlPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
         self.to_bytes().slice(UCI_PACKET_HEADER_LEN..).to_vec()
     }
 }
 
-// Helper to convert from vector of |UciPacketHalPacket| to |UciControlPacketPacket|. An example
+// Helper to convert from vector of |UciPacketHal| to |UciControlPacket|. An example
 // usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
-impl TryFrom<Vec<UciPacketHalPacket>> for UciControlPacketPacket {
+impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
     type Error = Error;
 
-    fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
+    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self> {
         if packets.is_empty() {
             return Err(Error::InvalidPacketError);
         }
@@ -369,9 +371,9 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciControlPacketPacket {
             payload_buf.extend_from_slice(&packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
         }
 
-        // Create assembled |UciControlPacketPacket| and convert to bytes again since we need to
+        // Create assembled |UciControlPacket| and convert to bytes again since we need to
         // reparse the packet after defragmentation to get the appropriate message.
-        UciControlPacketPacket::parse(
+        UciControlPacket::parse(
             &UciControlPacketBuilder {
                 message_type: header.message_type,
                 group_id: header.group_id,
@@ -389,7 +391,7 @@ fn is_uci_data_rcv_packet(message_type: MessageType, data_packet_format: DataPac
     message_type == MessageType::Data && data_packet_format == DataPacketFormat::DataRcv
 }
 
-fn try_into_data_payload(packet: UciPacketHalPacket) -> Result<Bytes> {
+fn try_into_data_payload(packet: UciPacketHal) -> Result<Bytes> {
     if is_uci_data_rcv_packet(
         packet.get_message_type(),
         packet.get_group_id_or_data_packet_format().try_into()?,
@@ -401,12 +403,12 @@ fn try_into_data_payload(packet: UciPacketHalPacket) -> Result<Bytes> {
     }
 }
 
-// Helper to convert from vector of |UciPacketHalPacket| to |UciDataPacketPacket|. An example
+// Helper to convert from vector of |UciPacketHal| to |UciDataPacket|. An example
 // usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
-impl TryFrom<Vec<UciPacketHalPacket>> for UciDataPacketPacket {
+impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
     type Error = Error;
 
-    fn try_from(packets: Vec<UciPacketHalPacket>) -> Result<Self> {
+    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self> {
         if packets.is_empty() {
             return Err(Error::InvalidPacketError);
         }
@@ -419,9 +421,9 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciDataPacketPacket {
             payload_buf = [payload_buf, try_into_data_payload(packet)?].concat().into();
         }
 
-        // Create assembled |UciDataPacketPacket| and convert to bytes again since we need to
+        // Create assembled |UciDataPacket| and convert to bytes again since we need to
         // reparse the packet after defragmentation to get the appropriate message.
-        UciDataPacketPacket::parse(
+        UciDataPacket::parse(
             &UciDataPacketBuilder {
                 message_type: MessageType::Data,
                 data_packet_format: DataPacketFormat::DataRcv,
@@ -433,10 +435,10 @@ impl TryFrom<Vec<UciPacketHalPacket>> for UciDataPacketPacket {
     }
 }
 
-// Helper to convert from |UciControlPacketPacket| to vector of |UciControlPacketHalPacket|s. An
+// Helper to convert from |UciControlPacket| to vector of |UciControlPacketHal|s. An
 // example usage is to do this conversion for fragmentation (from Host to UWBS).
-impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
-    fn from(packet: UciControlPacketPacket) -> Self {
+impl From<UciControlPacket> for Vec<UciControlPacketHal> {
+    fn from(packet: UciControlPacket) -> Self {
         // Store header info.
         let header = match UciControlPacketHeader::new(
             packet.get_message_type(),
@@ -446,7 +448,7 @@ impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
             Ok(hdr) => hdr,
             _ => {
                 error!(
-                    "Unable to parse UciControlPacketHeader from UciControlPacketPacket: {:?}",
+                    "Unable to parse UciControlPacketHeader from UciControlPacket: {:?}",
                     packet
                 );
                 return Vec::new();
@@ -492,10 +494,10 @@ impl From<UciControlPacketPacket> for Vec<UciControlPacketHalPacket> {
     }
 }
 
-// Helper to convert From<UciDataSndPacket> into Vec<UciDataPacketHalPacket>. An
+// Helper to convert From<UciDataSnd> into Vec<UciDataPacketHal>. An
 // example usage is for fragmentation in the Data Packet Tx flow.
-impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
-    fn from(packet: UciDataSndPacket) -> Self {
+impl From<UciDataSnd> for Vec<UciDataPacketHal> {
+    fn from(packet: UciDataSnd) -> Self {
         let mut fragments = Vec::new();
         let dpf = packet.get_data_packet_format().into();
 
@@ -537,20 +539,20 @@ impl From<UciDataSndPacket> for Vec<UciDataPacketHalPacket> {
 pub struct PacketDefrager {
     // Cache to store incoming fragmented packets in the middle of reassembly.
     // Will be empty if there is no reassembly in progress.
-    // TODO(b/261762781): Prefer this to be UciControlPacketHalPacket
-    control_fragment_cache: Vec<UciPacketHalPacket>,
-    // TODO(b/261762781): Prefer this to be UciDataPacketHalPacket
-    data_fragment_cache: Vec<UciPacketHalPacket>,
+    // TODO(b/261762781): Prefer this to be UciControlPacketHal
+    control_fragment_cache: Vec<UciPacketHal>,
+    // TODO(b/261762781): Prefer this to be UciDataPacketHal
+    data_fragment_cache: Vec<UciPacketHal>,
 }
 
 pub enum UciDefragPacket {
-    Control(UciControlPacketPacket),
-    Data(UciDataPacketPacket),
+    Control(UciControlPacket),
+    Data(UciDataPacket),
 }
 
 impl PacketDefrager {
     pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciDefragPacket> {
-        let packet = UciPacketHalPacket::parse(msg)
+        let packet = UciPacketHal::parse(msg)
             .or_else(|e| {
                 error!("Failed to parse packet: {:?}", e);
                 Err(e)
@@ -617,9 +619,7 @@ pub struct ParsedFrameReport {
     cir: Vec<CirValue>,
 }
 
-pub fn parse_diagnostics_ntf(
-    evt: AndroidRangeDiagnosticsNtfPacket,
-) -> Result<ParsedDiagnosticNtfPacket> {
+pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDiagnosticNtfPacket> {
     let session_id = evt.get_session_id();
     let sequence_number = evt.get_sequence_number();
     let mut parsed_frame_reports = Vec::new();
@@ -628,7 +628,7 @@ pub fn parse_diagnostics_ntf(
         let mut aoa_vec = Vec::new();
         let mut cir_vec = Vec::new();
         for tlv in &report.frame_report_tlvs {
-            match FrameReportTlvPacketPacket::parse(
+            match FrameReportTlvPacket::parse(
                 &[vec![tlv.t as u8, tlv.v.len() as u8, (tlv.v.len() >> 8) as u8], tlv.v.clone()]
                     .concat(),
             ) {
@@ -711,7 +711,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
     session_id: u32,
     action: UpdateMulticastListAction,
     controlees: Controlees,
-) -> Result<SessionUpdateControllerMulticastListCmdPacket> {
+) -> Result<SessionUpdateControllerMulticastListCmd> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
         Controlees::NoSessionKey(controlee_v1)
@@ -812,14 +812,14 @@ mod tests {
     #[test]
     fn test_build_multicast_update_packet() {
         let controlee = Controlee { short_address: 0x1234, subsession_id: 0x1324_3546 };
-        let packet: UciControlPacketPacket = build_session_update_controller_multicast_list_cmd(
+        let packet: UciControlPacket = build_session_update_controller_multicast_list_cmd(
             0x1425_3647,
             UpdateMulticastListAction::AddControlee,
             Controlees::NoSessionKey(vec![controlee; 1]),
         )
         .unwrap()
         .into();
-        let packet_fragments: Vec<UciControlPacketHalPacket> = packet.into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
         let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
         assert_eq!(
             uci_packet,
