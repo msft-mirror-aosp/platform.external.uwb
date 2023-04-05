@@ -306,6 +306,11 @@ impl<U: UciManager> UciManagerSync<U> {
         )
     }
 
+    /// Send UCI command for getting max data size for session.
+    pub fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        self.runtime_handle.block_on(self.uci_manager.session_query_max_data_size(session_id))
+    }
+
     /// Send UCI command for starting ranging of the session.
     pub fn range_start(&self, session_id: SessionId) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.range_start(session_id))

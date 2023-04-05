@@ -14,8 +14,6 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use num_traits::ToPrimitive;
-
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
@@ -43,6 +41,7 @@ pub(super) enum UciResponse {
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
     SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
+    SessionQueryMaxDataSize(Result<u16>),
     SessionStart(Result<()>),
     SessionStop(Result<()>),
     SessionGetRangingCount(Result<usize>),
@@ -77,6 +76,8 @@ impl UciResponse {
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
+
+            Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
         }
     }
 
@@ -191,6 +192,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
                     }),
                 ))
             }
+            SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
+                Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
+            }
             _ => Err(Error::Unknown),
         }
     }
@@ -238,8 +242,8 @@ impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
 }
 
 fn raw_response(evt: uwb_uci_packets::UciResponse) -> Result<UciResponse> {
-    let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
-    let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
+    let gid: u32 = evt.get_group_id().into();
+    let oid: u32 = evt.get_opcode().into();
     let packet: UciControlPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
