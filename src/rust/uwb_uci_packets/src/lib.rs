@@ -22,6 +22,8 @@
 use std::cmp;
 
 use log::error;
+use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use zeroize::Zeroize;
 
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
@@ -246,19 +248,19 @@ generate_extract_func!(extract_u64, u64);
 // keep the two enums in sync, for any additional values defined in the UCI spec).
 impl From<GroupId> for GroupIdOrDataPacketFormat {
     fn from(gid: GroupId) -> Self {
-        GroupIdOrDataPacketFormat::from_u8(gid.to_u8().unwrap()).unwrap()
+        GroupIdOrDataPacketFormat::try_from(u8::from(gid)).unwrap()
     }
 }
 
 impl From<GroupIdOrDataPacketFormat> for GroupId {
     fn from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Self {
-        GroupId::from_u8(gid_or_dpf.to_u8().unwrap()).unwrap()
+        GroupId::try_from(u8::from(gid_or_dpf)).unwrap()
     }
 }
 
 impl From<DataPacketFormat> for GroupIdOrDataPacketFormat {
     fn from(dpf: DataPacketFormat) -> Self {
-        GroupIdOrDataPacketFormat::from_u8(dpf.to_u8().unwrap()).unwrap()
+        GroupIdOrDataPacketFormat::try_from(u8::from(dpf)).unwrap()
     }
 }
 
@@ -268,7 +270,7 @@ impl TryFrom<GroupIdOrDataPacketFormat> for DataPacketFormat {
     type Error = Error;
 
     fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self> {
-        DataPacketFormat::from_u8(gid_or_dpf.to_u8().unwrap()).ok_or(Error::InvalidPacketError)
+        DataPacketFormat::try_from(u8::from(gid_or_dpf)).or(Err(Error::InvalidPacketError))
     }
 }
 
