@@ -253,6 +253,7 @@ enum AppConfigTlvType : 8 {
     CCC_UWB_CONFIG_ID = 0xA4,
     CCC_PULSESHAPE_COMBO = 0xA5,
     CCC_URSK_TTL = 0xA6,
+    CCC_LAST_INDEX_USED  = 0xA8,
 
     // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
     NB_OF_RANGE_MEASUREMENTS = 0xE3,
@@ -926,6 +927,23 @@ packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // S
 
 test DataTransferStatusNtf {
     "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00",
+}
+
+packet SessionQueryMaxDataSizeCmd : SessionConfigCommand (opcode = 0xB) { //QUERY_MAX_DATA_SIZE
+    session_id: 32,
+}
+
+test SessionQueryMaxDataSizeCmd {
+ "\x21\x0B\x00\x04\x00\x00\x00\x00",
+}
+
+packet SessionQueryMaxDataSizeRsp : SessionConfigResponse (opcode = 0xB) { //QUER_MAX_DATA_SIZE
+    session_id: 32,
+    max_data_size: 16,
+}
+
+test SessionQueryMaxDataSizeRsp {
+  "\x41\x0B\x00\x06\x00\x00\x00\x00\x0E7\0x07",
 }
 
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
