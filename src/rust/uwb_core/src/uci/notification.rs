@@ -15,7 +15,6 @@
 use std::convert::{TryFrom, TryInto};
 
 use log::{debug, error};
-use num_traits::ToPrimitive;
 use uwb_uci_packets::{parse_diagnostics_ntf, Packet, UCI_PACKET_HEADER_LEN};
 
 use crate::error::{Error, Result};
@@ -393,14 +392,8 @@ impl TryFrom<uwb_uci_packets::AndroidNotification> for UciNotification {
 
 fn vendor_notification(evt: uwb_uci_packets::UciNotification) -> Result<UciNotification> {
     Ok(UciNotification::Vendor(RawUciMessage {
-        gid: evt.get_group_id().to_u32().ok_or_else(|| {
-            error!("Failed to get gid from packet: {:?}", evt);
-            Error::Unknown
-        })?,
-        oid: evt.get_opcode().to_u32().ok_or_else(|| {
-            error!("Failed to get opcode from packet: {:?}", evt);
-            Error::Unknown
-        })?,
+        gid: evt.get_group_id().into(),
+        oid: evt.get_opcode().into(),
         payload: get_vendor_uci_payload(evt)?,
     }))
 }
@@ -720,8 +713,7 @@ mod tests {
             session_id: 0x20,
             session_state: uwb_uci_packets::SessionState::SessionStateActive,
             reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
-                .to_u8()
-                .unwrap(),
+                .into(),
         }
         .build();
         let session_notification_packet =
@@ -736,8 +728,7 @@ mod tests {
                 session_id: 0x20,
                 session_state: uwb_uci_packets::SessionState::SessionStateActive,
                 reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
-                    .to_u8()
-                    .unwrap(),
+                    .into(),
             })
         );
     }
