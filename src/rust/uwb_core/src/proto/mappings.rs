@@ -16,7 +16,6 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use num_traits::FromPrimitive;
 use protobuf::RepeatedField;
 use zeroize::Zeroize;
 
@@ -43,10 +42,10 @@ use crate::proto::bindings::{
     FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
     KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
     MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
+    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
     OwrAoaStatusCode as ProtoOwrAoaStatusCode, PowerStats as ProtoPowerStats,
     PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
     PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
-    RangingMeasurement as ProtoRangingMeasurement,
     RangingMeasurementType as ProtoRangingMeasurementType,
     RangingRoundControl as ProtoRangingRoundControl, RangingRoundUsage as ProtoRangingRoundUsage,
     RangingTimeStruct as ProtoRangingTimeStruct, ReasonCode as ProtoReasonCode,
@@ -54,6 +53,7 @@ use crate::proto::bindings::{
     ScheduledMode as ProtoScheduledMode, SessionRangeData as ProtoSessionRangeData,
     SessionState as ProtoSessionState, SessionType as ProtoSessionType, Status as ProtoStatus,
     StatusCode as ProtoStatusCode, StsConfig as ProtoStsConfig, StsLength as ProtoStsLength,
+    TwoWayRangingMeasurement as ProtoTwoWayRangingMeasurement,
     TxAdaptivePayloadPower as ProtoTxAdaptivePayloadPower, UciLoggerMode as ProtoUciLoggerMode,
     UpdateMulticastListAction as ProtoUpdateMulticastListAction, UwbChannel as ProtoUwbChannel,
 };
@@ -144,6 +144,7 @@ enum_mapping! {
     UCI_STATUS_DATA_RX_CRC_ERROR => UciStatusDataRxCrcError,
     UCI_STATUS_ERROR_CCC_SE_BUSY => UciStatusErrorCccSeBusy,
     UCI_STATUS_ERROR_CCC_LIFECYCLE => UciStatusErrorCccLifecycle,
+    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => UciStatusErrorStoppedDueToOtherSessionConflict,
 }
 
 enum_mapping! {
@@ -172,13 +173,46 @@ enum_mapping! {
     STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => StateChangeWithSessionManagementCommands,
     MAX_RANGING_ROUND_RETRY_COUNT_REACHED => MaxRangingRoundRetryCountReached,
     MAX_NUMBER_OF_MEASUREMENTS_REACHED => MaxNumberOfMeasurementsReached,
+    SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL => SessionSuspendedDueToInbandSignal,
+    SESSION_RESUMED_DUE_TO_INBAND_SIGNAL => SessionResumedDueToInbandSignal,
+    SESSION_STOPPED_DUE_TO_INBAND_SIGNAL => SessionStoppedDueToInbandSignal,
     ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => ErrorInvalidUlTdoaRandomWindow,
+    ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED => ErrorMinRframesPerRrNotSupported,
+    ERROR_TX_DELAY_NOT_SUPPORTED => ErrorTxDelayNotSupported,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED => ErrorSlotLengthNotSupported,
     ERROR_INSUFFICIENT_SLOTS_PER_RR => ErrorInsufficientSlotsPerRr,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => ErrorMacAddressModeNotSupported,
-    ERROR_INVALID_RANGING_INTERVAL => ErrorInvalidRangingInterval,
+    ERROR_INVALID_RANGING_DURATION => ErrorInvalidRangingDuration,
     ERROR_INVALID_STS_CONFIG => ErrorInvalidStsConfig,
     ERROR_INVALID_RFRAME_CONFIG => ErrorInvalidRframeConfig,
+    ERROR_HUS_NOT_ENOUGH_SLOTS => ErrorHusNotEnoughSlots,
+    ERROR_HUS_CFP_PHASE_TOO_SHORT => ErrorHusCfpPhaseTooShort,
+    ERROR_HUS_CAP_PHASE_TOO_SHORT => ErrorHusCapPhaseTooShort,
+    ERROR_HUS_OTHERS => ErrorHusOthers,
+    ERROR_STATUS_SESSION_KEY_NOT_FOUND => ErrorStatusSessionKeyNotFound,
+    ERROR_STATUS_SUB_SESSION_KEY_NOT_FOUND => ErrorStatusSubSessionKeyNotFound,
+    ERROR_INVALID_PREAMBLE_CODE_INDEX => ErrorInvalidPreambleCodeIndex,
+    ERROR_INVALID_SFD_ID => ErrorInvalidSfdId,
+    ERROR_INVALID_PSDU_DATA_RATE => ErrorInvalidPsduDataRate,
+    ERROR_INVALID_PHR_DATA_RATE => ErrorInvalidPhrDataRate,
+    ERROR_INVALID_PREAMBLE_DURATION => ErrorInvalidPreambleDuration,
+    ERROR_INVALID_STS_LENGTH => ErrorInvalidStsLength,
+    ERROR_INVALID_NUM_OF_STS_SEGMENTS => ErrorInvalidNumOfStsSegments,
+    ERROR_INVALID_NUM_OF_CONTROLEES => ErrorInvalidNumOfControlees,
+    ERROR_MAX_RANGING_REPLY_TIME_EXCEEDED => ErrorMaxRangingReplyTimeExceeded,
+    ERROR_INVALID_DST_ADDRESS_LIST => ErrorInvalidDstAddressList,
+    ERROR_INVALID_OR_NOT_FOUND_SUB_SESSION_ID => ErrorInvalidOrNotFoundSubSessionId,
+    ERROR_INVALID_RESULT_REPORT_CONFIG => ErrorInvalidResultReportConfig,
+    ERROR_INVALID_RANGING_ROUND_CONTROL_CONFIG => ErrorInvalidRangingRoundControlConfig,
+    ERROR_INVALID_RANGING_ROUND_USAGE => ErrorInvalidRangingRoundUsage,
+    ERROR_INVALID_MULTI_NODE_MODE => ErrorInvalidMultiNodeMode,
+    ERROR_RDS_FETCH_FAILURE => ErrorRdsFetchFailure,
+    ERROR_REF_UWB_SESSION_DOES_NOT_EXIST => ErrorRefUwbSessionDoesNotExist,
+    ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH => ErrorRefUwbSessionRangingDurationMismatch,
+    ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME => ErrorRefUwbSessionInvalidOffsetTime,
+    ERROR_REF_UWB_SESSION_LOST => ErrorRefUwbSessionLost,
+    ERROR_INVALID_CHANNEL_WITH_AOA => ErrorInvalidChannelWithAoa,
+    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => ErrorStoppedDueToOtherSessionConflict,
 }
 
 enum_mapping! {
@@ -358,7 +392,8 @@ enum_mapping! {
 }
 
 pub enum ProtoRangingMeasurements {
-    Ranging(Vec<ProtoRangingMeasurement>),
+    TwoWay(Vec<ProtoTwoWayRangingMeasurement>),
+    OwrAoa(ProtoOwrAoaRangingMeasurement),
     DlTDoa(Vec<ProtoDlTDoARangingMeasurement>),
 }
 
@@ -379,7 +414,7 @@ impl<T> From<Result<T>> for ProtoStatus {
     }
 }
 
-impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ShortAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -400,7 +435,7 @@ impl From<ShortAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ExtendedAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -421,7 +456,7 @@ impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
@@ -437,7 +472,7 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
     }
 }
 
-impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoRangingMeasurement {
+impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
@@ -458,7 +493,7 @@ impl From<ShortAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasuremen
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
         result.set_status(
-            StatusCode::from_u8(item.measurement.status)
+            StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
@@ -497,7 +532,7 @@ impl From<ExtendedAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasure
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
         result.set_status(
-            StatusCode::from_u8(item.measurement.status)
+            StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
@@ -539,8 +574,11 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
         result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
         result.set_ranging_measurement_type(item.ranging_measurement_type.into());
         match to_proto_ranging_measurements(item.ranging_measurements) {
-            ProtoRangingMeasurements::Ranging(ranging_measurements) => {
-                result.set_ranging_measurements(RepeatedField::from_vec(ranging_measurements))
+            ProtoRangingMeasurements::TwoWay(twoway_measurements) => {
+                result.set_twoway_ranging_measurements(RepeatedField::from_vec(twoway_measurements))
+            }
+            ProtoRangingMeasurements::OwrAoa(owraoa_measurement) => {
+                result.set_owraoa_ranging_measurement(owraoa_measurement)
             }
             ProtoRangingMeasurements::DlTDoa(dltdoa_measurements) => {
                 result.set_dltdoa_ranging_measurements(RepeatedField::from_vec(dltdoa_measurements))
@@ -553,17 +591,13 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
 fn to_proto_ranging_measurements(item: RangingMeasurements) -> ProtoRangingMeasurements {
     match item {
         RangingMeasurements::ShortAddressTwoWay(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
         RangingMeasurements::ExtendedAddressTwoWay(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
+            ProtoRangingMeasurements::TwoWay(arr.into_iter().map(|item| item.into()).collect())
         }
-        RangingMeasurements::ShortAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
-        }
-        RangingMeasurements::ExtendedAddressOwrAoa(arr) => {
-            ProtoRangingMeasurements::Ranging(arr.into_iter().map(|item| item.into()).collect())
-        }
+        RangingMeasurements::ShortAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
+        RangingMeasurements::ExtendedAddressOwrAoa(r) => ProtoRangingMeasurements::OwrAoa(r.into()),
         RangingMeasurements::ShortAddressDltdoa(arr) => {
             ProtoRangingMeasurements::DlTDoa(arr.into_iter().map(|item| item.into()).collect())
         }

@@ -21,15 +21,16 @@ use std::iter::FromIterator;
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, Controlees, DataRcvStatusCode, DeviceConfigId, DeviceConfigStatus,
-    DeviceConfigTlv, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    FiraComponent, GroupId, MessageType, MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats,
-    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
-    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
-    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
+    Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
+    DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
+    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, GroupId, MessageType,
+    MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode,
+    ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    UpdateMulticastListAction,
 };
-pub(crate) use uwb_uci_packets::{UciControlPacketPacket, UciDataPacketPacket};
+pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
 use crate::error::Error;
 
@@ -202,10 +203,10 @@ pub struct RawUciMessage {
     pub payload: Vec<u8>,
 }
 
-impl From<UciControlPacketPacket> for RawUciMessage {
-    fn from(packet: UciControlPacketPacket) -> Self {
+impl From<UciControlPacket> for RawUciMessage {
+    fn from(packet: UciControlPacket) -> Self {
         Self {
-            gid: packet.get_group_id() as u32,
+            gid: packet.get_group_id().into(),
             oid: packet.get_opcode() as u32,
             payload: packet.to_raw_payload(),
         }

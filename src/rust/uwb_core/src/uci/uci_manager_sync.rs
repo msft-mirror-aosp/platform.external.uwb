@@ -27,9 +27,9 @@ use tokio::task;
 use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
-    DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
-    SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    DeviceConfigTlv, FiraComponent, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
+    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SetAppConfigResponse, UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -149,7 +149,6 @@ impl<U: UciManager> UciManagerSync<U> {
             mpsc::unbounded_channel::<RawUciMessage>();
         let (data_rcv_notification_sender, data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<DataRcvNotification>();
-        // TODO(b/261762781):Add a similar channel for Data Packet Rx
         self.runtime_handle.to_owned().block_on(async {
             self.uci_manager.set_core_notification_sender(core_notification_sender).await;
             self.uci_manager.set_session_notification_sender(session_notification_sender).await;
@@ -307,6 +306,11 @@ impl<U: UciManager> UciManagerSync<U> {
         )
     }
 
+    /// Send UCI command for getting max data size for session.
+    pub fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        self.runtime_handle.block_on(self.uci_manager.session_query_max_data_size(session_id))
+    }
+
     /// Send UCI command for starting ranging of the session.
     pub fn range_start(&self, session_id: SessionId) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.range_start(session_id))
@@ -341,6 +345,24 @@ impl<U: UciManager> UciManagerSync<U> {
         payload: Vec<u8>,
     ) -> Result<RawUciMessage> {
         self.runtime_handle.block_on(self.uci_manager.raw_uci_cmd(mt, gid, oid, payload))
+    }
+
+    /// Send a data packet
+    pub fn send_data_packet(
+        &self,
+        session_id: SessionId,
+        address: Vec<u8>,
+        dest_end_point: FiraComponent,
+        uci_sequence_num: u8,
+        app_payload_data: Vec<u8>,
+    ) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.send_data_packet(
+            session_id,
+            address,
+            dest_end_point,
+            uci_sequence_num,
+            app_payload_data,
+        ))
     }
 }
 
