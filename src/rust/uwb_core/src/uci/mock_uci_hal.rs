@@ -59,6 +59,19 @@ impl MockUciHal {
         });
     }
 
+    pub fn expected_send_packet(
+        &mut self,
+        expected_packet_tx: UciHalPacket,
+        inject_packets_rx: Vec<UciHalPacket>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendPacket {
+            expected_packet_tx,
+            inject_packets_rx,
+            out,
+        });
+    }
+
     pub fn expected_notify_session_initialized(
         &mut self,
         expected_session_id: SessionId,
@@ -145,9 +158,26 @@ impl UciHal for MockUciHal {
         }
     }
 
-    async fn send_packet(&mut self, _packet: UciHalPacket) -> Result<()> {
-        // We mock the send_command(), so send_packet() would not be called.
-        Err(Error::MockUndefined)
+    async fn send_packet(&mut self, packet_tx: UciHalPacket) -> Result<()> {
+        // send_packet() will be directly called for sending UCI Data packets.
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SendPacket { expected_packet_tx, inject_packets_rx, out })
+                if expected_packet_tx == packet_tx =>
+            {
+                self.expect_call_consumed.notify_one();
+                let packet_sender = self.packet_sender.as_mut().unwrap();
+                for msg in inject_packets_rx.into_iter() {
+                    let _ = packet_sender.send(msg);
+                }
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
     }
 
     async fn notify_session_initialized(&mut self, session_id: SessionId) -> Result<()> {
@@ -169,8 +199,25 @@ impl UciHal for MockUciHal {
 }
 
 enum ExpectedCall {
-    Open { packets: Option<Vec<UciHalPacket>>, out: Result<()> },
-    Close { out: Result<()> },
-    SendCommand { expected_cmd: UciCommand, packets: Vec<UciHalPacket>, out: Result<()> },
-    NotifySessionInitialized { expected_session_id: SessionId, out: Result<()> },
+    Open {
+        packets: Option<Vec<UciHalPacket>>,
+        out: Result<()>,
+    },
+    Close {
+        out: Result<()>,
+    },
+    SendCommand {
+        expected_cmd: UciCommand,
+        packets: Vec<UciHalPacket>,
+        out: Result<()>,
+    },
+    SendPacket {
+        expected_packet_tx: UciHalPacket,
+        inject_packets_rx: Vec<UciHalPacket>,
+        out: Result<()>,
+    },
+    NotifySessionInitialized {
+        expected_session_id: SessionId,
+        out: Result<()>,
+    },
 }
