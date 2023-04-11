@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use bytes::Bytes;
 use log::error;
-use num_traits::FromPrimitive;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
@@ -68,6 +67,9 @@ pub enum UciCommand {
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
     },
+    SessionQueryMaxDataSize {
+        session_id: SessionId,
+    },
     SessionStart {
         session_id: SessionId,
     },
@@ -116,7 +118,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 uwb_uci_packets::SetConfigCmdBuilder { tlvs: config_tlvs }.build().into()
             }
             UciCommand::CoreGetConfig { cfg_id } => uwb_uci_packets::GetConfigCmdBuilder {
-                cfg_id: cfg_id.into_iter().map(|item| item as u8).collect(),
+                cfg_id: cfg_id.into_iter().map(u8::from).collect(),
             }
             .build()
             .into(),
@@ -131,7 +133,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             UciCommand::SessionGetAppConfig { session_id, app_cfg } => {
                 uwb_uci_packets::SessionGetAppConfigCmdBuilder {
                     session_id,
-                    app_cfg: app_cfg.into_iter().map(|item| item as u8).collect(),
+                    app_cfg: app_cfg.into_iter().map(u8::from).collect(),
                 }
                 .build()
                 .into()
@@ -173,6 +175,9 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             UciCommand::SessionGetRangingCount { session_id } => {
                 uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
             }
+            UciCommand::SessionQueryMaxDataSize { session_id } => {
+                uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id }.build().into()
+            }
         };
         Ok(packet)
     }
@@ -184,19 +189,20 @@ fn build_raw_uci_cmd_packet(
     oid: u32,
     payload: Vec<u8>,
 ) -> Result<uwb_uci_packets::UciControlPacket> {
-    let group_id = GroupId::from_u32(gid).ok_or_else(|| {
+    let group_id = u8::try_from(gid).or(Err(0)).and_then(GroupId::try_from).map_err(|_| {
         error!("Invalid GroupId: {}", gid);
         Error::BadParameters
     })?;
     let payload = if payload.is_empty() { None } else { Some(Bytes::from(payload)) };
-    let opcode = oid.try_into().map_err(|_| {
+    let opcode = u8::try_from(oid).map_err(|_| {
         error!("Invalid opcod: {}", oid);
         Error::BadParameters
     })?;
-    let message_type = MessageType::from_u32(mt).ok_or_else(|| {
-        error!("Invalid MessageType: {}", mt);
-        Error::BadParameters
-    })?;
+    let message_type =
+        u8::try_from(mt).or(Err(0)).and_then(MessageType::try_from).map_err(|_| {
+            error!("Invalid MessageType: {}", mt);
+            Error::BadParameters
+        })?;
     match uwb_uci_packets::build_uci_control_packet(message_type, group_id, opcode, payload) {
         Some(cmd) => Ok(cmd),
         None => Err(Error::BadParameters),
