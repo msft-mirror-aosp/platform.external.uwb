@@ -206,11 +206,11 @@ rust_library {
 
 genrule {
     name: "gen_uwb_core_proto",
-    tools: ["aprotoc", "protoc-gen-rust"],
+    tools: ["aprotoc", "protoc-gen-rust-deprecated"],
     cmd: "$(location aprotoc)" +
          " --proto_path=`dirname $(in)`" +
          " --dependency_out=$(depfile)" +
-         " --plugin=$(location protoc-gen-rust)" +
+         " --plugin=protoc-gen-rust=$(location protoc-gen-rust-deprecated)" +
          " --rust_out=$(genDir) $(in)",
     srcs: [
         "rust/uwb_core/protos/uwb_service.proto",
