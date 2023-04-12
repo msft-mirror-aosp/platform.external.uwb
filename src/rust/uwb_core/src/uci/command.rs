@@ -208,3 +208,170 @@ fn build_raw_uci_cmd_packet(
         None => Err(Error::BadParameters),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_raw_uci_cmd() {
+        let payload = vec![0x01, 0x02];
+        let cmd_packet = build_raw_uci_cmd_packet(1, 9, 0, payload.clone()).unwrap();
+        assert_eq!(payload, cmd_packet.to_raw_payload());
+    }
+
+    #[test]
+    fn test_convert_uci_cmd_to_packets() {
+        let mut cmd = UciCommand::DeviceReset { reset_config: ResetConfig::UwbsReset };
+        let mut packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::DeviceResetCmdBuilder { reset_config: ResetConfig::UwbsReset }
+                .build()
+                .into()
+        );
+
+        cmd = UciCommand::CoreGetDeviceInfo {};
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(packet, uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into());
+
+        cmd = UciCommand::CoreGetCapsInfo {};
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(packet, uwb_uci_packets::GetCapsInfoCmdBuilder {}.build().into());
+
+        let device_cfg_tlv = DeviceConfigTlv { cfg_id: DeviceConfigId::DeviceState, v: vec![0] };
+        cmd = UciCommand::CoreSetConfig { config_tlvs: vec![device_cfg_tlv.clone()] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SetConfigCmdBuilder { tlvs: vec![device_cfg_tlv] }.build().into()
+        );
+
+        cmd = UciCommand::CoreGetConfig { cfg_id: vec![DeviceConfigId::DeviceState] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(packet, uwb_uci_packets::GetConfigCmdBuilder { cfg_id: vec![0] }.build().into());
+
+        cmd = UciCommand::SessionInit {
+            session_id: 1,
+            session_type: SessionType::FiraRangingSession,
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionInitCmdBuilder {
+                session_id: 1,
+                session_type: SessionType::FiraRangingSession
+            }
+            .build()
+            .into()
+        );
+
+        cmd = UciCommand::SessionDeinit { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionDeinitCmdBuilder { session_id: 1 }.build().into()
+        );
+
+        cmd = UciCommand::SessionSetAppConfig { session_id: 1, config_tlvs: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionSetAppConfigCmdBuilder { session_id: 1, tlvs: vec![] }
+                .build()
+                .into()
+        );
+
+        cmd = UciCommand::SessionGetAppConfig { session_id: 1, app_cfg: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionGetAppConfigCmdBuilder { session_id: 1, app_cfg: vec![] }
+                .build()
+                .into()
+        );
+
+        cmd = UciCommand::SessionGetCount {};
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(packet, uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into());
+
+        cmd = UciCommand::SessionGetState { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionGetStateCmdBuilder { session_id: 1 }.build().into()
+        );
+
+        cmd = UciCommand::SessionUpdateControllerMulticastList {
+            session_id: 1,
+            action: UpdateMulticastListAction::AddControlee,
+            controlees: Controlees::NoSessionKey(vec![]),
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            build_session_update_controller_multicast_list_cmd(
+                1,
+                UpdateMulticastListAction::AddControlee,
+                Controlees::NoSessionKey(vec![])
+            )
+            .map_err(|_| Error::BadParameters)
+            .unwrap()
+            .into()
+        );
+
+        cmd = UciCommand::SessionUpdateActiveRoundsDtTag {
+            session_id: 1,
+            ranging_round_indexes: vec![0],
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+                session_id: 1,
+                ranging_round_indexes: vec![0]
+            }
+            .build()
+            .into()
+        );
+
+        cmd = UciCommand::SessionQueryMaxDataSize { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id: 1 }.build().into()
+        );
+
+        cmd = UciCommand::SessionStart { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionStartCmdBuilder { session_id: 1 }.build().into()
+        );
+
+        cmd = UciCommand::SessionStop { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(packet, uwb_uci_packets::SessionStopCmdBuilder { session_id: 1 }.build().into());
+
+        cmd = UciCommand::SessionGetRangingCount { session_id: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id: 1 }.build().into()
+        );
+
+        let country_code: [u8; 2] = [85, 83];
+        cmd = UciCommand::AndroidSetCountryCode {
+            country_code: CountryCode::new(&country_code).unwrap(),
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::AndroidSetCountryCodeCmdBuilder { country_code }.build().into()
+        );
+
+        cmd = UciCommand::AndroidGetPowerStats {};
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(packet, uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into());
+    }
+}
