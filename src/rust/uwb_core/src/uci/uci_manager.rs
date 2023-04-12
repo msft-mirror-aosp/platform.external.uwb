@@ -88,6 +88,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         config_ids: Vec<DeviceConfigId>,
     ) -> Result<Vec<DeviceConfigTlv>>;
+    async fn core_query_uwb_timestamp(&self) -> Result<u64>;
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()>;
     async fn session_deinit(&self, session_id: SessionId) -> Result<()>;
     async fn session_set_app_config(
@@ -308,6 +309,15 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreGetConfig { cfg_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreGetConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let cmd = UciCommand::CoreQueryTimeStamp;
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::CoreQueryTimeStamp(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
