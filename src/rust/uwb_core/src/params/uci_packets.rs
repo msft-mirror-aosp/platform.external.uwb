@@ -153,16 +153,14 @@ pub struct SessionUpdateActiveRoundsDtTagResponse {
 pub struct CountryCode([u8; 2]);
 
 impl CountryCode {
-    fn is_valid_char(code: u8) -> bool {
-        code.is_ascii_uppercase() || code == 0
-    }
+    const UNKNOWN_COUNTRY_CODE: [u8; 2] = [0, 0];
 
     /// Create a CountryCode instance.
     pub fn new(code: &[u8; 2]) -> Option<Self> {
-        if !CountryCode::is_valid_char(code[0]) || !CountryCode::is_valid_char(code[1]) {
+        if code != &CountryCode::UNKNOWN_COUNTRY_CODE && !code.is_ascii() {
             None
         } else {
-            Some(Self(*code))
+            Some(Self((*code).to_ascii_uppercase().try_into().ok()?))
         }
     }
 }
