@@ -103,48 +103,183 @@ macro_rules! enum_mapping {
     };
 }
 
-enum_mapping! {
-    ProtoStatusCode => StatusCode,
-    UCI_STATUS_OK => UciStatusOk,
-    UCI_STATUS_REJECTED => UciStatusRejected,
-    UCI_STATUS_FAILED => UciStatusFailed,
-    UCI_STATUS_SYNTAX_ERROR => UciStatusSyntaxError,
-    UCI_STATUS_INVALID_PARAM => UciStatusInvalidParam,
-    UCI_STATUS_INVALID_RANGE => UciStatusInvalidRange,
-    UCI_STATUS_INVALID_MSG_SIZE => UciStatusInvalidMsgSize,
-    UCI_STATUS_UNKNOWN_GID => UciStatusUnknownGid,
-    UCI_STATUS_UNKNOWN_OID => UciStatusUnknownOid,
-    UCI_STATUS_READ_ONLY => UciStatusReadOnly,
-    UCI_STATUS_COMMAND_RETRY => UciStatusCommandRetry,
-    UCI_STATUS_SESSION_NOT_EXIST => UciStatusSessionNotExist,
-    UCI_STATUS_SESSION_DUPLICATE => UciStatusSessionDuplicate,
-    UCI_STATUS_SESSION_ACTIVE => UciStatusSessionActive,
-    UCI_STATUS_MAX_SESSIONS_EXCEEDED => UciStatusMaxSessionsExceeded,
-    UCI_STATUS_SESSION_NOT_CONFIGURED => UciStatusSessionNotConfigured,
-    UCI_STATUS_ACTIVE_SESSIONS_ONGOING => UciStatusActiveSessionsOngoing,
-    UCI_STATUS_MULTICAST_LIST_FULL => UciStatusMulticastListFull,
-    UCI_STATUS_ADDRESS_NOT_FOUND => UciStatusAddressNotFound,
-    UCI_STATUS_ADDRESS_ALREADY_PRESENT => UciStatusAddressAlreadyPresent,
-    UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT => UciStatusOkNegativeDistanceReport,
-    UCI_STATUS_RANGING_TX_FAILED => UciStatusRangingTxFailed,
-    UCI_STATUS_RANGING_RX_TIMEOUT => UciStatusRangingRxTimeout,
-    UCI_STATUS_RANGING_RX_PHY_DEC_FAILED => UciStatusRangingRxPhyDecFailed,
-    UCI_STATUS_RANGING_RX_PHY_TOA_FAILED => UciStatusRangingRxPhyToaFailed,
-    UCI_STATUS_RANGING_RX_PHY_STS_FAILED => UciStatusRangingRxPhyStsFailed,
-    UCI_STATUS_RANGING_RX_MAC_DEC_FAILED => UciStatusRangingRxMacDecFailed,
-    UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED => UciStatusRangingRxMacIeDecFailed,
-    UCI_STATUS_RANGING_RX_MAC_IE_MISSING => UciStatusRangingRxMacIeMissing,
-    UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED => UciStatusErrorRoundIndexNotActivated,
-    UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED =>
-        UciStatusErrorNumberOfActiveRangingRoundsExceeded,
-    UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR => UciStatusErrorRoundIndexNotSetAsInitiator,
-    UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST =>
-        UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList,
-    UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED => UciStatusDataMaxTxPsduSizeExceeded,
-    UCI_STATUS_DATA_RX_CRC_ERROR => UciStatusDataRxCrcError,
-    UCI_STATUS_ERROR_CCC_SE_BUSY => UciStatusErrorCccSeBusy,
-    UCI_STATUS_ERROR_CCC_LIFECYCLE => UciStatusErrorCccLifecycle,
-    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => UciStatusErrorStoppedDueToOtherSessionConflict,
+impl From<ProtoStatusCode> for StatusCode {
+    fn from(item: ProtoStatusCode) -> Self {
+        match item {
+            ProtoStatusCode::UCI_STATUS_OK => StatusCode::UciStatusOk,
+            ProtoStatusCode::UCI_STATUS_REJECTED => StatusCode::UciStatusRejected,
+            ProtoStatusCode::UCI_STATUS_FAILED => StatusCode::UciStatusFailed,
+            ProtoStatusCode::UCI_STATUS_SYNTAX_ERROR => StatusCode::UciStatusSyntaxError,
+            ProtoStatusCode::UCI_STATUS_INVALID_PARAM => StatusCode::UciStatusInvalidParam,
+            ProtoStatusCode::UCI_STATUS_INVALID_RANGE => StatusCode::UciStatusInvalidRange,
+            ProtoStatusCode::UCI_STATUS_INVALID_MSG_SIZE => StatusCode::UciStatusInvalidMsgSize,
+            ProtoStatusCode::UCI_STATUS_UNKNOWN_GID => StatusCode::UciStatusUnknownGid,
+            ProtoStatusCode::UCI_STATUS_UNKNOWN_OID => StatusCode::UciStatusUnknownOid,
+            ProtoStatusCode::UCI_STATUS_READ_ONLY => StatusCode::UciStatusReadOnly,
+            ProtoStatusCode::UCI_STATUS_COMMAND_RETRY => StatusCode::UciStatusCommandRetry,
+            ProtoStatusCode::UCI_STATUS_SESSION_NOT_EXIST => StatusCode::UciStatusSessionNotExist,
+            ProtoStatusCode::UCI_STATUS_SESSION_DUPLICATE => StatusCode::UciStatusSessionDuplicate,
+            ProtoStatusCode::UCI_STATUS_SESSION_ACTIVE => StatusCode::UciStatusSessionActive,
+            ProtoStatusCode::UCI_STATUS_MAX_SESSIONS_EXCEEDED => {
+                StatusCode::UciStatusMaxSessionsExceeded
+            }
+            ProtoStatusCode::UCI_STATUS_SESSION_NOT_CONFIGURED => {
+                StatusCode::UciStatusSessionNotConfigured
+            }
+            ProtoStatusCode::UCI_STATUS_ACTIVE_SESSIONS_ONGOING => {
+                StatusCode::UciStatusActiveSessionsOngoing
+            }
+            ProtoStatusCode::UCI_STATUS_MULTICAST_LIST_FULL => {
+                StatusCode::UciStatusMulticastListFull
+            }
+            ProtoStatusCode::UCI_STATUS_ADDRESS_NOT_FOUND => StatusCode::UciStatusAddressNotFound,
+            ProtoStatusCode::UCI_STATUS_ADDRESS_ALREADY_PRESENT => {
+                StatusCode::UciStatusAddressAlreadyPresent
+            }
+            ProtoStatusCode::UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT => {
+                StatusCode::UciStatusOkNegativeDistanceReport
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_TX_FAILED => StatusCode::UciStatusRangingTxFailed,
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_TIMEOUT => {
+                StatusCode::UciStatusRangingRxTimeout
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_DEC_FAILED => {
+                StatusCode::UciStatusRangingRxPhyDecFailed
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_TOA_FAILED => {
+                StatusCode::UciStatusRangingRxPhyToaFailed
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_STS_FAILED => {
+                StatusCode::UciStatusRangingRxPhyStsFailed
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_DEC_FAILED => {
+                StatusCode::UciStatusRangingRxMacDecFailed
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED => {
+                StatusCode::UciStatusRangingRxMacIeDecFailed
+            }
+            ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_IE_MISSING => {
+                StatusCode::UciStatusRangingRxMacIeMissing
+            }
+            ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED => {
+                StatusCode::UciStatusErrorRoundIndexNotActivated
+            }
+            ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED => {
+                    StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded
+            }
+            ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR => {
+                StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator
+            }
+            ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST =>
+                    StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList,
+            ProtoStatusCode::UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED => {
+                StatusCode::UciStatusDataMaxTxPsduSizeExceeded
+            }
+            ProtoStatusCode::UCI_STATUS_DATA_RX_CRC_ERROR => StatusCode::UciStatusDataRxCrcError,
+            ProtoStatusCode::UCI_STATUS_ERROR_CCC_SE_BUSY => StatusCode::UciStatusErrorCccSeBusy,
+            ProtoStatusCode::UCI_STATUS_ERROR_CCC_LIFECYCLE => {
+                StatusCode::UciStatusErrorCccLifecycle
+            }
+            ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
+                StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict
+            }
+            _ =>  StatusCode::VendorSpecificStatusCode2,
+        }
+    }
+}
+
+impl From<StatusCode> for ProtoStatusCode {
+    fn from(item: StatusCode) -> Self {
+        match item {
+            StatusCode::UciStatusOk => ProtoStatusCode::UCI_STATUS_OK,
+            StatusCode::UciStatusRejected => ProtoStatusCode::UCI_STATUS_REJECTED,
+            StatusCode::UciStatusFailed => ProtoStatusCode::UCI_STATUS_FAILED,
+            StatusCode::UciStatusSyntaxError => ProtoStatusCode::UCI_STATUS_SYNTAX_ERROR,
+            StatusCode::UciStatusInvalidParam => ProtoStatusCode::UCI_STATUS_INVALID_PARAM,
+            StatusCode::UciStatusInvalidRange => ProtoStatusCode::UCI_STATUS_INVALID_RANGE,
+            StatusCode::UciStatusInvalidMsgSize => ProtoStatusCode::UCI_STATUS_INVALID_MSG_SIZE,
+            StatusCode::UciStatusUnknownGid => ProtoStatusCode::UCI_STATUS_UNKNOWN_GID,
+            StatusCode::UciStatusUnknownOid => ProtoStatusCode::UCI_STATUS_UNKNOWN_OID,
+            StatusCode::UciStatusReadOnly => ProtoStatusCode::UCI_STATUS_READ_ONLY,
+            StatusCode::UciStatusCommandRetry => ProtoStatusCode::UCI_STATUS_COMMAND_RETRY,
+            StatusCode::UciStatusSessionNotExist => ProtoStatusCode::UCI_STATUS_SESSION_NOT_EXIST,
+            StatusCode::UciStatusSessionDuplicate => ProtoStatusCode::UCI_STATUS_SESSION_DUPLICATE,
+            StatusCode::UciStatusSessionActive => ProtoStatusCode::UCI_STATUS_SESSION_ACTIVE,
+            StatusCode::UciStatusMaxSessionsExceeded => {
+                ProtoStatusCode::UCI_STATUS_MAX_SESSIONS_EXCEEDED
+            }
+            StatusCode::UciStatusSessionNotConfigured => {
+                ProtoStatusCode::UCI_STATUS_SESSION_NOT_CONFIGURED
+            }
+            StatusCode::UciStatusActiveSessionsOngoing => {
+                ProtoStatusCode::UCI_STATUS_ACTIVE_SESSIONS_ONGOING
+            }
+            StatusCode::UciStatusMulticastListFull => {
+                ProtoStatusCode::UCI_STATUS_MULTICAST_LIST_FULL
+            }
+            StatusCode::UciStatusAddressNotFound => {
+                ProtoStatusCode::UCI_STATUS_ADDRESS_NOT_FOUND
+            }
+            StatusCode::UciStatusAddressAlreadyPresent => {
+                ProtoStatusCode::UCI_STATUS_ADDRESS_ALREADY_PRESENT
+            }
+            StatusCode::UciStatusOkNegativeDistanceReport => {
+                ProtoStatusCode::UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT
+            }
+            StatusCode::UciStatusRangingTxFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_TX_FAILED
+            }
+            StatusCode::UciStatusRangingRxTimeout => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_TIMEOUT
+            }
+            StatusCode::UciStatusRangingRxPhyDecFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_DEC_FAILED
+            }
+            StatusCode::UciStatusRangingRxPhyToaFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_TOA_FAILED
+            }
+            StatusCode::UciStatusRangingRxPhyStsFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_PHY_STS_FAILED
+            }
+            StatusCode::UciStatusRangingRxMacDecFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_DEC_FAILED
+            }
+            StatusCode::UciStatusRangingRxMacIeDecFailed => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_IE_DEC_FAILED
+            }
+            StatusCode::UciStatusRangingRxMacIeMissing => {
+                ProtoStatusCode::UCI_STATUS_RANGING_RX_MAC_IE_MISSING
+            }
+            StatusCode::UciStatusErrorRoundIndexNotActivated => {
+                ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED
+            }
+            StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded => {
+                ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED
+            }
+            StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator => {
+                ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR
+            }
+            StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList => {
+                ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST
+            }
+            StatusCode::UciStatusDataMaxTxPsduSizeExceeded => {
+                ProtoStatusCode::UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED
+            }
+            StatusCode::UciStatusDataRxCrcError => {
+                ProtoStatusCode::UCI_STATUS_DATA_RX_CRC_ERROR
+            }
+            StatusCode::UciStatusErrorCccSeBusy => {
+                ProtoStatusCode::UCI_STATUS_ERROR_CCC_SE_BUSY
+            }
+            StatusCode::UciStatusErrorCccLifecycle => {
+                ProtoStatusCode::UCI_STATUS_ERROR_CCC_LIFECYCLE
+            }
+            StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict => {
+                ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
+            }
+            _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
+        }
+    }
 }
 
 enum_mapping! {
@@ -168,51 +303,216 @@ enum_mapping! {
     IDLE => SessionStateIdle,
 }
 
-enum_mapping! {
-    ProtoReasonCode => ReasonCode,
-    STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => StateChangeWithSessionManagementCommands,
-    MAX_RANGING_ROUND_RETRY_COUNT_REACHED => MaxRangingRoundRetryCountReached,
-    MAX_NUMBER_OF_MEASUREMENTS_REACHED => MaxNumberOfMeasurementsReached,
-    SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL => SessionSuspendedDueToInbandSignal,
-    SESSION_RESUMED_DUE_TO_INBAND_SIGNAL => SessionResumedDueToInbandSignal,
-    SESSION_STOPPED_DUE_TO_INBAND_SIGNAL => SessionStoppedDueToInbandSignal,
-    ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => ErrorInvalidUlTdoaRandomWindow,
-    ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED => ErrorMinRframesPerRrNotSupported,
-    ERROR_TX_DELAY_NOT_SUPPORTED => ErrorTxDelayNotSupported,
-    ERROR_SLOT_LENGTH_NOT_SUPPORTED => ErrorSlotLengthNotSupported,
-    ERROR_INSUFFICIENT_SLOTS_PER_RR => ErrorInsufficientSlotsPerRr,
-    ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => ErrorMacAddressModeNotSupported,
-    ERROR_INVALID_RANGING_DURATION => ErrorInvalidRangingDuration,
-    ERROR_INVALID_STS_CONFIG => ErrorInvalidStsConfig,
-    ERROR_INVALID_RFRAME_CONFIG => ErrorInvalidRframeConfig,
-    ERROR_HUS_NOT_ENOUGH_SLOTS => ErrorHusNotEnoughSlots,
-    ERROR_HUS_CFP_PHASE_TOO_SHORT => ErrorHusCfpPhaseTooShort,
-    ERROR_HUS_CAP_PHASE_TOO_SHORT => ErrorHusCapPhaseTooShort,
-    ERROR_HUS_OTHERS => ErrorHusOthers,
-    ERROR_STATUS_SESSION_KEY_NOT_FOUND => ErrorStatusSessionKeyNotFound,
-    ERROR_STATUS_SUB_SESSION_KEY_NOT_FOUND => ErrorStatusSubSessionKeyNotFound,
-    ERROR_INVALID_PREAMBLE_CODE_INDEX => ErrorInvalidPreambleCodeIndex,
-    ERROR_INVALID_SFD_ID => ErrorInvalidSfdId,
-    ERROR_INVALID_PSDU_DATA_RATE => ErrorInvalidPsduDataRate,
-    ERROR_INVALID_PHR_DATA_RATE => ErrorInvalidPhrDataRate,
-    ERROR_INVALID_PREAMBLE_DURATION => ErrorInvalidPreambleDuration,
-    ERROR_INVALID_STS_LENGTH => ErrorInvalidStsLength,
-    ERROR_INVALID_NUM_OF_STS_SEGMENTS => ErrorInvalidNumOfStsSegments,
-    ERROR_INVALID_NUM_OF_CONTROLEES => ErrorInvalidNumOfControlees,
-    ERROR_MAX_RANGING_REPLY_TIME_EXCEEDED => ErrorMaxRangingReplyTimeExceeded,
-    ERROR_INVALID_DST_ADDRESS_LIST => ErrorInvalidDstAddressList,
-    ERROR_INVALID_OR_NOT_FOUND_SUB_SESSION_ID => ErrorInvalidOrNotFoundSubSessionId,
-    ERROR_INVALID_RESULT_REPORT_CONFIG => ErrorInvalidResultReportConfig,
-    ERROR_INVALID_RANGING_ROUND_CONTROL_CONFIG => ErrorInvalidRangingRoundControlConfig,
-    ERROR_INVALID_RANGING_ROUND_USAGE => ErrorInvalidRangingRoundUsage,
-    ERROR_INVALID_MULTI_NODE_MODE => ErrorInvalidMultiNodeMode,
-    ERROR_RDS_FETCH_FAILURE => ErrorRdsFetchFailure,
-    ERROR_REF_UWB_SESSION_DOES_NOT_EXIST => ErrorRefUwbSessionDoesNotExist,
-    ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH => ErrorRefUwbSessionRangingDurationMismatch,
-    ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME => ErrorRefUwbSessionInvalidOffsetTime,
-    ERROR_REF_UWB_SESSION_LOST => ErrorRefUwbSessionLost,
-    ERROR_INVALID_CHANNEL_WITH_AOA => ErrorInvalidChannelWithAoa,
-    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => ErrorStoppedDueToOtherSessionConflict,
+impl From<ProtoReasonCode> for ReasonCode {
+    fn from(item: ProtoReasonCode) -> Self {
+        match item {
+            ProtoReasonCode::STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS => {
+                ReasonCode::StateChangeWithSessionManagementCommands
+            }
+            ProtoReasonCode::MAX_RANGING_ROUND_RETRY_COUNT_REACHED => {
+                ReasonCode::MaxRangingRoundRetryCountReached
+            }
+            ProtoReasonCode::MAX_NUMBER_OF_MEASUREMENTS_REACHED => {
+                ReasonCode::MaxNumberOfMeasurementsReached
+            }
+            ProtoReasonCode::SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL => {
+                ReasonCode::SessionSuspendedDueToInbandSignal
+            }
+            ProtoReasonCode::SESSION_RESUMED_DUE_TO_INBAND_SIGNAL => {
+                ReasonCode::SessionResumedDueToInbandSignal
+            }
+            ProtoReasonCode::SESSION_STOPPED_DUE_TO_INBAND_SIGNAL => {
+                ReasonCode::SessionStoppedDueToInbandSignal
+            }
+            ProtoReasonCode::ERROR_INVALID_UL_TDOA_RANDOM_WINDOW => {
+                ReasonCode::ErrorInvalidUlTdoaRandomWindow
+            }
+            ProtoReasonCode::ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED => {
+                ReasonCode::ErrorMinRframesPerRrNotSupported
+            }
+            ProtoReasonCode::ERROR_TX_DELAY_NOT_SUPPORTED => ReasonCode::ErrorTxDelayNotSupported,
+            ProtoReasonCode::ERROR_SLOT_LENGTH_NOT_SUPPORTED => {
+                ReasonCode::ErrorSlotLengthNotSupported
+            }
+            ProtoReasonCode::ERROR_INSUFFICIENT_SLOTS_PER_RR => {
+                ReasonCode::ErrorInsufficientSlotsPerRr
+            }
+            ProtoReasonCode::ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED => {
+                ReasonCode::ErrorMacAddressModeNotSupported
+            }
+            ProtoReasonCode::ERROR_INVALID_RANGING_DURATION => {
+                ReasonCode::ErrorInvalidRangingDuration
+            }
+            ProtoReasonCode::ERROR_INVALID_STS_CONFIG => ReasonCode::ErrorInvalidStsConfig,
+            ProtoReasonCode::ERROR_INVALID_RFRAME_CONFIG => ReasonCode::ErrorInvalidRframeConfig,
+            ProtoReasonCode::ERROR_HUS_NOT_ENOUGH_SLOTS => ReasonCode::ErrorHusNotEnoughSlots,
+            ProtoReasonCode::ERROR_HUS_CFP_PHASE_TOO_SHORT => ReasonCode::ErrorHusCfpPhaseTooShort,
+            ProtoReasonCode::ERROR_HUS_CAP_PHASE_TOO_SHORT => ReasonCode::ErrorHusCapPhaseTooShort,
+            ProtoReasonCode::ERROR_HUS_OTHERS => ReasonCode::ErrorHusOthers,
+            ProtoReasonCode::ERROR_STATUS_SESSION_KEY_NOT_FOUND => {
+                ReasonCode::ErrorStatusSessionKeyNotFound
+            }
+            ProtoReasonCode::ERROR_STATUS_SUB_SESSION_KEY_NOT_FOUND => {
+                ReasonCode::ErrorStatusSubSessionKeyNotFound
+            }
+            ProtoReasonCode::ERROR_INVALID_PREAMBLE_CODE_INDEX => {
+                ReasonCode::ErrorInvalidPreambleCodeIndex
+            }
+            ProtoReasonCode::ERROR_INVALID_SFD_ID => ReasonCode::ErrorInvalidSfdId,
+            ProtoReasonCode::ERROR_INVALID_PSDU_DATA_RATE => ReasonCode::ErrorInvalidPsduDataRate,
+            ProtoReasonCode::ERROR_INVALID_PHR_DATA_RATE => ReasonCode::ErrorInvalidPhrDataRate,
+            ProtoReasonCode::ERROR_INVALID_PREAMBLE_DURATION => {
+                ReasonCode::ErrorInvalidPreambleDuration
+            }
+            ProtoReasonCode::ERROR_INVALID_STS_LENGTH => ReasonCode::ErrorInvalidStsLength,
+            ProtoReasonCode::ERROR_INVALID_NUM_OF_STS_SEGMENTS => {
+                ReasonCode::ErrorInvalidNumOfStsSegments
+            }
+            ProtoReasonCode::ERROR_INVALID_NUM_OF_CONTROLEES => {
+                ReasonCode::ErrorInvalidNumOfControlees
+            }
+            ProtoReasonCode::ERROR_MAX_RANGING_REPLY_TIME_EXCEEDED => {
+                ReasonCode::ErrorMaxRangingReplyTimeExceeded
+            }
+            ProtoReasonCode::ERROR_INVALID_DST_ADDRESS_LIST => {
+                ReasonCode::ErrorInvalidDstAddressList
+            }
+            ProtoReasonCode::ERROR_INVALID_OR_NOT_FOUND_SUB_SESSION_ID => {
+                ReasonCode::ErrorInvalidOrNotFoundSubSessionId
+            }
+            ProtoReasonCode::ERROR_INVALID_RESULT_REPORT_CONFIG => {
+                ReasonCode::ErrorInvalidResultReportConfig
+            }
+            ProtoReasonCode::ERROR_INVALID_RANGING_ROUND_USAGE => {
+                ReasonCode::ErrorInvalidRangingRoundUsage
+            }
+            ProtoReasonCode::ERROR_INVALID_MULTI_NODE_MODE => ReasonCode::ErrorInvalidMultiNodeMode,
+            ProtoReasonCode::ERROR_RDS_FETCH_FAILURE => ReasonCode::ErrorRdsFetchFailure,
+            ProtoReasonCode::ERROR_REF_UWB_SESSION_DOES_NOT_EXIST => {
+                ReasonCode::ErrorRefUwbSessionDoesNotExist
+            }
+            ProtoReasonCode::ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH => {
+                ReasonCode::ErrorRefUwbSessionRangingDurationMismatch
+            }
+            ProtoReasonCode::ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME => {
+                ReasonCode::ErrorRefUwbSessionInvalidOffsetTime
+            }
+            ProtoReasonCode::ERROR_REF_UWB_SESSION_LOST => ReasonCode::ErrorRefUwbSessionLost,
+            ProtoReasonCode::ERROR_INVALID_CHANNEL_WITH_AOA => {
+                ReasonCode::ErrorInvalidChannelWithAoa
+            }
+            ProtoReasonCode::ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
+                ReasonCode::ErrorStoppedDueToOtherSessionConflict
+            }
+            _ => ReasonCode::VendorSpecificReasonCode2,
+        }
+    }
+}
+
+impl From<ReasonCode> for ProtoReasonCode {
+    fn from(item: ReasonCode) -> Self {
+        match item {
+            ReasonCode::StateChangeWithSessionManagementCommands => {
+                ProtoReasonCode::STATE_CHANGE_WITH_SESSION_MANAGEMENT_COMMANDS
+            }
+            ReasonCode::MaxRangingRoundRetryCountReached => {
+                ProtoReasonCode::MAX_RANGING_ROUND_RETRY_COUNT_REACHED
+            }
+            ReasonCode::MaxNumberOfMeasurementsReached => {
+                ProtoReasonCode::MAX_NUMBER_OF_MEASUREMENTS_REACHED
+            }
+            ReasonCode::SessionSuspendedDueToInbandSignal => {
+                ProtoReasonCode::SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL
+            }
+            ReasonCode::SessionResumedDueToInbandSignal => {
+                ProtoReasonCode::SESSION_RESUMED_DUE_TO_INBAND_SIGNAL
+            }
+            ReasonCode::SessionStoppedDueToInbandSignal => {
+                ProtoReasonCode::SESSION_STOPPED_DUE_TO_INBAND_SIGNAL
+            }
+            ReasonCode::ErrorInvalidUlTdoaRandomWindow => {
+                ProtoReasonCode::ERROR_INVALID_UL_TDOA_RANDOM_WINDOW
+            }
+            ReasonCode::ErrorMinRframesPerRrNotSupported => {
+                ProtoReasonCode::ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED
+            }
+            ReasonCode::ErrorTxDelayNotSupported => ProtoReasonCode::ERROR_TX_DELAY_NOT_SUPPORTED,
+            ReasonCode::ErrorSlotLengthNotSupported => {
+                ProtoReasonCode::ERROR_SLOT_LENGTH_NOT_SUPPORTED
+            }
+            ReasonCode::ErrorInsufficientSlotsPerRr => {
+                ProtoReasonCode::ERROR_INSUFFICIENT_SLOTS_PER_RR
+            }
+            ReasonCode::ErrorMacAddressModeNotSupported => {
+                ProtoReasonCode::ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED
+            }
+            ReasonCode::ErrorInvalidRangingDuration => {
+                ProtoReasonCode::ERROR_INVALID_RANGING_DURATION
+            }
+            ReasonCode::ErrorInvalidStsConfig => ProtoReasonCode::ERROR_INVALID_STS_CONFIG,
+            ReasonCode::ErrorInvalidRframeConfig => ProtoReasonCode::ERROR_INVALID_RFRAME_CONFIG,
+            ReasonCode::ErrorHusNotEnoughSlots => ProtoReasonCode::ERROR_HUS_NOT_ENOUGH_SLOTS,
+            ReasonCode::ErrorHusCfpPhaseTooShort => ProtoReasonCode::ERROR_HUS_CFP_PHASE_TOO_SHORT,
+            ReasonCode::ErrorHusCapPhaseTooShort => ProtoReasonCode::ERROR_HUS_CAP_PHASE_TOO_SHORT,
+            ReasonCode::ErrorHusOthers => ProtoReasonCode::ERROR_HUS_OTHERS,
+            ReasonCode::ErrorStatusSessionKeyNotFound => {
+                ProtoReasonCode::ERROR_STATUS_SESSION_KEY_NOT_FOUND
+            }
+            ReasonCode::ErrorStatusSubSessionKeyNotFound => {
+                ProtoReasonCode::ERROR_STATUS_SUB_SESSION_KEY_NOT_FOUND
+            }
+            ReasonCode::ErrorInvalidPreambleCodeIndex => {
+                ProtoReasonCode::ERROR_INVALID_PREAMBLE_CODE_INDEX
+            }
+            ReasonCode::ErrorInvalidSfdId => ProtoReasonCode::ERROR_INVALID_SFD_ID,
+            ReasonCode::ErrorInvalidPsduDataRate => ProtoReasonCode::ERROR_INVALID_PSDU_DATA_RATE,
+            ReasonCode::ErrorInvalidPhrDataRate => ProtoReasonCode::ERROR_INVALID_PHR_DATA_RATE,
+            ReasonCode::ErrorInvalidPreambleDuration => {
+                ProtoReasonCode::ERROR_INVALID_PREAMBLE_DURATION
+            }
+            ReasonCode::ErrorInvalidStsLength => ProtoReasonCode::ERROR_INVALID_STS_LENGTH,
+            ReasonCode::ErrorInvalidNumOfStsSegments => {
+                ProtoReasonCode::ERROR_INVALID_NUM_OF_STS_SEGMENTS
+            }
+            ReasonCode::ErrorInvalidNumOfControlees => {
+                ProtoReasonCode::ERROR_INVALID_NUM_OF_CONTROLEES
+            }
+            ReasonCode::ErrorMaxRangingReplyTimeExceeded => {
+                ProtoReasonCode::ERROR_MAX_RANGING_REPLY_TIME_EXCEEDED
+            }
+            ReasonCode::ErrorInvalidDstAddressList => {
+                ProtoReasonCode::ERROR_INVALID_DST_ADDRESS_LIST
+            }
+            ReasonCode::ErrorInvalidOrNotFoundSubSessionId => {
+                ProtoReasonCode::ERROR_INVALID_OR_NOT_FOUND_SUB_SESSION_ID
+            }
+            ReasonCode::ErrorInvalidResultReportConfig => {
+                ProtoReasonCode::ERROR_INVALID_RESULT_REPORT_CONFIG
+            }
+            ReasonCode::ErrorInvalidRangingRoundUsage => {
+                ProtoReasonCode::ERROR_INVALID_RANGING_ROUND_USAGE
+            }
+            ReasonCode::ErrorInvalidMultiNodeMode => ProtoReasonCode::ERROR_INVALID_MULTI_NODE_MODE,
+            ReasonCode::ErrorRdsFetchFailure => ProtoReasonCode::ERROR_RDS_FETCH_FAILURE,
+            ReasonCode::ErrorRefUwbSessionDoesNotExist => {
+                ProtoReasonCode::ERROR_REF_UWB_SESSION_DOES_NOT_EXIST
+            }
+            ReasonCode::ErrorRefUwbSessionRangingDurationMismatch => {
+                ProtoReasonCode::ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH
+            }
+            ReasonCode::ErrorRefUwbSessionInvalidOffsetTime => {
+                ProtoReasonCode::ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME
+            }
+            ReasonCode::ErrorRefUwbSessionLost => ProtoReasonCode::ERROR_REF_UWB_SESSION_LOST,
+            ReasonCode::ErrorInvalidChannelWithAoa => {
+                ProtoReasonCode::ERROR_INVALID_CHANNEL_WITH_AOA
+            }
+            ReasonCode::ErrorStoppedDueToOtherSessionConflict => {
+                ProtoReasonCode::ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
+            }
+            _ => ProtoReasonCode::ERROR_RFU_OR_VENDOR_SPECIFIC,
+        }
+    }
 }
 
 enum_mapping! {
