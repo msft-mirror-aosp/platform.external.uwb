@@ -126,3 +126,146 @@ fn exception_code_to_uwb_error(exception_code: ExceptionCode) -> UwbCoreError {
 }
 /// Result type associated with Error:
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use android_hardware_uwb::binder::ExceptionCode;
+    use uwb_core::error::Error as UwbCoreError;
+
+    #[test]
+    fn test_uwb_core_error_to_exception_code() {
+        let mut exception = uwb_core_error_to_exception_code(UwbCoreError::BadParameters);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = uwb_core_error_to_exception_code(UwbCoreError::ForeignFunctionInterface);
+        assert_eq!(exception, ExceptionCode::TRANSACTION_FAILED);
+    }
+
+    #[test]
+    fn test_exception_code_to_uwb_error() {
+        let mut error = exception_code_to_uwb_error(ExceptionCode::ILLEGAL_ARGUMENT);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = exception_code_to_uwb_error(ExceptionCode::ILLEGAL_STATE);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = exception_code_to_uwb_error(ExceptionCode::UNSUPPORTED_OPERATION);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = exception_code_to_uwb_error(ExceptionCode::NULL_POINTER);
+        assert_eq!(error, UwbCoreError::BadParameters);
+    }
+
+    #[test]
+    fn test_status_code_to_exception_code() {
+        let mut exception = status_code_to_exception_code(StatusCode::OK);
+        assert_eq!(exception, ExceptionCode::NONE);
+
+        exception = status_code_to_exception_code(StatusCode::NO_MEMORY);
+        assert_eq!(exception, ExceptionCode::TRANSACTION_FAILED);
+
+        exception = status_code_to_exception_code(StatusCode::INVALID_OPERATION);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::BAD_VALUE);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::BAD_TYPE);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::NAME_NOT_FOUND);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::PERMISSION_DENIED);
+        assert_eq!(exception, ExceptionCode::SECURITY);
+
+        exception = status_code_to_exception_code(StatusCode::NO_INIT);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::ALREADY_EXISTS);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::DEAD_OBJECT);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::FAILED_TRANSACTION);
+        assert_eq!(exception, ExceptionCode::TRANSACTION_FAILED);
+
+        exception = status_code_to_exception_code(StatusCode::BAD_INDEX);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::NOT_ENOUGH_DATA);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::WOULD_BLOCK);
+        assert_eq!(exception, ExceptionCode::TRANSACTION_FAILED);
+
+        exception = status_code_to_exception_code(StatusCode::TIMED_OUT);
+        assert_eq!(exception, ExceptionCode::TRANSACTION_FAILED);
+
+        exception = status_code_to_exception_code(StatusCode::UNKNOWN_TRANSACTION);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::FDS_NOT_ALLOWED);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+
+        exception = status_code_to_exception_code(StatusCode::UNEXPECTED_NULL);
+        assert_eq!(exception, ExceptionCode::ILLEGAL_ARGUMENT);
+    }
+
+    #[test]
+    fn test_status_code_to_uwb_core_error() {
+        let mut error = status_code_to_uwb_core_error(StatusCode::OK);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::NO_MEMORY);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::BAD_VALUE);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::BAD_TYPE);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::NAME_NOT_FOUND);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::PERMISSION_DENIED);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::NO_INIT);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::ALREADY_EXISTS);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::DEAD_OBJECT);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::FAILED_TRANSACTION);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::BAD_INDEX);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::NOT_ENOUGH_DATA);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::WOULD_BLOCK);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::TIMED_OUT);
+        assert_eq!(error, UwbCoreError::Timeout);
+
+        error = status_code_to_uwb_core_error(StatusCode::UNKNOWN_TRANSACTION);
+        assert_eq!(error, UwbCoreError::BadParameters);
+
+        error = status_code_to_uwb_core_error(StatusCode::FDS_NOT_ALLOWED);
+        assert_eq!(error, UwbCoreError::Unknown);
+
+        error = status_code_to_uwb_core_error(StatusCode::UNEXPECTED_NULL);
+        assert_eq!(error, UwbCoreError::Unknown);
+    }
+}

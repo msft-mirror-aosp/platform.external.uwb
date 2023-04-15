@@ -305,6 +305,53 @@ rust_library {
     ],
 }
 
+rust_test {
+    name: "libuci_hal_android_tests",
+    defaults: ["libuci_hal_android_defaults"],
+    rustlibs: [
+        "libenv_logger",
+        "libtempfile",
+        "libuwb_core",
+    ],
+    target: {
+        android: {
+            test_suites: [
+                "general-tests",
+                "mts-uwb"
+            ],
+            test_config_template: "uwb_rust_test_config_template.xml",
+        },
+        host: {
+            test_suites: [
+                "general-tests",
+            ],
+            data_libs: [
+                "libandroid_runtime_lazy",
+                "libbase",
+                "libcutils",
+                "liblog",
+                "libutils",
+            ],
+            // See b/268061150
+            stem: "libuci_hal_android_tests_host",
+        },
+    },
+    // Support multilib variants (using different suffix per sub-architecture), which is needed on
+    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
+    // all test artifacts into a single `testcases` directory.
+    compile_multilib: "both",
+    multilib: {
+        lib32: {
+            suffix: "32",
+        },
+        lib64: {
+            suffix: "64",
+        },
+    },
+    auto_gen_config: true,
+    min_sdk_version: "33",
+}
+
 // Generate the artifacts zip for uwb_core library and its dependencies.
 genrule {
     name: "uwb_core_artifacts",
