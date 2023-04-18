@@ -1151,7 +1151,8 @@ mod tests {
     use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
 
     use crate::params::uci_packets::{
-        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, StatusCode,
+        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataTransferNtfStatusCode,
+        StatusCode,
     };
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
@@ -1170,12 +1171,17 @@ mod tests {
     // Construct a UCI packet, with the header fields and payload bytes.
     fn build_uci_packet(mt: u8, pbf: u8, gid: u8, oid: u8, mut payload: Vec<u8>) -> Vec<u8> {
         let len: u16 = payload.len() as u16;
-        let mut bytes: Vec<u8> = vec![
-            (mt & 0x7) << 5 | (pbf & 0x1) << 4 | (gid & 0xF),
-            oid & 0x3F,
-            (len >> 8).try_into().unwrap(), // This will be effectively 0 for control packets.
-            (len & 0xFF).try_into().unwrap(),
-        ];
+        let mut bytes: Vec<u8> = vec![(mt & 0x7) << 5 | (pbf & 0x1) << 4 | (gid & 0xF), oid & 0x3F];
+        if mt == 0 {
+            // UCI Data packet
+            // Store 16-bit payload length in LSB format.
+            bytes.push((len & 0xFF).try_into().unwrap());
+            bytes.push((len >> 8).try_into().unwrap());
+        } else {
+            // One byte RFU, followed by one-byte payload length.
+            bytes.push(0);
+            bytes.push((len & 0xFF).try_into().unwrap());
+        }
         bytes.append(&mut payload);
         bytes
     }
@@ -2140,6 +2146,194 @@ mod tests {
         assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
+
+    #[tokio::test]
+    async fn test_data_packet_send_ok() {
+        // Test Data packet send for a single packet (on a UWB session).
+        let mt_data = 0x0;
+        let pbf = 0x0;
+        let dpf = 0x1;
+        let oid = 0x0;
+        let session_id = 0x5;
+        let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
+        let dest_fira_component = FiraComponent::Host;
+        let uci_sequence_number = 0xa;
+        let app_data = vec![0x01, 0x02, 0x03];
+        let expected_data_snd_payload = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionID
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x01, // FiraComponent
+            0x0a, // UciSequenceNumber
+            0x03, 0x00, // AppDataLen
+            0x01, 0x02, 0x03, // AppData
+        ];
+        let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                let data_packet_snd =
+                    build_uci_packet(mt_data, pbf, dpf, oid, expected_data_snd_payload);
+                let mut ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
+                    session_id,
+                    credit_availability: CreditAvailability::CreditAvailable,
+                });
+                ntfs.append(&mut into_uci_hal_packets(
+                    uwb_uci_packets::DataTransferStatusNtfBuilder {
+                        session_id,
+                        uci_sequence_number,
+                        status,
+                    },
+                ));
+                hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let result = uci_manager
+            .send_data_packet(
+                session_id,
+                dest_mac_address,
+                dest_fira_component,
+                uci_sequence_number,
+                app_data,
+            )
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+
+        // TODO(b/276320369): Verify that session_notf_sender is called (once implemented), as a
+        // DataTransferStatusNtf is received in this test scenario.
+    }
+
+    #[tokio::test]
+    async fn test_data_packet_send_fragmented_packet_ok() {
+        // Test Data packet send for a set of data packet fragments (on a UWB session).
+        let mt_data = 0x0;
+        let pbf_fragment_1 = 0x1;
+        let pbf_fragment_2 = 0x0;
+        let dpf = 0x1;
+        let oid = 0x0;
+        let session_id = 0x5;
+        let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
+        let dest_fira_component = FiraComponent::Host;
+        let uci_sequence_number = 0xa;
+        let app_data_len = 300; // Larger than MAX_PAYLOAD_LEN=255, so fragmentation occurs.
+        let mut app_data = Vec::new();
+        let mut expected_data_snd_payload_fragment_1 = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionID
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x01, // FiraComponent
+            0x0a, // UciSequenceNumber
+            0x2c, 0x01, // AppDataLen = 300
+        ];
+        let mut expected_data_snd_payload_fragment_2 = Vec::new();
+        let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+
+        // Setup the app data for both the Tx data packet and expected packet fragments.
+        let app_data_len_fragment_1 = 255 - expected_data_snd_payload_fragment_1.len();
+        for i in 0..app_data_len {
+            app_data.push((i & 0xff).try_into().unwrap());
+            if i < app_data_len_fragment_1 {
+                expected_data_snd_payload_fragment_1.push((i & 0xff).try_into().unwrap());
+            } else {
+                expected_data_snd_payload_fragment_2.push((i & 0xff).try_into().unwrap());
+            }
+        }
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            move |hal| {
+                // Expected data packet fragment #1 (UCI Header + Initial App data bytes).
+                let data_packet_snd_fragment_1 = build_uci_packet(
+                    mt_data,
+                    pbf_fragment_1,
+                    dpf,
+                    oid,
+                    expected_data_snd_payload_fragment_1,
+                );
+                let ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
+                    session_id,
+                    credit_availability: CreditAvailability::CreditAvailable,
+                });
+                hal.expected_send_packet(data_packet_snd_fragment_1, ntfs, Ok(()));
+
+                // Expected data packet fragment #2 (UCI Header + Remaining App data bytes).
+                let data_packet_snd_fragment_2 = build_uci_packet(
+                    mt_data,
+                    pbf_fragment_2,
+                    dpf,
+                    oid,
+                    expected_data_snd_payload_fragment_2,
+                );
+                let mut ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
+                    session_id,
+                    credit_availability: CreditAvailability::CreditAvailable,
+                });
+                ntfs.append(&mut into_uci_hal_packets(
+                    uwb_uci_packets::DataTransferStatusNtfBuilder {
+                        session_id,
+                        uci_sequence_number,
+                        status,
+                    },
+                ));
+                hal.expected_send_packet(data_packet_snd_fragment_2, ntfs, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let result = uci_manager
+            .send_data_packet(
+                session_id,
+                dest_mac_address,
+                dest_fira_component,
+                uci_sequence_number,
+                app_data,
+            )
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    // TODO(b/276320369): Listing down the Data Packet Tx scenarios below, will add unit tests
+    // for them in subsequent CLs.
+
+    // Sending one data packet should succeed, when no DataCreditNtf is received.
+    #[tokio::test]
+    async fn test_data_packet_send_missing_data_credit_ntf_success() {}
+
+    // Sending the second data packet should fail, when no DataCreditNtf is received after
+    // sending the first data packet.
+    #[tokio::test]
+    async fn test_data_packet_send_missing_data_credit_ntf_subsequent_send_failure() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_data_credit_ntf_bad_session_id() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_data_credit_ntf_no_credit_available() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_missing_data_transfer_status_ntf() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_data_transfer_status_ntf_bad_session_id() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_data_transfer_status_ntf_bad_uci_sequence_number() {}
+
+    // Tests for the multiple Status values that indicate success
+    #[tokio::test]
+    async fn test_data_packet_send_data_transfer_status_ntf_status_ok() {}
+
+    #[tokio::test]
+    async fn test_data_packet_send_data_transfer_status_ntf_status_repetition_ok() {}
+
+    // Tests for some of the multiple Status values that indicate error.
+    #[tokio::test]
+    async fn test_data_packet_send_data_transfer_status_ntf_status_error() {}
 
     #[tokio::test]
     async fn test_session_get_count_retry_no_response() {
