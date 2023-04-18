@@ -28,7 +28,7 @@ use crate::params::uci_packets::{
     CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse,
     GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
     SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
+    UciDataPacket, UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
 };
 use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
@@ -41,7 +41,7 @@ use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
 use std::collections::{HashMap, VecDeque};
-use uwb_uci_packets::{Packet, RawUciControlPacket, UciDataSnd, UciDefragPacket};
+use uwb_uci_packets::{Packet, PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -150,6 +150,14 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         session_id: SessionId,
     ) -> Result<SessionToken>;
+    /// Send UCI command for setting hybrid config
+    async fn session_set_hybrid_config(
+        &self,
+        session_id: SessionId,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    ) -> Result<()>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -551,6 +559,27 @@ impl UciManager for UciManagerImpl {
         session_id: SessionId,
     ) -> Result<SessionToken> {
         Ok(self.get_session_token(&session_id).await?)
+    }
+
+    /// Send UCI command for setting hybrid config
+    async fn session_set_hybrid_config(
+        &self,
+        session_id: SessionId,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    ) -> Result<()> {
+        let cmd = UciCommand::SessionSetHybridConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            number_of_phases,
+            update_time,
+            phase_list,
+        };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionSetHybridConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -1893,6 +1922,47 @@ mod tests {
         let result =
             uci_manager.session_set_app_config(session_id, vec![config_tlv]).await.unwrap();
         assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_set_hybrid_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let number_of_phases = 0x02;
+        let update_time = UpdateTime::new(&[0x0; 8]).unwrap();
+        let phase_list = vec![
+            PhaseList { session_token: 0x12, start_slot_index: 0x13, end_slot_index: 0x01 },
+            PhaseList { session_token: 0x14, start_slot_index: 0x13, end_slot_index: 0x01 },
+        ];
+        let phase_list_clone = phase_list.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionSetHybridConfig {
+                    session_token,
+                    number_of_phases,
+                    update_time,
+                    phase_list: phase_list_clone,
+                };
+                let resp =
+                    into_uci_hal_packets(uwb_uci_packets::SessionSetHybridConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_set_hybrid_config(session_token, number_of_phases, update_time, phase_list)
+            .await;
+        assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
