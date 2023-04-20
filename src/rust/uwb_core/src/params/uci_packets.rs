@@ -30,7 +30,7 @@ pub use uwb_uci_packets::{
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
     UpdateMulticastListAction,
 };
-pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal, UciDataSnd};
+pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
 use crate::error::Error;
 
@@ -153,12 +153,14 @@ pub struct SessionUpdateActiveRoundsDtTagResponse {
 pub struct CountryCode([u8; 2]);
 
 impl CountryCode {
+    const UNKNOWN_COUNTRY_CODE: [u8; 2] = [0, 0];
+
     /// Create a CountryCode instance.
     pub fn new(code: &[u8; 2]) -> Option<Self> {
-        if !code[0].is_ascii_uppercase() || !code[1].is_ascii_uppercase() {
+        if code != &CountryCode::UNKNOWN_COUNTRY_CODE && !code.is_ascii() {
             None
         } else {
-            Some(Self(*code))
+            Some(Self((*code).to_ascii_uppercase().try_into().ok()?))
         }
     }
 }
@@ -206,7 +208,7 @@ pub struct RawUciMessage {
 impl From<UciControlPacket> for RawUciMessage {
     fn from(packet: UciControlPacket) -> Self {
         Self {
-            gid: packet.get_group_id() as u32,
+            gid: packet.get_group_id().into(),
             oid: packet.get_opcode() as u32,
             payload: packet.to_raw_payload(),
         }
