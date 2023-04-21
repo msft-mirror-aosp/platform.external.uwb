@@ -39,7 +39,8 @@ use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
-use uwb_uci_packets::{Packet, RawUciControlPacket, UciDefragPacket};
+use std::collections::{HashMap, VecDeque};
+use uwb_uci_packets::{Packet, RawUciControlPacket, UciDataSnd, UciDefragPacket};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
@@ -149,17 +150,6 @@ pub trait UciManager: 'static + Send + Sync + Clone {
 #[derive(Clone)]
 pub struct UciManagerImpl {
     cmd_sender: mpsc::UnboundedSender<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
-    // Store a sender for sending a oneshot channel sender "data_transfer_status_ntf_sender". This
-    // is done once for each DataSnd packet, before sending it's fragments. After all the DataSnd
-    // packet fragments are sent, UciManagerImpl will wait to receive a UCI DataTransferStatusNtf
-    // packet, on the corresponding oneshot channel receiver "data_transfer_status_ntf_receiver".
-    data_transfer_status_oneshot_sender:
-        mpsc::UnboundedSender<oneshot::Sender<SessionNotification>>,
-    // Store a sender for sending a tuple of DataSnd packet fragment (which should be written to
-    // the HAL), a oneshot channel sender to send back the UCI DataCreditNtf for that DataSnd
-    // packet fragment.
-    data_packet_fragment_sender:
-        mpsc::UnboundedSender<(UciDataPacketHal, oneshot::Sender<SessionNotification>)>,
 }
 
 impl UciManagerImpl {
@@ -170,21 +160,10 @@ impl UciManagerImpl {
         logger_mode: UciLoggerMode,
     ) -> Self {
         let (cmd_sender, cmd_receiver) = mpsc::unbounded_channel();
-        let (data_transfer_status_oneshot_sender, data_transfer_status_oneshot_receiver) =
-            mpsc::unbounded_channel();
-        let (data_packet_fragment_sender, data_packet_fragment_receiver) =
-            mpsc::unbounded_channel();
-        let mut actor = UciManagerActor::new(
-            hal,
-            logger,
-            logger_mode,
-            cmd_receiver,
-            data_transfer_status_oneshot_receiver,
-            data_packet_fragment_receiver,
-        );
+        let mut actor = UciManagerActor::new(hal, logger, logger_mode, cmd_receiver);
         tokio::spawn(async move { actor.run().await });
 
-        Self { cmd_sender, data_transfer_status_oneshot_sender, data_packet_fragment_sender }
+        Self { cmd_sender }
     }
 
     // Send the |cmd| to the UciManagerActor.
@@ -494,7 +473,7 @@ impl UciManager for UciManagerImpl {
         );
         let dest_mac_address =
             bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters).unwrap();
-        let data_packet = uwb_uci_packets::UciDataSndBuilder {
+        let data_snd_packet = uwb_uci_packets::UciDataSndBuilder {
             session_id,
             dest_mac_address,
             dest_fira_component,
@@ -503,82 +482,11 @@ impl UciManager for UciManagerImpl {
         }
         .build();
 
-        // We don't expect any other Data Packet Tx to be in progress when we come here.
-        //
-        // Create a oneshot channel to receive the DataTransferStatusNtf packet, and send the
-        // "sender" end of the channel to the UciManagerActor.
-        let (data_transfer_status_ntf_sender, data_transfer_status_ntf_receiver) =
-            oneshot::channel();
-        match self.data_transfer_status_oneshot_sender.send(data_transfer_status_ntf_sender) {
-            Ok(()) => {}
-            Err(e) => {
-                error!(
-                    "Error {} in sending a data_transfer_status_oneshot_sender for UCI Data packet\
-                     session_id {}, sequence_number {}",
-                    e, session_id, uci_sequence_number
-                );
-                return Err(Error::PacketTxError);
-            }
+        match self.send_cmd(UciManagerCmd::SendUciData { data_snd_packet }).await {
+            Ok(UciResponse::SendUciData(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
         }
-
-        // We expect data Credit should be available when we start here, for all UWB Sessions as:
-        // - it's available by default for a UWB Session when it becomes active, and,
-        // - Data packet send completed for earlier packets only after the host received both
-        //   DATA_TRANSFER_STATUS and DATA_CREDIT notifications for them. The latter would have
-        //   indicated credit availability for the UWB session.
-        //
-        // TODO(b/261886903): Use a Map<SessionId, CreditAvailability> to explicitly confirm
-        // credit availability here (before sending any data packet fragment). The map should also
-        // be updated (in handle_notification()), when UWBS unilaterally sends a DATA_CREDIT_NTF.
-        let data_packet_session_id = data_packet.get_session_id();
-        let fragmented_packets: Vec<UciDataPacketHal> = data_packet.into();
-        for packet in fragmented_packets.into_iter() {
-            let (data_credit_ntf_sender, data_credit_ntf_receiver) = oneshot::channel();
-
-            match self.data_packet_fragment_sender.send((packet, data_credit_ntf_sender)) {
-                Ok(()) => {
-                    // Wait to receive a DATA_CREDIT_NTF from UWBS. This indicates that the
-                    // data packet fragment was received and Host can send the next fragment.
-                    let result = data_credit_ntf_receiver.await;
-                    if result.is_err() {
-                        error!("DataCreditNtf oneshot sender is dropped.");
-                        return Err(Error::PacketTxError);
-                    }
-
-                    if let SessionNotification::DataCredit { session_id, credit_availability } =
-                        result.unwrap()
-                    {
-                        if session_id != data_packet_session_id {
-                            error!(
-                                "Received Data Credit NTF for sessionID {}, was expected for \
-                                   sessionID {}",
-                                session_id, data_packet_session_id
-                            );
-                            return Err(Error::PacketTxError);
-                        }
-                        if credit_availability != CreditAvailability::CreditAvailable {
-                            error!("Received Data Credit NTF with no availability.");
-                            return Err(Error::PacketTxError);
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to send data packet fragment - got error{} for \
-                        uci_sequence_number: {}, session_id: {}",
-                        e, uci_sequence_number, session_id
-                    );
-                    return Err(Error::PacketTxError);
-                }
-            }
-        }
-
-        let result = data_transfer_status_ntf_receiver.await;
-        if result.is_err() {
-            error!("DataTransferStatusNtf oneshot sender is dropped.");
-            return Err(Error::PacketTxError);
-        }
-        Ok(())
     }
 }
 
@@ -589,18 +497,6 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     logger: UciLoggerWrapper<U>,
     // Receive the commands and the corresponding response senders from UciManager.
     cmd_receiver: mpsc::UnboundedReceiver<(UciManagerCmd, oneshot::Sender<Result<UciResponse>>)>,
-
-    // Receive the oneshot channel sender, for sending back the expected DataTransferStatusNtf
-    // packet, after sending all the Data packet fragments is completed. This receiver is used
-    // to read the "data_transfer_status_ntf_sender" from UciManager, which is required once
-    // for every Tx data packet.
-    data_transfer_status_oneshot_receiver:
-        mpsc::UnboundedReceiver<oneshot::Sender<SessionNotification>>,
-
-    // Receive Data packet fragment(s) (to be sent to UWBS) and the corresponding DataCreditNtf
-    // sender, from the UciManager.
-    data_packet_fragment_receiver:
-        mpsc::UnboundedReceiver<(UciDataPacketHal, oneshot::Sender<SessionNotification>)>,
 
     // Set to true when |hal| is opened successfully.
     is_hal_opened: bool,
@@ -614,10 +510,13 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // notification.
     open_hal_result_sender: Option<oneshot::Sender<Result<UciResponse>>>,
 
-    // Store the senders for the Data packet send UWBS notifications. These send back the received
-    // UWBS DATA_CREDIT_NTF and DATA_TRANSFER_STATUS_NTF packets back to the UciManager.
-    data_credit_ntf_sender: Option<oneshot::Sender<SessionNotification>>,
-    data_transfer_status_ntf_sender: Option<oneshot::Sender<SessionNotification>>,
+    // Store per-session CreditAvailability. This should be initialized when a UWB session becomes
+    // ACTIVE, and updated every time a Data packet fragment is sent or a DataCreditNtf is received.
+    data_credit_map: HashMap<SessionId, CreditAvailability>,
+
+    // Store the Uci Data packet fragments to be sent to the UWBS, keyed by the SessionId. This
+    // helps to retrieve the next packet fragment to be sent, when the UWBS is ready to accept it.
+    data_packet_fragments_map: HashMap<SessionId, VecDeque<UciDataPacketHal>>,
 
     // The timeout of waiting for the notification of device ready notification.
     wait_device_status_timeout: PinSleep,
@@ -649,26 +548,17 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciManagerCmd,
             oneshot::Sender<Result<UciResponse>>,
         )>,
-        data_transfer_status_oneshot_receiver: mpsc::UnboundedReceiver<
-            oneshot::Sender<SessionNotification>,
-        >,
-        data_packet_fragment_receiver: mpsc::UnboundedReceiver<(
-            UciDataPacketHal,
-            oneshot::Sender<SessionNotification>,
-        )>,
     ) -> Self {
         Self {
             hal: TimeoutUciHal::new(hal),
             logger: UciLoggerWrapper::new(logger, logger_mode),
             cmd_receiver,
-            data_transfer_status_oneshot_receiver,
-            data_packet_fragment_receiver,
             is_hal_opened: false,
             packet_receiver: mpsc::unbounded_channel().1,
             defrager: Default::default(),
             open_hal_result_sender: None,
-            data_credit_ntf_sender: None,
-            data_transfer_status_ntf_sender: None,
+            data_credit_map: HashMap::new(),
+            data_packet_fragments_map: HashMap::new(),
             wait_device_status_timeout: PinSleep::new(Duration::MAX),
             retryer: None,
             wait_resp_timeout: PinSleep::new(Duration::MAX),
@@ -693,54 +583,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         },
                         Some((cmd, result_sender)) => {
                             self.handle_cmd(cmd, result_sender).await;
-                        }
-                    }
-                }
-
-                // Listen for and store a oneshot channel sender, for sending back a
-                // DataTransferStatusNtf to the UciManager. This is required once for each Data
-                // Tx packet (and is the first step in being ready to send it).
-                //
-                // The additional check confirms there is currently no stored oneshot channel
-                // sender, which also acts as a flow control mechanism (between UciManager and
-                // UciManagerActor).
-                channel_sender = self.data_transfer_status_oneshot_receiver.recv(),
-                    if !self.is_waiting_data_packet_send_status() => {
-                    match channel_sender {
-                        Some(data_transfer_status_ntf_sender) => {
-                            self.data_transfer_status_ntf_sender = Some(data_transfer_status_ntf_sender);
-                        }
-                        None => {
-                            error!("Unexpected error as no data transfer status sender received\
-                                   from UciManager");
-                        }
-                    }
-                }
-
-                // Handle a data packet - this is to be sent from the Host to UWBS. Listen for a
-                // data packet only after receiving the oneshot sender on which the
-                // DataTransferStatusNtf can be sent back.
-                data = self.data_packet_fragment_receiver.recv(),
-                    if self.is_waiting_data_packet_send_status() => {
-                    match data {
-                        Some((data_packet_fragment, data_credit_ntf_sender)) => {
-                            self.data_credit_ntf_sender = Some(data_credit_ntf_sender);
-                            let result = self.hal.send_packet(data_packet_fragment.to_vec()).await;
-                            if result.is_err() {
-                                error!("Result {:?} in sending data packet to HAL", result);
-                                if self.data_credit_ntf_sender.is_some() {
-                                    drop(self.data_credit_ntf_sender.take());
-                                }
-                                if self.data_transfer_status_ntf_sender.is_some() {
-                                    drop(self.data_transfer_status_ntf_sender.take());
-                                }
-                            }
-                        },
-                        None => {
-                            error!("Unexpected error as no data packet to send from UciManager");
-                            if self.data_transfer_status_ntf_sender.is_some() {
-                                drop(self.data_transfer_status_ntf_sender.take());
-                            }
                         }
                     }
                 }
@@ -877,6 +719,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 self.retryer = Some(Retryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
                 self.retry_command().await;
             }
+
+            UciManagerCmd::SendUciData { data_snd_packet } => {
+                let result = self.handle_data_snd_packet(data_snd_packet).await;
+                let _ = result_sender.send(result);
+            }
         }
     }
 
@@ -909,6 +756,99 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             self.logger.log_uci_command(&cmd);
         }
         result
+    }
+
+    async fn handle_data_snd_packet(&mut self, data_snd_packet: UciDataSnd) -> Result<UciResponse> {
+        // Verify that there's an entry for the Session in the CreditAvailability map.
+        let data_packet_session_id = data_snd_packet.get_session_id();
+        let data_packet_sequence_number = data_snd_packet.get_uci_sequence_number();
+
+        if !self.data_credit_map.contains_key(&data_packet_session_id) {
+            error!(
+                "DataSnd packet session_id:{}, sequence_number:{} cannot be sent as unknown \
+                credit availability for the session",
+                data_packet_session_id, data_packet_sequence_number
+            );
+            return Err(Error::PacketTxError);
+        }
+
+        // Enqueue the data packet fragments, from the data packet to be sent to UWBS.
+        let mut packet_fragments: Vec<UciDataPacketHal> = data_snd_packet.into();
+        if packet_fragments.is_empty() {
+            error!(
+                "DataSnd packet session_id:{}, sequence number:{} could not be split into fragments",
+                data_packet_session_id, data_packet_sequence_number
+            );
+            return Err(Error::PacketTxError);
+        }
+
+        match self.data_packet_fragments_map.get_mut(&data_packet_session_id) {
+            Some(q) => {
+                for p in packet_fragments.drain(..) {
+                    q.push_back(p);
+                }
+            }
+            None => {
+                error!(
+                    "DataSnd packet fragments map not found for session_id:{}",
+                    data_packet_session_id
+                );
+                return Err(Error::PacketTxError);
+            }
+        }
+
+        self.send_data_packet_fragment(data_packet_session_id).await
+    }
+
+    async fn send_data_packet_fragment(
+        &mut self,
+        data_packet_session_id: SessionId,
+    ) -> Result<UciResponse> {
+        // Check if a credit is available before sending this data packet fragment. If not, return
+        // for now, and send this packet later when the credit becomes available (indicated by
+        // receiving a DataCreditNtf).
+        let credit = self.data_credit_map.get(&data_packet_session_id);
+        if credit.is_none() {
+            error!(
+                "DataSnd packet fragment cannot be sent for session_id:{} as unknown \
+                credit availability for the session",
+                data_packet_session_id
+            );
+            return Err(Error::PacketTxError);
+        }
+        if credit == Some(&CreditAvailability::CreditNotAvailable) {
+            return Ok(UciResponse::SendUciData(Ok(())));
+        }
+
+        // We have credit available, let's send the packet to UWBS.
+        let hal_data_packet_fragment =
+            match self.data_packet_fragments_map.get_mut(&data_packet_session_id) {
+                Some(q) => {
+                    match q.pop_front() {
+                        Some(p) => p,
+                        None => {
+                            // No more packets left to send.
+                            return Ok(UciResponse::SendUciData(Ok(())));
+                        }
+                    }
+                }
+                None => {
+                    return Err(Error::PacketTxError);
+                }
+            };
+
+        let result = self.hal.send_packet(hal_data_packet_fragment.to_vec()).await;
+        if result.is_err() {
+            error!(
+                "Result {:?} of sending data packet fragment SessionId: {} to HAL",
+                result, data_packet_session_id
+            );
+            return Err(Error::PacketTxError);
+        }
+
+        // Update the map after the successful write.
+        self.data_credit_map.insert(data_packet_session_id, CreditAvailability::CreditNotAvailable);
+        Ok(UciResponse::SendUciData(Ok(())))
     }
 
     async fn handle_hal_packet(&mut self, packet: Option<UciHalPacket>) {
@@ -1004,56 +944,68 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 let _ = self.core_notf_sender.send(core_notf);
             }
             UciNotification::Session(session_notf) => {
-                if let SessionNotification::Status {
-                    session_id,
-                    session_state: SessionState::SessionStateInit,
-                    reason_code: _,
-                } = session_notf
-                {
-                    if let Err(e) = self.hal.notify_session_initialized(session_id).await {
-                        warn!("notify_session_initialized() failed: {:?}", e);
-                    }
-                }
-                if let SessionNotification::DataCredit { session_id, credit_availability: _ } =
+                if let SessionNotification::Status { session_id, session_state, reason_code: _ } =
                     session_notf
                 {
-                    if let Some(data_credit_ntf_sender) = self.data_credit_ntf_sender.take() {
-                        let _ = data_credit_ntf_sender.send(session_notf);
-                    } else {
+                    self.handle_session_state_notification(session_id, session_state).await;
+                }
+                if let SessionNotification::DataCredit { session_id, credit_availability } =
+                    session_notf
+                {
+                    if !self.data_credit_map.contains_key(&session_id) {
+                        // Currently just log, as this is unexpected (the entry should exist once
+                        // the ranging session is Active and be removed once it is Idle).
                         debug!(
-                            "No data_credit_ntf_sender present, when received DataCreditNtf for\
-                               session_id {}",
+                            "Received a DataCreditNtf for non-existent session_id: {}",
+                            session_id
+                        );
+                    }
+                    self.data_credit_map.insert(session_id, credit_availability);
+                    if credit_availability == CreditAvailability::CreditAvailable {
+                        if let Err(e) = self.send_data_packet_fragment(session_id).await {
+                            error!(
+                                "Sending data packet fragment failed with Err:{}, after a\
+                                   DataCreditNtf is received, for sessionId:{}",
+                                e, session_id
+                            );
+                        }
+                    } else {
+                        // Log as this should usually not happen (it's not an error).
+                        debug!(
+                            "Received a DataCreditNtf with no credit available for session_id:{}",
                             session_id
                         );
                     }
                     return; // We consume these here and don't need to send to upper layer.
                 }
-                if let SessionNotification::DataTransferStatus {
-                    session_id,
-                    uci_sequence_number,
-                    status,
-                } = session_notf
-                {
-                    if let Some(data_transfer_status_ntf_sender) =
-                        self.data_transfer_status_ntf_sender.take()
-                    {
-                        let _ = data_transfer_status_ntf_sender.send(session_notf);
-                    } else {
-                        debug!(
-                            "No data_transfer_status_ntf_sender present, when received a \
-                               DataTransferStatusNtf with session_id {}, UCI sequence number {},\
-                                status {:?}",
-                            session_id, uci_sequence_number, status
-                        );
-                    }
-                    return; // We consume these here and don't need to send to upper layer.
-                }
-
                 let _ = self.session_notf_sender.send(session_notf);
             }
             UciNotification::Vendor(vendor_notf) => {
                 let _ = self.vendor_notf_sender.send(vendor_notf);
             }
+        }
+    }
+
+    async fn handle_session_state_notification(
+        &mut self,
+        session_id: SessionId,
+        session_state: SessionState,
+    ) {
+        match session_state {
+            SessionState::SessionStateInit => {
+                if let Err(e) = self.hal.notify_session_initialized(session_id).await {
+                    warn!("notify_session_initialized() failed: {:?}", e);
+                }
+            }
+            SessionState::SessionStateActive => {
+                self.data_credit_map.insert(session_id, CreditAvailability::CreditAvailable);
+                self.data_packet_fragments_map.insert(session_id, VecDeque::new());
+            }
+            SessionState::SessionStateIdle => {
+                self.data_credit_map.remove(&session_id);
+                self.data_packet_fragments_map.remove(&session_id);
+            }
+            _ => {}
         }
     }
 
@@ -1084,9 +1036,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     }
     fn is_waiting_device_status(&self) -> bool {
         self.open_hal_result_sender.is_some()
-    }
-    fn is_waiting_data_packet_send_status(&self) -> bool {
-        self.data_transfer_status_ntf_sender.is_some()
     }
 }
 
@@ -1140,6 +1089,9 @@ enum UciManagerCmd {
     },
     SendUciCommand {
         cmd: UciCommand,
+    },
+    SendUciData {
+        data_snd_packet: UciDataSnd,
     },
 }
 
@@ -2147,6 +2099,20 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
+    fn setup_active_session(hal: &mut MockUciHal, session_id: u32) {
+        // First setup the Session to be in Active state.
+        let cmd = UciCommand::SessionStart { session_id };
+        let mut responses = into_uci_hal_packets(uwb_uci_packets::SessionStartRspBuilder {
+            status: uwb_uci_packets::StatusCode::UciStatusOk,
+        });
+        responses.append(&mut into_uci_hal_packets(uwb_uci_packets::SessionStatusNtfBuilder {
+            session_id,
+            session_state: SessionState::SessionStateActive,
+            reason_code: 0, /* ReasonCode::StateChangeWithSessionManagementCommands */
+        }));
+        hal.expected_send_command(cmd, responses, Ok(()));
+    }
+
     #[tokio::test]
     async fn test_data_packet_send_ok() {
         // Test Data packet send for a single packet (on a UWB session).
@@ -2171,6 +2137,9 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
+                setup_active_session(hal, session_id);
+
+                // Now setup the notifications that should be received after a Data packet send.
                 let data_packet_snd =
                     build_uci_packet(mt_data, pbf, dpf, oid, expected_data_snd_payload);
                 let mut ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
@@ -2190,6 +2159,9 @@ mod tests {
             mpsc::unbounded_channel::<UciLogEvent>().0,
         )
         .await;
+
+        let result = uci_manager.range_start(session_id).await;
+        assert!(result.is_ok());
 
         let result = uci_manager
             .send_data_packet(
@@ -2244,6 +2216,8 @@ mod tests {
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
+                setup_active_session(hal, session_id);
+
                 // Expected data packet fragment #1 (UCI Header + Initial App data bytes).
                 let data_packet_snd_fragment_1 = build_uci_packet(
                     mt_data,
@@ -2283,6 +2257,9 @@ mod tests {
             mpsc::unbounded_channel::<UciLogEvent>().0,
         )
         .await;
+
+        let result = uci_manager.range_start(session_id).await;
+        assert!(result.is_ok());
 
         let result = uci_manager
             .send_data_packet(
