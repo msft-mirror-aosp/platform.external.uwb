@@ -295,6 +295,16 @@ impl<T: UciManager> SessionManagerActor<T> {
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
             UciSessionNotification::Status { session_id, session_state, reason_code } => {
+                let reason_code = match ReasonCode::try_from(reason_code) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        error!(
+                            "Received unknown reason_code {:?} in UciSessionNotification",
+                            reason_code
+                        );
+                        return;
+                    }
+                };
                 if session_state == SessionState::SessionStateDeinit {
                     debug!("Session {} is deinitialized", session_id);
                     let _ = self.active_sessions.remove(&session_id);
@@ -350,7 +360,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 match self.active_sessions.get(&session_id) {
                     Some(_) => {
                         /*
-                         * TODO(b/261886903): Handle the DataCredit notification in the new
+                         * TODO(b/270443790): Handle the DataCredit notification in the new
                          * code flow.
                          */
                     }
@@ -370,7 +380,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 match self.active_sessions.get(&session_id) {
                     Some(_) => {
                         /*
-                         * TODO(b/261886903): Handle the DataTransferStatus notification in the
+                         * TODO(b/270443790): Handle the DataTransferStatus notification in the
                          * new code flow.
                          */
                     }
@@ -504,7 +514,7 @@ pub(crate) mod test_utils {
         UciNotification::Session(UciSessionNotification::Status {
             session_id,
             session_state,
-            reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+            reason_code: ReasonCode::StateChangeWithSessionManagementCommands.into(),
         })
     }
 
@@ -545,7 +555,7 @@ mod tests {
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
         AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
-        SetAppConfigResponse, StatusCode,
+        ReasonCode, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
     use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
