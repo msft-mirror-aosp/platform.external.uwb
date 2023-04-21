@@ -48,6 +48,7 @@ pub(super) enum UciResponse {
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
     RawUciCmd(Result<RawUciMessage>),
+    SendUciData(Result<()>),
 }
 
 impl UciResponse {
@@ -78,6 +79,8 @@ impl UciResponse {
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
 
             Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
+            // TODO(b/273376343): Implement retry logic for Data packet send.
+            Self::SendUciData(_result) => false,
         }
     }
 
