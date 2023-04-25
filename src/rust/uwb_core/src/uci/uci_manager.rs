@@ -1111,8 +1111,6 @@ mod tests {
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
-    // TODO(b/261886903): Check if this should be in a common library file as same function
-    // is defined in uci_hal_android.rs also.
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
