@@ -32,7 +32,7 @@ pub type UciHalPacket = Vec<u8>;
 /// this trait and inject into the library.
 /// Note: Each method should be completed in 1000 ms.
 #[async_trait]
-pub trait UciHal: 'static + Send {
+pub trait UciHal: 'static + Send + Sync {
     /// Open the UCI HAL and power on the UWB Subsystem.
     ///
     /// All the other API should be called after the open() completes successfully. Once the method
