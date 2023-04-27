@@ -104,6 +104,8 @@ enum StatusCode {
   UCI_STATUS_ERROR_CCC_SE_BUSY = 80;
   UCI_STATUS_ERROR_CCC_LIFECYCLE = 81;
   UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 82;
+  // All vendor specific status code will be mapped to UCI_STATUS_VENDOR_SPECIFIC.
+  UCI_STATUS_RFU_OR_VENDOR_SPECIFIC = 255;
 }
 
 // Represents uwb_uci_packets::OwrAoaStatusCode
@@ -172,6 +174,8 @@ enum ReasonCode {
   ERROR_REF_UWB_SESSION_LOST = 63;
   ERROR_INVALID_CHANNEL_WITH_AOA = 128;
   ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 129;
+  // All vendor reason code will be mapped to ERROR_VENDOR_SPECIFIC.
+  ERROR_RFU_OR_VENDOR_SPECIFIC = 255;
 }
 
 // Represent uwb_uci_packets::RangingMeasurementType.
