@@ -28,7 +28,7 @@ use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
     DeviceConfigTlv, FiraComponent, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
-    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SessionId, SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
@@ -295,14 +295,15 @@ impl<U: UciManager> UciManagerSync<U> {
         )
     }
 
-    /// Update active ranging rounds update for DT
-    pub fn session_update_active_rounds_dt_tag(
+    /// Update ranging rounds for DT Tag
+    pub fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
         self.runtime_handle.block_on(
-            self.uci_manager.session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
+            self.uci_manager
+                .session_update_dt_tag_ranging_rounds(session_id, ranging_round_indexes),
         )
     }
 
