@@ -153,16 +153,16 @@ pub struct SessionUpdateActiveRoundsDtTagResponse {
 pub struct CountryCode([u8; 2]);
 
 impl CountryCode {
-    fn is_valid_char(code: u8) -> bool {
-        code.is_ascii_uppercase() || code == 0
-    }
+    const UNKNOWN_COUNTRY_CODE: &'static [u8] = "00".as_bytes();
 
     /// Create a CountryCode instance.
     pub fn new(code: &[u8; 2]) -> Option<Self> {
-        if !CountryCode::is_valid_char(code[0]) || !CountryCode::is_valid_char(code[1]) {
+        if code != CountryCode::UNKNOWN_COUNTRY_CODE
+            && !code.iter().all(|x| (*x as char).is_ascii_alphabetic())
+        {
             None
         } else {
-            Some(Self(*code))
+            Some(Self((*code).to_ascii_uppercase().try_into().ok()?))
         }
     }
 }
@@ -236,5 +236,15 @@ mod tests {
         let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![12, 34]);
         let format_str = format!("{tlv:?}");
         assert_eq!(format_str, "AppConfigTlv { cfg_id: DeviceType, v: [12, 34] }");
+    }
+
+    #[test]
+    fn test_country_code() {
+        let _country_code_ascii: CountryCode = String::from("US").try_into().unwrap();
+        let _country_code_unknown: CountryCode = String::from("00").try_into().unwrap();
+        let country_code_invalid_1: Result<CountryCode, Error> = String::from("0S").try_into();
+        country_code_invalid_1.unwrap_err();
+        let country_code_invalid_2: Result<CountryCode, Error> = String::from("ÀÈ").try_into();
+        country_code_invalid_2.unwrap_err();
     }
 }
