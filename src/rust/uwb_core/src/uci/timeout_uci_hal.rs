@@ -25,7 +25,8 @@ use crate::uci::command::UciCommand;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 
 const HAL_API_TIMEOUT_MS: u64 = 1000;
-const HAL_OPEN_TIMEOUT_MS: u64 = 10000; // Extra time may be needed for starting UWB stack.
+// TODO(b/279175027): Reduce this once vendor fixes their initialization sequence.
+const HAL_OPEN_TIMEOUT_MS: u64 = 20000; // Extra time may be needed for starting UWB stack.
 
 pub(crate) struct TimeoutUciHal<T: UciHal>(T);
 

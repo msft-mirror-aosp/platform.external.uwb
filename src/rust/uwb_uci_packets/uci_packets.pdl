@@ -101,6 +101,7 @@ enum StatusCode : 8 {
     UCI_STATUS_UNKNOWN_OID = 0x08,
     UCI_STATUS_READ_ONLY = 0x09,
     UCI_STATUS_COMMAND_RETRY = 0x0A,
+    RFU_STATUS_CODE_RANGE_1 = 0x0B..0x10,
 
     // UWB Session Specific Status Codes
     UCI_STATUS_SESSION_NOT_EXIST = 0x11,
@@ -113,6 +114,7 @@ enum StatusCode : 8 {
     UCI_STATUS_ADDRESS_NOT_FOUND = 0x18,
     UCI_STATUS_ADDRESS_ALREADY_PRESENT = 0x19,
     UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT = 0x1B,
+    RFU_STATUS_CODE_RANGE_2 = 0x1C..0x1F,
 
     // UWB Ranging Session Specific Status Codes
     UCI_STATUS_RANGING_TX_FAILED = 0x20,
@@ -127,15 +129,22 @@ enum StatusCode : 8 {
     UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED = 0x29,
     UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR = 0x2A,
     UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 0x2B,
+    RFU_STATUS_CODE_RANGE_3 = 0x2C..0x2F,
 
     // UWB Data Session Specific Status Codes
     UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 0x30,
     UCI_STATUS_DATA_RX_CRC_ERROR = 0x31,
+    RFU_STATUS_CODE_RANGE_4 = 0x32..0x4F,
 
     // Vendor Specific Status Codes
-    UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
-    UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
-    UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
+    VENDOR_SPECIFIC_STATUS_CODE_RANGE_1 = 0x50..0xFE {
+        UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
+        UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
+        UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
+    },
+
+    // For internal usage, we will use 0xFF as default.
+    VENDOR_SPECIFIC_STATUS_CODE_2 = 0xFF,
 }
 
 // This needs a separate type as the Status code values in an OWR for AOA
@@ -243,24 +252,33 @@ enum AppConfigTlvType : 8 {
     MIN_FRAMES_PER_RR = 0x3A,
     MTU_SIZE = 0x3B,
     INTER_FRAME_INTERVAL = 0x3C,
+    RFU_APP_CFG_TLV_TYPE_RANGE_1 = 0x3D..0x44,
     SESSION_KEY = 0x45,
     SUBSESSION_KEY = 0x46,
+    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x47..0x9F,
 
-    // CCC specific
-    CCC_HOP_MODE_KEY = 0xA0,
-    CCC_UWB_TIME0 = 0xA1,
-    CCC_RANGING_PROTOCOL_VER = 0xA3,
-    CCC_UWB_CONFIG_ID = 0xA4,
-    CCC_PULSESHAPE_COMBO = 0xA5,
-    CCC_URSK_TTL = 0xA6,
+    VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_1 = 0xA0..0xDF {
+        // CCC specific
+        CCC_HOP_MODE_KEY = 0xA0,
+        CCC_UWB_TIME0 = 0xA1,
+        CCC_RANGING_PROTOCOL_VER = 0xA3,
+        CCC_UWB_CONFIG_ID = 0xA4,
+        CCC_PULSESHAPE_COMBO = 0xA5,
+        CCC_URSK_TTL = 0xA6,
+        CCC_LAST_INDEX_USED  = 0xA8,
+    },
 
-    // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
-    NB_OF_RANGE_MEASUREMENTS = 0xE3,
-    NB_OF_AZIMUTH_MEASUREMENTS = 0xE4,
-    NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
+    // Reserved for extension IDs.
+    RFU_APP_CFG_TLV_TYPE_RANGE_3 = 0xE0..0xE2,
 
-    ENABLE_DIAGNOSTICS = 0xE8,
-    DIAGRAMS_FRAME_REPORTS_FIELDS = 0xE9,
+    VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_2 = 0xE3..0xFF {
+        // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
+        NB_OF_RANGE_MEASUREMENTS = 0xE3,
+        NB_OF_AZIMUTH_MEASUREMENTS = 0xE4,
+        NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
+        ENABLE_DIAGNOSTICS = 0xE8,
+        DIAGRAMS_FRAME_REPORTS_FIELDS = 0xE9,
+    },
 }
 
 enum FrameReportTlvType : 8 {
@@ -290,26 +308,34 @@ enum CapTlvType : 8 {
     SUPPORTED_EXTENDED_MAC_ADDRESS = 0x11,
     SUPPORTED_MAX_MESSAGE_SIZE = 0x12,
     SUPPORTED_MAX_DATA_PACKET_PAYLOAD_SIZE = 0x13,
-    SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
-    SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
-    SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
-    SUPPORTED_RSSI_REPORTING = 0xE6,
-    SUPPORTED_DIAGNOSTICS = 0xE7,
-    SUPPORTED_MIN_SLOT_DURATION_RSTU = 0xE8,
-    SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xE9,
+    RFU_CAP_TLV_TYPE_RANGE_1 = 0x14..0x9F,
 
-    // CCC specific
-    CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
-    CCC_SUPPORTED_SYNC_CODES = 0xA1,
-    CCC_SUPPORTED_HOPPING_CONFIG_MODES_AND_SEQUENCES = 0xA2,
-    CCC_SUPPORTED_CHANNELS = 0xA3,
-    CCC_SUPPORTED_VERSIONS = 0xA4,
-    CCC_SUPPORTED_UWB_CONFIGS = 0xA5,
-    CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA6,
-    CCC_SUPPORTED_RAN_MULTIPLIER = 0xA7,
-    CCC_SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xA8,
+    VENDOR_SPECIFIC_CAP_TLV_TYPE_RANGE_1 = 0xA0..0xBF {
+        // CCC specific
+        CCC_SUPPORTED_CHAPS_PER_SLOT = 0xA0,
+        CCC_SUPPORTED_SYNC_CODES = 0xA1,
+        CCC_SUPPORTED_HOPPING_CONFIG_MODES_AND_SEQUENCES = 0xA2,
+        CCC_SUPPORTED_CHANNELS = 0xA3,
+        CCC_SUPPORTED_VERSIONS = 0xA4,
+        CCC_SUPPORTED_UWB_CONFIGS = 0xA5,
+        CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA6,
+        CCC_SUPPORTED_RAN_MULTIPLIER = 0xA7,
+        CCC_SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xA8,
+    },
 
     SUPPORTED_POWER_STATS = 0xC0,
+    VENDOR_SPECIFIC_CAP_TLV_TYPE_RANGE_2 = 0xC1..0xDF,
+    RFU_CAP_TLV_TYPE_RANGE_2 = 0xE0..0xE2,
+
+    VENDOR_SPECIFIC_CAP_TLV_TYPE_RANGE_3 = 0xE3..0xFF {
+        SUPPORTED_AOA_RESULT_REQ_ANTENNA_INTERLEAVING = 0xE3,
+        SUPPORTED_MIN_RANGING_INTERVAL_MS = 0xE4,
+        SUPPORTED_RANGE_DATA_NTF_CONFIG = 0xE5,
+        SUPPORTED_RSSI_REPORTING = 0xE6,
+        SUPPORTED_DIAGNOSTICS = 0xE7,
+        SUPPORTED_MIN_SLOT_DURATION_RSTU = 0xE8,
+        SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xE9,
+    },
 }
 
 
@@ -343,6 +369,7 @@ enum ReasonCode : 8 {
     SESSION_SUSPENDED_DUE_TO_INBAND_SIGNAL = 0x03,
     SESSION_RESUMED_DUE_TO_INBAND_SIGNAL = 0x04,
     SESSION_STOPPED_DUE_TO_INBAND_SIGNAL = 0x05,
+    RFU_REASON_CODE_RANGE_1 = 0x06..0x1C,
     ERROR_INVALID_UL_TDOA_RANDOM_WINDOW = 0x1D,
     ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED = 0x1E,
     ERROR_TX_DELAY_NOT_SUPPORTED = 0x1F,
@@ -378,10 +405,16 @@ enum ReasonCode : 8 {
     ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH = 0x3D,
     ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME = 0x3E,
     ERROR_REF_UWB_SESSION_LOST = 0x3F,
-    // TODO(b/272775225): Add a range for the vendor specific space, after PDL supports
-    // this feature (requested in b/267339120).
-    ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
-    ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
+    RFU_REASON_CODE_RANGE_2 = 0x40..0x7F {
+        ERROR_DT_ANCHOR_RANGING_ROUNDS_NOT_CONFIGURED = 0x40,
+        ERROR_DT_TAG_RANGING_ROUNDS_NOT_CONFIGURED = 0x41,
+    },
+    VENDOR_SPECIFIC_REASON_CODE_RANGE_1 = 0x80..0xFE {
+        ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
+        ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
+    },
+    // For internal usage, we will use 0xFF as default.
+    VENDOR_SPECIFIC_REASON_CODE_2 = 0xFF,
 }
 
 enum MulticastUpdateStatusCode : 8 {
@@ -659,6 +692,7 @@ packet SetConfigRsp : CoreResponse (opcode = 0x4) { //CORE_SET_CONFIG
 
 test SetConfigRsp {
     "\x40\x04\x00\x04\x00\x00\x00\x01\x01\x01\x01",
+    "\x40\x04\x00\x04\x00\x00\x00\x01\x01\x01\x0B",
 }
 
 packet GetConfigCmd : CoreCommand (opcode = 0x5) { //CORE_GET_CONFIG
@@ -818,23 +852,23 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
-packet SessionUpdateActiveRoundsDtTagCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateDtTagRangingRoundsCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     session_id: 32,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
 }
 
-test SessionUpdateActiveRoundsDtTagCmd {
+test SessionUpdateDtTagRangingRoundsCmd {
     "\x21\x09\x00\x0a\x00\x00\x00\x03\x03\x0f\x0c\x05\x08\x00\x00\x00\x00",
 }
 
-packet SessionUpdateActiveRoundsDtTagRsp : SessionConfigResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateDtTagRangingRoundsRsp : SessionConfigResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     status: StatusCode,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
 }
 
-test SessionUpdateActiveRoundsDtTagRsp {
+test SessionUpdateDtTagRangingRoundsRsp {
     "\x41\x09\x00\x03\x00\x00\x00\x01\x01\x01",
 }
 
@@ -926,6 +960,23 @@ packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // S
 
 test DataTransferStatusNtf {
     "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00",
+}
+
+packet SessionQueryMaxDataSizeCmd : SessionConfigCommand (opcode = 0xB) { //QUERY_MAX_DATA_SIZE
+    session_id: 32,
+}
+
+test SessionQueryMaxDataSizeCmd {
+ "\x21\x0B\x00\x04\x00\x00\x00\x00",
+}
+
+packet SessionQueryMaxDataSizeRsp : SessionConfigResponse (opcode = 0xB) { //QUER_MAX_DATA_SIZE
+    session_id: 32,
+    max_data_size: 16,
+}
+
+test SessionQueryMaxDataSizeRsp {
+  "\x41\x0B\x00\x06\x00\x00\x00\x00\x0E7\0x07",
 }
 
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
