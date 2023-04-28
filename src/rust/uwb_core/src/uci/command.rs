@@ -63,7 +63,7 @@ pub enum UciCommand {
         action: UpdateMulticastListAction,
         controlees: Controlees,
     },
-    SessionUpdateActiveRoundsDtTag {
+    SessionUpdateDtTagRangingRounds {
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
     },
@@ -138,8 +138,8 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 .build()
                 .into()
             }
-            UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
-                uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+            UciCommand::SessionUpdateDtTagRangingRounds { session_id, ranging_round_indexes } => {
+                uwb_uci_packets::SessionUpdateDtTagRangingRoundsCmdBuilder {
                     session_id,
                     ranging_round_indexes,
                 }
@@ -320,14 +320,14 @@ mod tests {
             .into()
         );
 
-        cmd = UciCommand::SessionUpdateActiveRoundsDtTag {
+        cmd = UciCommand::SessionUpdateDtTagRangingRounds {
             session_id: 1,
             ranging_round_indexes: vec![0],
         };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
+            uwb_uci_packets::SessionUpdateDtTagRangingRoundsCmdBuilder {
                 session_id: 1,
                 ranging_round_indexes: vec![0]
             }
