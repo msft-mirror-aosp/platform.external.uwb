@@ -510,6 +510,12 @@ impl From<ReasonCode> for ProtoReasonCode {
             ReasonCode::ErrorStoppedDueToOtherSessionConflict => {
                 ProtoReasonCode::ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
             }
+            ReasonCode::ErrorDtAnchorRangingRoundsNotConfigured => {
+                ProtoReasonCode::ERROR_DT_ANCHOR_RANGING_ROUNDS_NOT_CONFIGURED
+            }
+            ReasonCode::ErrorDtTagRangingRoundsNotConfigured => {
+                ProtoReasonCode::ERROR_DT_TAG_RANGING_ROUNDS_NOT_CONFIGURED
+            }
             _ => ProtoReasonCode::ERROR_RFU_OR_VENDOR_SPECIFIC,
         }
     }
