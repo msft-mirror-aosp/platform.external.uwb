@@ -955,7 +955,7 @@ packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // S
     session_id: 32,
     uci_sequence_number: 8,
     status: DataTransferNtfStatusCode,
-    // TODO(b/261886903): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
+    // TODO(b/269779288): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
 }
 
 test DataTransferStatusNtf {
