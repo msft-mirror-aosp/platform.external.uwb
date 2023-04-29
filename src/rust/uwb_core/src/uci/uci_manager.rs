@@ -26,7 +26,7 @@ use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
     CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, FiraComponent,
     GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId,
-    SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
+    SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
     UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
 };
 use crate::params::utils::bytes_to_u64;
@@ -108,12 +108,12 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         controlees: Controlees,
     ) -> Result<()>;
 
-    // Update active ranging rounds update for DT
-    async fn session_update_active_rounds_dt_tag(
+    // Update ranging rounds for DT Tag
+    async fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse>;
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse>;
 
     async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16>;
 
@@ -376,14 +376,14 @@ impl UciManager for UciManagerImpl {
         }
     }
 
-    async fn session_update_active_rounds_dt_tag(
+    async fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
-        let cmd = UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes };
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
+        let cmd = UciCommand::SessionUpdateDtTagRangingRounds { session_id, ranging_round_indexes };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::SessionUpdateActiveRoundsDtTag(resp)) => resp,
+            Ok(UciResponse::SessionUpdateDtTagRangingRounds(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -1588,20 +1588,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_set_active_ranging_rounds_dt_tag() {
-        let ranging_rounds = SessionUpdateActiveRoundsDtTagResponse {
+    async fn test_set_active_dt_tag_ranging_rounds() {
+        let ranging_rounds = SessionUpdateDtTagRangingRoundsResponse {
             status: StatusCode::UciStatusErrorRoundIndexNotActivated,
             ranging_round_indexes: vec![3],
         };
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             move |hal| {
-                let cmd = UciCommand::SessionUpdateActiveRoundsDtTag {
+                let cmd = UciCommand::SessionUpdateDtTagRangingRounds {
                     session_id: 1,
                     ranging_round_indexes: vec![3, 5],
                 };
                 let resp = into_uci_hal_packets(
-                    uwb_uci_packets::SessionUpdateActiveRoundsDtTagRspBuilder {
+                    uwb_uci_packets::SessionUpdateDtTagRangingRoundsRspBuilder {
                         status: StatusCode::UciStatusErrorRoundIndexNotActivated,
                         ranging_round_indexes: vec![3],
                     },
@@ -1614,7 +1614,7 @@ mod tests {
         )
         .await;
 
-        let result = uci_manager.session_update_active_rounds_dt_tag(1, vec![3, 5]).await.unwrap();
+        let result = uci_manager.session_update_dt_tag_ranging_rounds(1, vec![3, 5]).await.unwrap();
 
         assert_eq!(result, ranging_rounds);
         assert!(mock_hal.wait_expected_calls_done().await);
