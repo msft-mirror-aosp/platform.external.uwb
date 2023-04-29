@@ -101,7 +101,8 @@ enum StatusCode : 8 {
     UCI_STATUS_UNKNOWN_OID = 0x08,
     UCI_STATUS_READ_ONLY = 0x09,
     UCI_STATUS_COMMAND_RETRY = 0x0A,
-    RFU_STATUS_CODE_RANGE_1 = 0x0B..0x10,
+    UCI_STATUS_NOT_APPLICABLE = 0x0B,
+    RFU_STATUS_CODE_RANGE_1 = 0x0C..0x10,
 
     // UWB Session Specific Status Codes
     UCI_STATUS_SESSION_NOT_EXIST = 0x11,
@@ -113,6 +114,7 @@ enum StatusCode : 8 {
     UCI_STATUS_MULTICAST_LIST_FULL = 0x17,
     UCI_STATUS_ADDRESS_NOT_FOUND = 0x18,
     UCI_STATUS_ADDRESS_ALREADY_PRESENT = 0x19,
+    UCI_STATUS_ERROR_UWB_INITIATION_TIME_TOO_OLD = 0x1A,
     UCI_STATUS_OK_NEGATIVE_DISTANCE_REPORT = 0x1B,
     RFU_STATUS_CODE_RANGE_2 = 0x1C..0x1F,
 
@@ -405,7 +407,10 @@ enum ReasonCode : 8 {
     ERROR_REF_UWB_SESSION_RANGING_DURATION_MISMATCH = 0x3D,
     ERROR_REF_UWB_SESSION_INVALID_OFFSET_TIME = 0x3E,
     ERROR_REF_UWB_SESSION_LOST = 0x3F,
-    RFU_REASON_CODE_RANGE_2 = 0x40..0x7F,
+    RFU_REASON_CODE_RANGE_2 = 0x40..0x7F {
+        ERROR_DT_ANCHOR_RANGING_ROUNDS_NOT_CONFIGURED = 0x40,
+        ERROR_DT_TAG_RANGING_ROUNDS_NOT_CONFIGURED = 0x41,
+    },
     VENDOR_SPECIFIC_REASON_CODE_RANGE_1 = 0x80..0xFE {
         ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
         ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
@@ -849,23 +854,23 @@ test SessionGetStateRsp {
     "\x41\x06\x00\x02\x00\x00\x00\x00\x01",
 }
 
-packet SessionUpdateActiveRoundsDtTagCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateDtTagRangingRoundsCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     session_id: 32,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
 }
 
-test SessionUpdateActiveRoundsDtTagCmd {
+test SessionUpdateDtTagRangingRoundsCmd {
     "\x21\x09\x00\x0a\x00\x00\x00\x03\x03\x0f\x0c\x05\x08\x00\x00\x00\x00",
 }
 
-packet SessionUpdateActiveRoundsDtTagRsp : SessionConfigResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
+packet SessionUpdateDtTagRangingRoundsRsp : SessionConfigResponse (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
     status: StatusCode,
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
 }
 
-test SessionUpdateActiveRoundsDtTagRsp {
+test SessionUpdateDtTagRangingRoundsRsp {
     "\x41\x09\x00\x03\x00\x00\x00\x01\x01\x01",
 }
 
@@ -952,7 +957,7 @@ packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // S
     session_id: 32,
     uci_sequence_number: 8,
     status: DataTransferNtfStatusCode,
-    // TODO(b/261886903): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
+    // TODO(b/269779288): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
 }
 
 test DataTransferStatusNtf {
