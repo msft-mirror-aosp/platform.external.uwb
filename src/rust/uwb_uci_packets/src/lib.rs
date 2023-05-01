@@ -716,7 +716,7 @@ impl PacketDefrager {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ParsedDiagnosticNtfPacket {
-    session_id: u32,
+    session_token: u32,
     sequence_number: u32,
     frame_reports: Vec<ParsedFrameReport>,
 }
@@ -733,7 +733,7 @@ pub struct ParsedFrameReport {
 }
 
 pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDiagnosticNtfPacket> {
-    let session_id = evt.get_session_id();
+    let session_token = evt.get_session_token();
     let sequence_number = evt.get_sequence_number();
     let mut parsed_frame_reports = Vec::new();
     for report in evt.get_frame_reports() {
@@ -773,7 +773,7 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
         });
     }
     Ok(ParsedDiagnosticNtfPacket {
-        session_id,
+        session_token,
         sequence_number,
         frame_reports: parsed_frame_reports,
     })
@@ -821,7 +821,7 @@ pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) ->
 /// This function can build the packet with/without message control, which
 /// is indicated by action parameter.
 pub fn build_session_update_controller_multicast_list_cmd(
-    session_id: u32,
+    session_token: u32,
     action: UpdateMulticastListAction,
     controlees: Controlees,
 ) -> Result<SessionUpdateControllerMulticastListCmd> {
@@ -855,7 +855,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
         _ => return Err(Error::InvalidPacketError),
     }
     Ok(SessionUpdateControllerMulticastListCmdBuilder {
-        session_id,
+        session_token,
         action,
         payload: Some(controlees_buf.freeze()),
     }
@@ -903,9 +903,12 @@ mod tests {
         let frame_report =
             FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
         frame_reports.push(frame_report);
-        let packet =
-            AndroidRangeDiagnosticsNtfBuilder { session_id: 1, sequence_number: 1, frame_reports }
-                .build();
+        let packet = AndroidRangeDiagnosticsNtfBuilder {
+            session_token: 1,
+            sequence_number: 1,
+            frame_reports,
+        }
+        .build();
         let mut parsed_packet = parse_diagnostics_ntf(packet).unwrap();
         let parsed_frame_report = parsed_packet.frame_reports.pop().unwrap();
         assert_eq!(rssi_vec, parsed_frame_report.rssi);
