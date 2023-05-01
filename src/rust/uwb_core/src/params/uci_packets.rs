@@ -38,6 +38,10 @@ use crate::error::Error;
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
 pub type SubSessionId = u32;
+/// The type of the session handle.
+pub type SessionHandle = u32;
+/// Generic type used to represent either a session id or session handle.
+pub type SessionToken = u32;
 
 /// Wrap the original AppConfigTlv type to redact the PII fields when logging.
 #[derive(Clone, PartialEq)]

@@ -517,7 +517,7 @@ packet UciDataPacket {
 }
 
 packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type = DATA) {
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     dest_mac_address: 64,
     dest_fira_component: FiraComponent,
     uci_sequence_number: 8,
@@ -526,7 +526,7 @@ packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type =
 }
 
 packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV, message_type = DATA) {
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     status: DataRcvStatusCode,
     uci_sequence_number: 32,
     source_mac_address: 64,
@@ -733,6 +733,17 @@ test SessionInitCmd {
     "\x21\x00\x00\x05\x00\x00\x00\x01\x02\x03\x04\x01",
 }
 
+// FIRA version 2 introduces a new version of SESSION_INIT_RSP which
+// includes UWBS generated session handle.
+packet SessionInitRsp_V2 : SessionConfigResponse (opcode = 0x0) { //SESSION_INIT
+    status: StatusCode,
+    session_handle: 32,
+}
+
+test SessionInitRsp_V2 {
+    "\x41\x00\x00\x01\x00\x00\x00\x11\x00\x00\x00\x01",
+}
+
 packet SessionInitRsp : SessionConfigResponse (opcode = 0x0) { //SESSION_INIT
     status: StatusCode,
 }
@@ -742,7 +753,7 @@ test SessionInitRsp {
 }
 
 packet SessionDeinitCmd : SessionConfigCommand (opcode = 0x1) { //SESSION_DEINIT
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionDeinitCmd {
@@ -758,7 +769,7 @@ test SessionDeinitRsp {
 }
 
 packet SessionStatusNtf : SessionConfigNotification (opcode = 0x2) { //SESSION_STATUS_NTF
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     session_state: SessionState,
     // TODO(b/272775225): Switch back to the enum type ReasonCode, once PDL supports defining a
     // range inside an enum (for the vendor-specific space), in b/267339120.
@@ -777,7 +788,7 @@ struct AppConfigTlv {
 }
 
 packet SessionSetAppConfigCmd : SessionConfigCommand (opcode = 0x3) { //SESSION_SET_APP_CONFIG
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     _count_(tlvs): 8,
     tlvs: AppConfigTlv[]
 }
@@ -802,7 +813,7 @@ test SessionSetAppConfigRsp {
 }
 
 packet SessionGetAppConfigCmd : SessionConfigCommand (opcode = 0x4) { //SESSION_GET_APP_CONFIG
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     _count_(app_cfg): 8,
     app_cfg: 8[], // AppConfigTlvType (Infra does not allow array of enums)
 }
@@ -838,7 +849,7 @@ test SessionGetCountRsp {
 }
 
 packet SessionGetStateCmd : SessionConfigCommand (opcode = 0x6) { //SESSION_GET_STATE
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionGetStateCmd {
@@ -855,7 +866,7 @@ test SessionGetStateRsp {
 }
 
 packet SessionUpdateDtTagRangingRoundsCmd : SessionConfigCommand (opcode = 0x9) { //SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     _count_(ranging_round_indexes): 8,
     ranging_round_indexes: 8[],
 }
@@ -899,7 +910,7 @@ enum UpdateMulticastListAction: 8 {
 }
 
 packet SessionUpdateControllerMulticastListCmd : SessionConfigCommand (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     action: UpdateMulticastListAction,
     _payload_,
 }
@@ -934,7 +945,7 @@ struct ControleeStatus {
 }
 
 packet SessionUpdateControllerMulticastListNtf : SessionConfigNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     remaining_multicast_list_size: 8,
     _count_(controlee_status): 8,
     controlee_status: ControleeStatus[],
@@ -945,7 +956,7 @@ test SessionUpdateControllerMulticastListNtf {
 }
 
 packet DataCreditNtf : SessionControlNotification (opcode = 0x04) { // SESSION_DATA_CREDIT_NTF
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     credit_availability: CreditAvailability,
 }
 
@@ -954,7 +965,7 @@ test DataCreditNtf {
 }
 
 packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     uci_sequence_number: 8,
     status: DataTransferNtfStatusCode,
     // TODO(b/269779288): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
@@ -965,7 +976,7 @@ test DataTransferStatusNtf {
 }
 
 packet SessionQueryMaxDataSizeCmd : SessionConfigCommand (opcode = 0xB) { //QUERY_MAX_DATA_SIZE
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionQueryMaxDataSizeCmd {
@@ -973,7 +984,7 @@ test SessionQueryMaxDataSizeCmd {
 }
 
 packet SessionQueryMaxDataSizeRsp : SessionConfigResponse (opcode = 0xB) { //QUER_MAX_DATA_SIZE
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     max_data_size: 16,
 }
 
@@ -982,7 +993,7 @@ test SessionQueryMaxDataSizeRsp {
 }
 
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionStartCmd {
@@ -1070,7 +1081,7 @@ enum RangingMeasurementType : 8 {
 
 packet SessionInfoNtf : SessionControlNotification (opcode = 0x0) { // SESSION_INFO
     sequence_number: 32,
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     rcr_indicator: 8,
     current_ranging_interval: 32,
     ranging_measurement_type: RangingMeasurementType,
@@ -1141,7 +1152,7 @@ test ExtendedMacOwrAoaSessionInfoNtf {
 }
 
 packet SessionStopCmd : SessionControlCommand (opcode = 0x1) { // SESSION_STOP
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionStopCmd {
@@ -1157,7 +1168,7 @@ test SessionStopRsp {
 }
 
 packet SessionGetRangingCountCmd : SessionControlCommand (opcode = 0x3) { // SESSION_GET_RANGING_COUNT
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
 }
 
 test SessionGetRangingCountCmd {
@@ -1276,7 +1287,7 @@ struct FrameReport {
 }
 
 packet AndroidRangeDiagnosticsNtf : AndroidNotification (opcode = 0x2) { //FIRA_RANGE_DIAGNOSTICS
-    session_id: 32,
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
     sequence_number: 32,
     _count_(frame_reports): 8,
     frame_reports: FrameReport[],
