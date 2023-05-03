@@ -876,7 +876,7 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
     fn from(item: SessionRangeData) -> Self {
         let mut result = Self::new();
         result.set_sequence_number(item.sequence_number);
-        result.set_session_id(item.session_id);
+        result.set_session_id(item.session_token);
         result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
         result.set_ranging_measurement_type(item.ranging_measurement_type.into());
         match to_proto_ranging_measurements(item.ranging_measurements) {
