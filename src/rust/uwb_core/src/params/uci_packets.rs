@@ -139,9 +139,9 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
-/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+/// The response from UciManager::session_update_dt_tag_ranging_rounds() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SessionUpdateActiveRoundsDtTagResponse {
+pub struct SessionUpdateDtTagRangingRoundsResponse {
     /// The status code of the response.
     pub status: StatusCode,
     /// Indexes of unsuccessful ranging rounds.
