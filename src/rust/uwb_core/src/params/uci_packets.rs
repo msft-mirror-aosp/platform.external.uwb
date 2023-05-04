@@ -139,9 +139,9 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
-/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+/// The response from UciManager::session_update_dt_tag_ranging_rounds() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SessionUpdateActiveRoundsDtTagResponse {
+pub struct SessionUpdateDtTagRangingRoundsResponse {
     /// The status code of the response.
     pub status: StatusCode,
     /// Indexes of unsuccessful ranging rounds.
@@ -153,12 +153,16 @@ pub struct SessionUpdateActiveRoundsDtTagResponse {
 pub struct CountryCode([u8; 2]);
 
 impl CountryCode {
+    const UNKNOWN_COUNTRY_CODE: &'static [u8] = "00".as_bytes();
+
     /// Create a CountryCode instance.
     pub fn new(code: &[u8; 2]) -> Option<Self> {
-        if !code[0].is_ascii_uppercase() || !code[1].is_ascii_uppercase() {
+        if code != CountryCode::UNKNOWN_COUNTRY_CODE
+            && !code.iter().all(|x| (*x as char).is_ascii_alphabetic())
+        {
             None
         } else {
-            Some(Self(*code))
+            Some(Self((*code).to_ascii_uppercase().try_into().ok()?))
         }
     }
 }
@@ -206,7 +210,7 @@ pub struct RawUciMessage {
 impl From<UciControlPacket> for RawUciMessage {
     fn from(packet: UciControlPacket) -> Self {
         Self {
-            gid: packet.get_group_id() as u32,
+            gid: packet.get_group_id().into(),
             oid: packet.get_opcode() as u32,
             payload: packet.to_raw_payload(),
         }
@@ -232,5 +236,15 @@ mod tests {
         let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![12, 34]);
         let format_str = format!("{tlv:?}");
         assert_eq!(format_str, "AppConfigTlv { cfg_id: DeviceType, v: [12, 34] }");
+    }
+
+    #[test]
+    fn test_country_code() {
+        let _country_code_ascii: CountryCode = String::from("US").try_into().unwrap();
+        let _country_code_unknown: CountryCode = String::from("00").try_into().unwrap();
+        let country_code_invalid_1: Result<CountryCode, Error> = String::from("0S").try_into();
+        country_code_invalid_1.unwrap_err();
+        let country_code_invalid_2: Result<CountryCode, Error> = String::from("ÀÈ").try_into();
+        country_code_invalid_2.unwrap_err();
     }
 }
