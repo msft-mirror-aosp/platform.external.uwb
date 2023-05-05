@@ -307,7 +307,16 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
             SessionInfoNtfChild::ShortMacOwrAoaSessionInfoNtf(evt) => {
                 if evt.get_owr_aoa_ranging_measurements().clone().len() == 1 {
                     RangingMeasurements::ShortAddressOwrAoa(
-                        evt.get_owr_aoa_ranging_measurements().clone().pop().unwrap(),
+                        match evt.get_owr_aoa_ranging_measurements().clone().pop() {
+                            Some(r) => r,
+                            None => {
+                                error!(
+                                    "Unable to parse ShortAddress OwrAoA measurement: {:?}",
+                                    evt
+                                );
+                                return Err(Error::BadParameters);
+                            }
+                        },
                     )
                 } else {
                     error!("Wrong count of OwrAoA ranging measurements {:?}", evt);
@@ -317,7 +326,16 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
             SessionInfoNtfChild::ExtendedMacOwrAoaSessionInfoNtf(evt) => {
                 if evt.get_owr_aoa_ranging_measurements().clone().len() == 1 {
                     RangingMeasurements::ExtendedAddressOwrAoa(
-                        evt.get_owr_aoa_ranging_measurements().clone().pop().unwrap(),
+                        match evt.get_owr_aoa_ranging_measurements().clone().pop() {
+                            Some(r) => r,
+                            None => {
+                                error!(
+                                    "Unable to parse ExtendedAddress OwrAoA measurement: {:?}",
+                                    evt
+                                );
+                                return Err(Error::BadParameters);
+                            }
+                        },
                     )
                 } else {
                     error!("Wrong count of OwrAoA ranging measurements {:?}", evt);
