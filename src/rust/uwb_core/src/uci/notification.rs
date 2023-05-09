@@ -468,7 +468,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::uci_packets::OwrAoaStatusCode;
 
     #[test]
     fn test_ranging_measurements_trait() {
@@ -640,7 +639,7 @@ mod tests {
     fn test_session_notification_casting_from_extended_mac_owr_aoa_session_info_ntf() {
         let extended_measurement = uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement {
             mac_address: 0x1234_5678_90ab,
-            status: OwrAoaStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             nlos: 0,
             frame_sequence_number: 1,
             block_index: 1,
@@ -686,7 +685,7 @@ mod tests {
     fn test_session_notification_casting_from_short_mac_owr_aoa_session_info_ntf() {
         let short_measurement = uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement {
             mac_address: 0x1234,
-            status: OwrAoaStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             nlos: 0,
             frame_sequence_number: 1,
             block_index: 1,
