@@ -101,8 +101,9 @@ enum StatusCode : 8 {
     UCI_STATUS_UNKNOWN_OID = 0x08,
     UCI_STATUS_READ_ONLY = 0x09,
     UCI_STATUS_COMMAND_RETRY = 0x0A,
-    UCI_STATUS_NOT_APPLICABLE = 0x0B,
-    RFU_STATUS_CODE_RANGE_1 = 0x0C..0x10,
+    UCI_STATUS_UNKNOWN = 0x0B,
+    UCI_STATUS_NOT_APPLICABLE = 0x0C,
+    RFU_STATUS_CODE_RANGE_1 = 0x0D..0x10,
 
     // UWB Session Specific Status Codes
     UCI_STATUS_SESSION_NOT_EXIST = 0x11,
@@ -147,13 +148,6 @@ enum StatusCode : 8 {
 
     // For internal usage, we will use 0xFF as default.
     VENDOR_SPECIFIC_STATUS_CODE_2 = 0xFF,
-}
-
-// This needs a separate type as the Status code values in an OWR for AOA
-// Measurement has different values.
-enum OwrAoaStatusCode : 8 {
-    UCI_STATUS_SUCCESS = 0x00,
-    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT = 0x01,
 }
 
 // This needs a separate StatusCode as the Status code values in the DATA_RCV packet have
@@ -1050,7 +1044,7 @@ struct ExtendedAddressTwoWayRangingMeasurement {
 
 struct ShortAddressOwrAoaRangingMeasurement {
     mac_address: 16,
-    status: OwrAoaStatusCode,
+    status: StatusCode,
     nlos: 8,
     frame_sequence_number: 8,
     block_index: 16,
@@ -1062,7 +1056,7 @@ struct ShortAddressOwrAoaRangingMeasurement {
 
 struct ExtendedAddressOwrAoaRangingMeasurement {
     mac_address: 64,
-    status: OwrAoaStatusCode,
+    status: StatusCode,
     nlos: 8,
     frame_sequence_number: 8,
     block_index: 16,
