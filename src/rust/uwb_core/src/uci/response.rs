@@ -33,6 +33,7 @@ pub(super) enum UciResponse {
     CoreGetCapsInfo(Result<Vec<CapTlv>>),
     CoreSetConfig(CoreSetConfigResponse),
     CoreGetConfig(Result<Vec<DeviceConfigTlv>>),
+    CoreQueryTimeStamp(Result<u64>),
     SessionInit(Result<Option<SessionHandle>>),
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
@@ -59,6 +60,7 @@ impl UciResponse {
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetCapsInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetConfig(result) => Self::matches_result_retry(result),
+            Self::CoreQueryTimeStamp(result) => Self::matches_result_retry(result),
             Self::SessionInit(result) => Self::matches_result_retry(result),
             Self::SessionDeinit(result) => Self::matches_result_retry(result),
             Self::SessionGetAppConfig(result) => Self::matches_result_retry(result),
@@ -140,6 +142,9 @@ impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
 
             CoreResponseChild::GetConfigRsp(evt) => Ok(UciResponse::CoreGetConfig(
                 status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
+            )),
+            CoreResponseChild::CoreQueryTimeStampRsp(evt) => Ok(UciResponse::CoreQueryTimeStamp(
+                status_code_to_result(evt.get_status()).map(|_| evt.get_timeStamp()),
             )),
             _ => Err(Error::Unknown),
         }
