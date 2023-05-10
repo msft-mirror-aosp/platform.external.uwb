@@ -242,6 +242,11 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.core_get_config(config_ids))
     }
 
+    /// Send UCI command for getting uwbs timestamp.
+    pub fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        self.runtime_handle.block_on(self.uci_manager.core_query_uwb_timestamp())
+    }
+
     /// Send UCI command for initiating session.
     pub fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.session_init(session_id, session_type))
