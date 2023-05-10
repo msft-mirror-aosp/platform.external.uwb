@@ -146,6 +146,13 @@ impl MockUciManager {
             .push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
     }
 
+    /// Prepare Mock to expect core_query_uwb_timestamp.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_core_query_uwb_timestamp(&mut self, out: Result<u64>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreQueryTimeStamp { out });
+    }
+
     /// Prepare Mock to expect session_init.
     ///
     /// MockUciManager expects call with parameters, returns out as response, followed by notfs
@@ -576,6 +583,21 @@ impl UciManager for MockUciManager {
         }
     }
 
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::CoreQueryTimeStamp { out }) => {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
@@ -947,6 +969,9 @@ enum ExpectedCall {
     CoreGetConfig {
         expected_config_ids: Vec<DeviceConfigId>,
         out: Result<Vec<DeviceConfigTlv>>,
+    },
+    CoreQueryTimeStamp {
+        out: Result<u64>,
     },
     SessionInit {
         expected_session_id: SessionId,
