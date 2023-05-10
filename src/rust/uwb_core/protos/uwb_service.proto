@@ -108,12 +108,6 @@ enum StatusCode {
   UCI_STATUS_RFU_OR_VENDOR_SPECIFIC = 255;
 }
 
-// Represents uwb_uci_packets::OwrAoaStatusCode
-enum OwrAoaStatusCode {
-    UCI_STATUS_SUCCESS = 0;
-    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT = 1;
-}
-
 // Represent uwb_uci_packets::DeviceState.
 enum DeviceState {
     DEVICE_STATE_READY = 0;
@@ -451,7 +445,7 @@ message TwoWayRangingMeasurement {
 // uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement.
 message OwrAoaRangingMeasurement {
   uint64 mac_address = 1;
-  OwrAoaStatusCode owr_aoa_status_code = 2;
+  StatusCode status = 2;
   uint32 nlos = 3;
   uint32 block_index = 4;
   uint32 frame_sequence_number = 5;
