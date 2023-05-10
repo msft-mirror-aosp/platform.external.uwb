@@ -566,6 +566,7 @@ mod tests {
     #[test]
     fn test_file_switch_epb_unfit_case() {
         let dir = tempdir().unwrap();
+        let last_file_expected = dir.as_ref().to_owned().join("log_2.pcapng");
         {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_140 = PcapngUciLoggerFactoryBuilder::new()
@@ -585,7 +586,15 @@ mod tests {
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
             logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
-            thread::sleep(time::Duration::from_millis(10));
+            let mut timeout = 100;
+            let timeout_slice = 10;
+            loop {
+                if last_file_expected.exists() || timeout == 0 {
+                    break;
+                }
+                thread::sleep(time::Duration::from_millis(timeout_slice));
+                timeout -= timeout_slice;
+            }
         }
         // Expect (Old to new):
         // File 2: SHB->IDB->EPB->IDB (cannot fit next)
