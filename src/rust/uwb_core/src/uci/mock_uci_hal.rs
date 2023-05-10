@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use log::error;
 use tokio::sync::{mpsc, Notify};
 use tokio::time::timeout;
 
@@ -28,7 +29,8 @@ use crate::uci::uci_hal::{UciHal, UciHalPacket};
 /// The mock implementation of UciHal.
 #[derive(Default, Clone)]
 pub struct MockUciHal {
-    packet_sender: Option<mpsc::UnboundedSender<UciHalPacket>>,
+    // Wrap inside Arc<Mutex<>> so that the MockUciHal.clone(s) refer to the same object.
+    packet_sender: Arc<Mutex<Option<mpsc::UnboundedSender<UciHalPacket>>>>,
     expected_calls: Arc<Mutex<VecDeque<ExpectedCall>>>,
     expect_call_consumed: Arc<Notify>,
 }
@@ -92,6 +94,19 @@ impl MockUciHal {
         }
         true
     }
+
+    // Receive a UCI packet (eg: UCI DATA_MESSAGE_RCV), from UWBS to Host.
+    pub fn receive_packet(&mut self, packet: UciHalPacket) -> Result<()> {
+        if let Some(ref ps) = *self.packet_sender.lock().unwrap() {
+            match ps.send(packet) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(Error::Unknown),
+            }
+        } else {
+            error!("MockUciHal unable to Rx packet from HAL as channel closed");
+            Err(Error::MockUndefined)
+        }
+    }
 }
 
 #[async_trait]
@@ -107,7 +122,7 @@ impl UciHal for MockUciHal {
                     }
                 }
                 if out.is_ok() {
-                    self.packet_sender.replace(packet_sender);
+                    self.packet_sender.lock().unwrap().replace(packet_sender);
                 }
                 out
             }
@@ -125,7 +140,7 @@ impl UciHal for MockUciHal {
             Some(ExpectedCall::Close { out }) => {
                 self.expect_call_consumed.notify_one();
                 if out.is_ok() {
-                    self.packet_sender = None;
+                    *self.packet_sender.lock().unwrap() = None;
                 }
                 out
             }
@@ -144,7 +159,8 @@ impl UciHal for MockUciHal {
                 if expected_cmd == cmd =>
             {
                 self.expect_call_consumed.notify_one();
-                let packet_sender = self.packet_sender.as_mut().unwrap();
+                let mut packet_sender_opt = self.packet_sender.lock().unwrap();
+                let packet_sender = packet_sender_opt.as_mut().unwrap();
                 for msg in packets.into_iter() {
                     let _ = packet_sender.send(msg);
                 }
@@ -166,7 +182,8 @@ impl UciHal for MockUciHal {
                 if expected_packet_tx == packet_tx =>
             {
                 self.expect_call_consumed.notify_one();
-                let packet_sender = self.packet_sender.as_mut().unwrap();
+                let mut packet_sender_opt = self.packet_sender.lock().unwrap();
+                let packet_sender = packet_sender_opt.as_mut().unwrap();
                 for msg in inject_packets_rx.into_iter() {
                     let _ = packet_sender.send(msg);
                 }

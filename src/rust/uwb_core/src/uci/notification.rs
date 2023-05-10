@@ -137,7 +137,7 @@ pub enum RangingMeasurements {
 }
 
 /// The DATA_RCV packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, std::cmp::PartialEq)]
 pub struct DataRcvNotification {
     /// The identifier of the session on which data transfer is happening.
     pub session_token: SessionToken,
