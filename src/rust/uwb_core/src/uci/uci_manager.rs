@@ -845,6 +845,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
                 self.uci_cmd_retryer =
                     Some(UciCmdRetryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
+
+                // Reset DataSndRetryer so if a CORE_GENERIC_ERROR_NTF with STATUS_UCI_PACKET_RETRY
+                // is received, only this UCI CMD packet will be retried.
+                let _ = self.uci_data_snd_retryer.take();
+
                 self.retry_uci_cmd().await;
             }
 
