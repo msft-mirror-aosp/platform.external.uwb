@@ -39,6 +39,7 @@ pub enum UciCommand {
     CoreGetConfig {
         cfg_id: Vec<DeviceConfigId>,
     },
+    CoreQueryTimeStamp,
     SessionInit {
         session_id: SessionId,
         session_type: SessionType,
@@ -128,6 +129,9 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             }
             .build()
             .into(),
+            UciCommand::CoreQueryTimeStamp {} => {
+                uwb_uci_packets::CoreQueryTimeStampCmdBuilder {}.build().into()
+            }
             UciCommand::SessionSetAppConfig { session_token, config_tlvs } => {
                 uwb_uci_packets::SessionSetAppConfigCmdBuilder {
                     session_token,
