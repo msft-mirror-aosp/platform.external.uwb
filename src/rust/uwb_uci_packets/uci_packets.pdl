@@ -49,6 +49,7 @@ enum CoreOpCode : 6 {
     CORE_GET_CONFIG = 0x05,
     CORE_DEVICE_SUSPEND = 0x06,
     CORE_GENERIC_ERROR_NTF = 0x07,
+    CORE_QUERY_UWBS_TIMESTAMP = 0x08,
 }
 
 enum SessionConfigOpCode : 6 {
@@ -716,6 +717,23 @@ packet GenericError : CoreNotification (opcode = 0x7) { //CORE_GENERIC_ERROR_NTF
 
 test GenericError {
     "\x60\x07\x00\x01\x00\x00\x00\x01",
+}
+
+
+packet CoreQueryTimeStampCmd : CoreCommand (opcode = 0x8) { //CORE_QUERY_UWBS_TIMESTAMP
+}
+
+test CoreQueryTimeStampCmd {
+    "\x20\x08\x00\\x00",
+}
+
+packet CoreQueryTimeStampRsp : CoreResponse (opcode = 0x8) { //CORE_QUERY_UWBS_TIMESTAMP
+    status: StatusCode,
+    timeStamp: 64,
+}
+
+test CoreQueryTimeStampRsp {
+    "\x40\x08\x00\x09\x00\x00\x00\x01\x01\x00\x01\x01\x01",
 }
 
 packet SessionInitCmd : SessionConfigCommand (opcode = 0x0) { //SESSION_INIT

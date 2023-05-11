@@ -88,6 +88,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         config_ids: Vec<DeviceConfigId>,
     ) -> Result<Vec<DeviceConfigTlv>>;
+    async fn core_query_uwb_timestamp(&self) -> Result<u64>;
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()>;
     async fn session_deinit(&self, session_id: SessionId) -> Result<()>;
     async fn session_set_app_config(
@@ -313,6 +314,15 @@ impl UciManager for UciManagerImpl {
         }
     }
 
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let cmd = UciCommand::CoreQueryTimeStamp;
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::CoreQueryTimeStamp(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
         let cmd = UciCommand::SessionInit { session_id, session_type };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
@@ -515,8 +525,7 @@ impl UciManager for UciManagerImpl {
             "send_data_packet(): will Tx a data packet, session_id {}, sequence_number {}",
             session_id, uci_sequence_number
         );
-        let dest_mac_address =
-            bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters).unwrap();
+        let dest_mac_address = bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters)?;
         let data_snd_packet = uwb_uci_packets::UciDataSndBuilder {
             session_token: self.get_session_token(&session_id).await?,
             dest_mac_address,
@@ -655,7 +664,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
                 // Timeout waiting for the response of the UCI command.
                 _ = &mut self.wait_resp_timeout, if self.is_waiting_resp() => {
-                    self.uci_cmd_retryer.take().unwrap().send_result(Err(Error::Timeout));
+                    if let Some(uci_cmd_retryer) = self.uci_cmd_retryer.take() {
+                        uci_cmd_retryer.send_result(Err(Error::Timeout));
+                    }
                 }
 
                 // Timeout waiting for the notification of the device status.
@@ -826,9 +837,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     }
                     self.last_raw_cmd = Some(RawUciControlPacket {
                         mt: u8::from(MessageType::Command),
-                        gid: gid_u8.unwrap(),
-                        oid: oid_u8.unwrap(),
-                        payload: Vec::new(), // There's no need to store the Raw UCI CMD's payload.
+                        gid: gid_u8.unwrap(), // Safe as we check gid_u8.is_err() above.
+                        oid: oid_u8.unwrap(), // Safe as we check uid_i8.is_err() above.
+                        payload: Vec::new(),  // There's no need to store the Raw UCI CMD's payload.
                     });
                 }
 
