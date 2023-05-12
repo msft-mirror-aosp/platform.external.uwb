@@ -15,7 +15,7 @@
 //! Implements UciLoggerPcapng, a UciLogger with PCAPNG format log.
 
 use log::warn;
-use uwb_uci_packets::UciControlPacketPacket;
+use uwb_uci_packets::{UciControlPacket, UciDataPacket};
 
 use crate::uci::pcapng_block::{BlockBuilder, BlockOption, EnhancedPacketBlockBuilder};
 use crate::uci::pcapng_uci_logger_factory::LogWriter;
@@ -42,8 +42,7 @@ impl UciLoggerPcapng {
 }
 
 impl UciLogger for UciLoggerPcapng {
-    // TODO(b/261762781): Add Pcapng logging for UciDataPacketPacket also?
-    fn log_uci_packet(&mut self, packet: UciControlPacketPacket) {
+    fn log_uci_control_packet(&mut self, packet: UciControlPacket) {
         let block_bytes = match EnhancedPacketBlockBuilder::new()
             .interface_id(self.interface_id)
             .packet(packet.into())
@@ -53,6 +52,18 @@ impl UciLogger for UciLoggerPcapng {
             None => return,
         };
         self.send_block_bytes(block_bytes);
+    }
+
+    fn log_uci_data_packet(&mut self, packet: &UciDataPacket) {
+        let packet_header_bytes = match EnhancedPacketBlockBuilder::new()
+            .interface_id(self.interface_id)
+            .packet(packet.clone().into())
+            .into_le_bytes()
+        {
+            Some(b) => b,
+            None => return,
+        };
+        self.send_block_bytes(packet_header_bytes);
     }
 
     fn log_hal_open(&mut self, result: crate::error::Result<()>) {
