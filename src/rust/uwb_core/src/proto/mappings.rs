@@ -166,9 +166,6 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED => {
                     StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded
             }
-            ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR => {
-                StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator
-            }
             ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST =>
                     StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList,
             ProtoStatusCode::UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED => {
@@ -254,9 +251,6 @@ impl From<StatusCode> for ProtoStatusCode {
             }
             StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded => {
                 ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED
-            }
-            StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator => {
-                ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR
             }
             StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList => {
                 ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST
