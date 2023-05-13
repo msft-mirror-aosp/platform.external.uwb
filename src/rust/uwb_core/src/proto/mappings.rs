@@ -958,8 +958,7 @@ impl TryFrom<ProtoControlee> for Controlee {
     type Error = String;
     fn try_from(item: ProtoControlee) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            short_address: item
-                .short_address
+            short_address: item.short_address.to_ne_bytes()[0..2]
                 .try_into()
                 .map_err(|_| "Failed to convert short_address")?,
             subsession_id: item.subsession_id,
