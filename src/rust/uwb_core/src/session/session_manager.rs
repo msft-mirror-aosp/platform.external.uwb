@@ -773,7 +773,8 @@ mod tests {
         let params = generate_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager, _) =
@@ -830,7 +831,8 @@ mod tests {
         let params = generate_ccc_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
@@ -869,7 +871,8 @@ mod tests {
         let params = generate_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager, _) =
