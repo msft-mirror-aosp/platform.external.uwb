@@ -1970,7 +1970,8 @@ mod tests {
         let session_id = 0x123;
         let session_token = 0x123;
         let action = UpdateMulticastListAction::AddControlee;
-        let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
+        let short_address: [u8; 2] = [0x45, 0x67];
+        let controlee = Controlee { short_address, subsession_id: 0x90ab };
         let controlee_clone = controlee.clone();
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
