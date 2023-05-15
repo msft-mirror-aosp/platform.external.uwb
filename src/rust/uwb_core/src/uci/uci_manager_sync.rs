@@ -370,6 +370,10 @@ impl<U: UciManager> UciManagerSync<U> {
             app_payload_data,
         ))
     }
+    /// Get session token for session id.
+    pub fn get_session_token(&self, session_id : SessionId) -> Result<u32> {
+        self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
+    }
 }
 
 impl UciManagerSync<UciManagerImpl> {
