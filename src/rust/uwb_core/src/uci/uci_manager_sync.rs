@@ -27,9 +27,9 @@ use tokio::task;
 use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
-    DeviceConfigTlv, FiraComponent, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
-    SessionId, SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse,
-    SetAppConfigResponse, UpdateMulticastListAction,
+    DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
+    SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -358,20 +358,18 @@ impl<U: UciManager> UciManagerSync<U> {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_num: u8,
+        uci_sequence_num: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.send_data_packet(
             session_id,
             address,
-            dest_end_point,
             uci_sequence_num,
             app_payload_data,
         ))
     }
     /// Get session token for session id.
-    pub fn get_session_token(&self, session_id : SessionId) -> Result<u32> {
+    pub fn get_session_token(&self, session_id: SessionId) -> Result<u32> {
         self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
     }
 }
