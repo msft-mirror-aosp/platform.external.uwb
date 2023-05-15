@@ -29,8 +29,8 @@ use crate::params::fira_app_config_params::{
 };
 use crate::params::uci_packets::{
     Controlee, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode, SessionState, SessionType,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement, PowerStats,
+    RangingMeasurementType, ReasonCode, SessionState, SessionType,
     ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
@@ -42,8 +42,7 @@ use crate::proto::bindings::{
     FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
     KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
     MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
-    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
-    OwrAoaStatusCode as ProtoOwrAoaStatusCode, PowerStats as ProtoPowerStats,
+    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement, PowerStats as ProtoPowerStats,
     PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
     PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
     RangingMeasurementType as ProtoRangingMeasurementType,
@@ -280,12 +279,6 @@ impl From<StatusCode> for ProtoStatusCode {
             _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
         }
     }
-}
-
-enum_mapping! {
-    ProtoOwrAoaStatusCode => OwrAoaStatusCode,
-    UCI_STATUS_SUCCESS => UciStatusSuccess,
-    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT => UciStatusInterFrameIntervalTimeout,
 }
 
 enum_mapping! {
@@ -766,7 +759,7 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasuremen
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
-        result.set_owr_aoa_status_code(item.status.into());
+        result.set_status(item.status.into());
         result.set_nlos(item.nlos.into());
         result.set_block_index(item.block_index.into());
         result.set_frame_sequence_number(item.frame_sequence_number.into());
@@ -782,7 +775,7 @@ impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasure
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
-        result.set_owr_aoa_status_code(item.status.into());
+        result.set_status(item.status.into());
         result.set_nlos(item.nlos.into());
         result.set_block_index(item.block_index.into());
         result.set_frame_sequence_number(item.frame_sequence_number.into());
