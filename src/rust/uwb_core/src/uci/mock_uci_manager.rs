@@ -30,7 +30,7 @@ use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
     GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
 use crate::uci::notification::{
@@ -917,6 +917,13 @@ impl UciManager for MockUciManager {
             }
             None => Err(Error::MockUndefined),
         }
+    }
+
+    async fn get_session_token_from_session_id(
+        &self,
+        _session_id: SessionId,
+    ) -> Result<SessionToken> {
+        Ok(1) // No uci call here, no mock required.
     }
 }
 
