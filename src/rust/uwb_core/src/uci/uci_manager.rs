@@ -144,6 +144,12 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         uci_sequence_number: u8,
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
+
+    // Get Session token from session id
+    async fn get_session_token_from_session_id(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionToken>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -530,6 +536,14 @@ impl UciManager for UciManagerImpl {
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
+    }
+
+    // Get session token from session id (no uci call).
+    async fn get_session_token_from_session_id(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionToken> {
+        Ok(self.get_session_token(&session_id).await?)
     }
 }
 
@@ -1960,7 +1974,8 @@ mod tests {
         let session_id = 0x123;
         let session_token = 0x123;
         let action = UpdateMulticastListAction::AddControlee;
-        let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
+        let short_address: [u8; 2] = [0x45, 0x67];
+        let controlee = Controlee { short_address, subsession_id: 0x90ab };
         let controlee_clone = controlee.clone();
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
