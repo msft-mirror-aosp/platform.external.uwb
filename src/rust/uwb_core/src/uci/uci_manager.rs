@@ -144,6 +144,12 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         uci_sequence_number: u8,
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
+
+    // Get Session token from session id
+    async fn get_session_token_from_session_id(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionToken>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -515,8 +521,7 @@ impl UciManager for UciManagerImpl {
             "send_data_packet(): will Tx a data packet, session_id {}, sequence_number {}",
             session_id, uci_sequence_number
         );
-        let dest_mac_address =
-            bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters).unwrap();
+        let dest_mac_address = bytes_to_u64(dest_mac_address_bytes).ok_or(Error::BadParameters)?;
         let data_snd_packet = uwb_uci_packets::UciDataSndBuilder {
             session_token: self.get_session_token(&session_id).await?,
             dest_mac_address,
@@ -531,6 +536,14 @@ impl UciManager for UciManagerImpl {
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
+    }
+
+    // Get session token from session id (no uci call).
+    async fn get_session_token_from_session_id(
+        &self,
+        session_id: SessionId,
+    ) -> Result<SessionToken> {
+        Ok(self.get_session_token(&session_id).await?)
     }
 }
 
@@ -655,7 +668,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
                 // Timeout waiting for the response of the UCI command.
                 _ = &mut self.wait_resp_timeout, if self.is_waiting_resp() => {
-                    self.uci_cmd_retryer.take().unwrap().send_result(Err(Error::Timeout));
+                    if let Some(uci_cmd_retryer) = self.uci_cmd_retryer.take() {
+                        uci_cmd_retryer.send_result(Err(Error::Timeout));
+                    }
                 }
 
                 // Timeout waiting for the notification of the device status.
@@ -826,14 +841,19 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     }
                     self.last_raw_cmd = Some(RawUciControlPacket {
                         mt: u8::from(MessageType::Command),
-                        gid: gid_u8.unwrap(),
-                        oid: oid_u8.unwrap(),
-                        payload: Vec::new(), // There's no need to store the Raw UCI CMD's payload.
+                        gid: gid_u8.unwrap(), // Safe as we check gid_u8.is_err() above.
+                        oid: oid_u8.unwrap(), // Safe as we check uid_i8.is_err() above.
+                        payload: Vec::new(),  // There's no need to store the Raw UCI CMD's payload.
                     });
                 }
 
                 self.uci_cmd_retryer =
                     Some(UciCmdRetryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
+
+                // Reset DataSndRetryer so if a CORE_GENERIC_ERROR_NTF with STATUS_UCI_PACKET_RETRY
+                // is received, only this UCI CMD packet will be retried.
+                let _ = self.uci_data_snd_retryer.take();
+
                 self.retry_uci_cmd().await;
             }
 
@@ -1954,7 +1974,8 @@ mod tests {
         let session_id = 0x123;
         let session_token = 0x123;
         let action = UpdateMulticastListAction::AddControlee;
-        let controlee = Controlee { short_address: 0x4567, subsession_id: 0x90ab };
+        let short_address: [u8; 2] = [0x45, 0x67];
+        let controlee = Controlee { short_address, subsession_id: 0x90ab };
         let controlee_clone = controlee.clone();
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
