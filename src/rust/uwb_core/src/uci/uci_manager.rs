@@ -1392,9 +1392,10 @@ mod tests {
     use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
 
     use crate::params::uci_packets::{
-        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataTransferNtfStatusCode,
-        StatusCode,
+        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataRcvStatusCode,
+        DataTransferNtfStatusCode, StatusCode,
     };
+    use crate::params::UwbAddress;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
     use crate::uci::uci_logger::NopUciLogger;
@@ -2548,14 +2549,6 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-    // TODO(b/276320369): Listing down the Data Packet Rx scenarios below, will add unit tests
-    // for them in subsequent CLs.
-    #[tokio::test]
-    async fn test_data_packet_recv_ok() {}
-
-    #[tokio::test]
-    async fn test_data_packet_recv_fragmented_packet_ok() {}
-
     fn setup_hal_for_session_active(
         hal: &mut MockUciHal,
         session_type: SessionType,
@@ -2615,6 +2608,152 @@ mod tests {
 
         (uci_manager, hal)
     }
+
+    // Test Data packet receive for a single packet (on an active UWB session).
+    #[tokio::test]
+    async fn test_data_packet_recv_ok() {
+        let mt_data = 0x0;
+        let pbf = 0x0;
+        let dpf = 0x2;
+        let oid = 0x0;
+        let session_id = 0x3;
+        let session_token = 0x5;
+        let uci_sequence_num = 0xa;
+        let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
+        let source_fira_component = FiraComponent::Uwbs;
+        let dest_fira_component = FiraComponent::Host;
+        let app_data = vec![0x01, 0x02, 0x03];
+        let data_rcv_payload = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionToken
+            0x00, // DataRcvStatusCode
+            0x0a, 0x00, 0x00, 0x00, // UciSequenceNumber
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x00, // Source FiraComponent
+            0x01, // Dest FiraComponent
+            0x03, 0x00, // AppDataLen
+            0x01, 0x02, 0x03, // AppData
+        ];
+
+        // Setup the DataPacketRcv (Rx by HAL) and the expected DataRcvNotification.
+        let data_packet_rcv = build_uci_packet(mt_data, pbf, dpf, oid, data_rcv_payload);
+        let expected_data_rcv_notification = DataRcvNotification {
+            session_token,
+            status: DataRcvStatusCode::UciStatusSuccess,
+            uci_sequence_num,
+            source_address,
+            source_fira_component,
+            dest_fira_component,
+            payload: app_data,
+        };
+
+        // Setup an active UWBS session over which the DataPacket will be received by the Host.
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let (data_rcv_notification_sender, mut data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<DataRcvNotification>();
+        uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+
+        // Inject the UCI DataPacketRcv into HAL.
+        let result = mock_hal.receive_packet(data_packet_rcv);
+        assert!(result.is_ok());
+
+        // UciManager should send a DataRcvNotification (for the valid Rx packet).
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), data_rcv_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_data_rcv_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    // Test Data packet receive for two packet fragments (on an active UWB session).
+    #[tokio::test]
+    async fn test_data_packet_recv_fragmented_packets_ok() {
+        let mt_data = 0x0;
+        let pbf_fragment_1 = 0x1;
+        let pbf_fragment_2 = 0x0;
+        let dpf = 0x2;
+        let oid = 0x0;
+        let session_id = 0x3;
+        let session_token = 0x5;
+        let uci_sequence_num = 0xa;
+        let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
+        let source_fira_component = FiraComponent::Uwbs;
+        let dest_fira_component = FiraComponent::Host;
+        let app_data_len = 300;
+        let app_data_fragment_1_len = 200;
+        let mut data_rcv_payload_fragment_1: Vec<u8> = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionToken
+            0x00, // DataRcvStatusCode
+            0x0a, 0x00, 0x00, 0x00, // UciSequenceNumber
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x00, // Source FiraComponent
+            0x01, // Dest FiraComponent
+            0x2c, 0x01, // AppData Length (300)
+        ];
+
+        // Setup the application data (payload) for the 2 DataPacketRcv fragments.
+        let mut app_data: Vec<u8> = Vec::new();
+        for i in 0..app_data_len {
+            app_data.push((i & 0xff).try_into().unwrap());
+        }
+        data_rcv_payload_fragment_1.extend_from_slice(&app_data[0..app_data_fragment_1_len]);
+        let mut data_rcv_payload_fragment_2: Vec<u8> = Vec::new();
+        data_rcv_payload_fragment_2.extend_from_slice(&app_data[app_data_fragment_1_len..]);
+
+        // Setup the DataPacketRcv fragments (Rx by HAL) and the expected DataRcvNotification.
+        let data_packet_rcv_fragment_1 =
+            build_uci_packet(mt_data, pbf_fragment_1, dpf, oid, data_rcv_payload_fragment_1);
+        let data_packet_rcv_fragment_2 =
+            build_uci_packet(mt_data, pbf_fragment_2, dpf, oid, data_rcv_payload_fragment_2);
+        let expected_data_rcv_notification = DataRcvNotification {
+            session_token,
+            status: DataRcvStatusCode::UciStatusSuccess,
+            uci_sequence_num,
+            source_address,
+            source_fira_component,
+            dest_fira_component,
+            payload: app_data,
+        };
+
+        // Setup an active UWBS session over which the DataPacket will be received by the Host.
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let (data_rcv_notification_sender, mut data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<DataRcvNotification>();
+        uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+
+        // Inject the 2 UCI DataPacketRcv into HAL.
+        let result = mock_hal.receive_packet(data_packet_rcv_fragment_1);
+        assert!(result.is_ok());
+        let result = mock_hal.receive_packet(data_packet_rcv_fragment_2);
+        assert!(result.is_ok());
+
+        // UciManager should send a DataRcvNotification (for the valid Rx packet).
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), data_rcv_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_data_rcv_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_data_packet_recv_bad_payload_len_failure() {}
 
     #[tokio::test]
     async fn test_data_packet_send_ok() {
