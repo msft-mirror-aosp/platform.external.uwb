@@ -950,7 +950,7 @@ test SessionUpdateControllerMulticastListRsp {
 }
 
 struct ControleeStatus {
-    mac_address: 16,
+    mac_address: 8[2],
     subsession_id: 32,
     status: MulticastUpdateStatusCode,
 }
