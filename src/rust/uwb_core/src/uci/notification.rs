@@ -754,12 +754,12 @@ mod tests {
     fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_packet()
     {
         let controlee_status = uwb_uci_packets::ControleeStatus {
-            mac_address: 0xc0a8,
+            mac_address: [0x0c, 0xa8],
             subsession_id: 0x30,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
         };
         let another_controlee_status = uwb_uci_packets::ControleeStatus {
-            mac_address: 0xc0a9,
+            mac_address: [0x0c, 0xa9],
             subsession_id: 0x31,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
         };
