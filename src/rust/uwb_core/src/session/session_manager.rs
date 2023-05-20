@@ -784,7 +784,7 @@ mod tests {
                         session_token: session_id,
                         remaining_multicast_list_size: 1,
                         status_list: vec![ControleeStatus {
-                            mac_address: 0x13,
+                            mac_address: [0x34, 0x12],
                             subsession_id: 0x24,
                             status: MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
                         }],
