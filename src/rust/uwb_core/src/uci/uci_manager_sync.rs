@@ -371,7 +371,7 @@ impl<U: UciManager> UciManagerSync<U> {
         ))
     }
     /// Get session token for session id.
-    pub fn get_session_token(&self, session_id : SessionId) -> Result<u32> {
+    pub fn get_session_token(&self, session_id: SessionId) -> Result<u32> {
         self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
     }
 }
@@ -390,6 +390,7 @@ impl UciManagerSync<UciManagerImpl> {
         hal: H,
         notification_manager_builder: B,
         logger: L,
+        logger_mode: UciLoggerMode,
         runtime_handle: Handle,
     ) -> Result<Self>
     where
@@ -398,8 +399,8 @@ impl UciManagerSync<UciManagerImpl> {
         L: UciLogger,
     {
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
-        let uci_manager = runtime_handle
-            .block_on(async { UciManagerImpl::new(hal, logger, UciLoggerMode::Disabled) });
+        let uci_manager =
+            runtime_handle.block_on(async { UciManagerImpl::new(hal, logger, logger_mode) });
         let mut uci_manager_sync = UciManagerSync { runtime_handle, uci_manager };
         uci_manager_sync.redirect_notification(notification_manager_builder)?;
         Ok(uci_manager_sync)
