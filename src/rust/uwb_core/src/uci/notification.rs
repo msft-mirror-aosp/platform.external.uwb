@@ -22,9 +22,9 @@ use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
     ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, RangingMeasurementType, RawUciMessage,
-    SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, SessionState,
+    SessionToken, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -146,16 +146,10 @@ pub struct DataRcvNotification {
     pub status: DataRcvStatusCode,
 
     /// The sequence number of the data packet.
-    pub uci_sequence_num: u32,
+    pub uci_sequence_num: u16,
 
     /// MacAddress of the sender of the application data.
     pub source_address: UwbAddress,
-
-    /// Identifier for the source FiraComponent.
-    pub source_fira_component: FiraComponent,
-
-    /// Identifier for the destination FiraComponent.
-    pub dest_fira_component: FiraComponent,
 
     /// Application Payload Data
     pub payload: Vec<u8>,
@@ -170,8 +164,6 @@ impl TryFrom<uwb_uci_packets::UciDataPacket> for DataRcvNotification {
                 status: evt.get_status(),
                 uci_sequence_num: evt.get_uci_sequence_number(),
                 source_address: UwbAddress::Extended(evt.get_source_mac_address().to_le_bytes()),
-                source_fira_component: evt.get_source_fira_component(),
-                dest_fira_component: evt.get_dest_fira_component(),
                 payload: evt.get_data().to_vec(),
             }),
             _ => {
