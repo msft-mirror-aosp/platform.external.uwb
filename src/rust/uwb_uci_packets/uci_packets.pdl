@@ -174,12 +174,6 @@ enum DataTransferNtfStatusCode : 8 {
     UCI_DATA_TRANSFER_STATUS_ERROR_DATA_TRANSFER_IS_ONGOING = 0x06,
 }
 
-enum FiraComponent : 8 {
-    UWBS = 0x00,
-    HOST = 0x01,
-    SECURE_COMPONENT = 0x02,
-}
-
 enum ResetConfig : 8 {
     UWBS_RESET = 0x00,
 }
@@ -513,8 +507,7 @@ packet UciDataPacket {
 packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type = DATA) {
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
     dest_mac_address: 64,
-    dest_fira_component: FiraComponent,
-    uci_sequence_number: 8,
+    uci_sequence_number: 16,
     _size_(data): 16,
     data: 8[]
 }
@@ -522,10 +515,8 @@ packet UciDataSnd : UciDataPacket (data_packet_format = DATA_SND, message_type =
 packet UciDataRcv : UciDataPacket (data_packet_format = DATA_RCV, message_type = DATA) {
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
     status: DataRcvStatusCode,
-    uci_sequence_number: 32,
     source_mac_address: 64,
-    source_fira_component: FiraComponent,
-    dest_fira_component: FiraComponent,
+    uci_sequence_number: 16,
     _size_(data): 16,
     data: 8[]
 }
