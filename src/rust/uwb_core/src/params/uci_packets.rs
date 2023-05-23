@@ -24,11 +24,10 @@ pub use uwb_uci_packets::{
     Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
     DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, GroupId, MessageType,
-    MulticastUpdateStatusCode, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig,
-    SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
-    UpdateMulticastListAction,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
+    PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
