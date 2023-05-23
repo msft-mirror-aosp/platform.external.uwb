@@ -25,10 +25,10 @@ use crate::uci::command::UciCommand;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
-    CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, FiraComponent,
-    GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId,
-    SessionState, SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse,
-    SetAppConfigResponse, UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
+    CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse,
+    GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
+    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
 };
 use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
@@ -141,8 +141,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_number: u8,
+        uci_sequence_number: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
 
@@ -523,8 +522,7 @@ impl UciManager for UciManagerImpl {
         &self,
         session_id: SessionId,
         dest_mac_address_bytes: Vec<u8>,
-        dest_fira_component: FiraComponent,
-        uci_sequence_number: u8,
+        uci_sequence_number: u16,
         data: Vec<u8>,
     ) -> Result<()> {
         debug!(
@@ -535,7 +533,6 @@ impl UciManager for UciManagerImpl {
         let data_snd_packet = uwb_uci_packets::UciDataSndBuilder {
             session_token: self.get_session_token(&session_id).await?,
             dest_mac_address,
-            dest_fira_component,
             uci_sequence_number,
             data,
         }
@@ -2620,16 +2617,12 @@ mod tests {
         let session_token = 0x5;
         let uci_sequence_num = 0xa;
         let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
-        let source_fira_component = FiraComponent::Uwbs;
-        let dest_fira_component = FiraComponent::Host;
         let app_data = vec![0x01, 0x02, 0x03];
         let data_rcv_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionToken
             0x00, // DataRcvStatusCode
-            0x0a, 0x00, 0x00, 0x00, // UciSequenceNumber
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x00, // Source FiraComponent
-            0x01, // Dest FiraComponent
+            0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
             0x01, 0x02, 0x03, // AppData
         ];
@@ -2641,8 +2634,6 @@ mod tests {
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
-            source_fira_component,
-            dest_fira_component,
             payload: app_data,
         };
 
@@ -2685,17 +2676,13 @@ mod tests {
         let session_token = 0x5;
         let uci_sequence_num = 0xa;
         let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
-        let source_fira_component = FiraComponent::Uwbs;
-        let dest_fira_component = FiraComponent::Host;
         let app_data_len = 300;
         let app_data_fragment_1_len = 200;
         let mut data_rcv_payload_fragment_1: Vec<u8> = vec![
             0x05, 0x00, 0x00, 0x00, // SessionToken
             0x00, // DataRcvStatusCode
-            0x0a, 0x00, 0x00, 0x00, // UciSequenceNumber
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x00, // Source FiraComponent
-            0x01, // Dest FiraComponent
+            0x0a, 0x00, // UciSequenceNumber
             0x2c, 0x01, // AppData Length (300)
         ];
 
@@ -2718,8 +2705,6 @@ mod tests {
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
-            source_fira_component,
-            dest_fira_component,
             payload: app_data,
         };
 
@@ -2765,14 +2750,12 @@ mod tests {
         let session_id = 0x5;
         let session_token = 0x5;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data = vec![0x01, 0x02, 0x03];
         let expected_data_snd_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
             0x01, 0x02, 0x03, // AppData
         ];
@@ -2790,7 +2773,8 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
                     },
                 ));
@@ -2804,13 +2788,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
@@ -2830,15 +2808,13 @@ mod tests {
         let session_id = 0x5;
         let session_token = 0x5;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data_len = 300; // Larger than MAX_PAYLOAD_LEN=255, so fragmentation occurs.
         let mut app_data = Vec::new();
         let mut expected_data_snd_payload_fragment_1 = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x2c, 0x01, // AppDataLen = 300
         ];
         let mut expected_data_snd_payload_fragment_2 = Vec::new();
@@ -2886,7 +2862,8 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
                     },
                 ));
@@ -2900,13 +2877,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
@@ -2922,14 +2893,12 @@ mod tests {
         let session_id = 0x5;
         let session_token = 0x5;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data = vec![0x01, 0x02, 0x03];
         let expected_data_snd_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
             0x01, 0x02, 0x03, // AppData
         ];
@@ -2955,7 +2924,8 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
                     },
                 ));
@@ -2969,13 +2939,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
