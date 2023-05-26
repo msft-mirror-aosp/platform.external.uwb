@@ -27,9 +27,9 @@ use tokio::task;
 use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
-    DeviceConfigTlv, FiraComponent, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
-    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, UpdateMulticastListAction,
+    DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
+    SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -242,6 +242,11 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.core_get_config(config_ids))
     }
 
+    /// Send UCI command for getting uwbs timestamp.
+    pub fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        self.runtime_handle.block_on(self.uci_manager.core_query_uwb_timestamp())
+    }
+
     /// Send UCI command for initiating session.
     pub fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.session_init(session_id, session_type))
@@ -295,14 +300,15 @@ impl<U: UciManager> UciManagerSync<U> {
         )
     }
 
-    /// Update active ranging rounds update for DT
-    pub fn session_update_active_rounds_dt_tag(
+    /// Update ranging rounds for DT Tag
+    pub fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
         self.runtime_handle.block_on(
-            self.uci_manager.session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
+            self.uci_manager
+                .session_update_dt_tag_ranging_rounds(session_id, ranging_round_indexes),
         )
     }
 
@@ -352,17 +358,19 @@ impl<U: UciManager> UciManagerSync<U> {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_num: u8,
+        uci_sequence_num: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.send_data_packet(
             session_id,
             address,
-            dest_end_point,
             uci_sequence_num,
             app_payload_data,
         ))
+    }
+    /// Get session token for session id.
+    pub fn get_session_token(&self, session_id: SessionId) -> Result<u32> {
+        self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
     }
 }
 
@@ -380,6 +388,7 @@ impl UciManagerSync<UciManagerImpl> {
         hal: H,
         notification_manager_builder: B,
         logger: L,
+        logger_mode: UciLoggerMode,
         runtime_handle: Handle,
     ) -> Result<Self>
     where
@@ -388,8 +397,8 @@ impl UciManagerSync<UciManagerImpl> {
         L: UciLogger,
     {
         // UciManagerImpl::new uses tokio::spawn, so it is called inside the runtime as async fn.
-        let uci_manager = runtime_handle
-            .block_on(async { UciManagerImpl::new(hal, logger, UciLoggerMode::Disabled) });
+        let uci_manager =
+            runtime_handle.block_on(async { UciManagerImpl::new(hal, logger, logger_mode) });
         let mut uci_manager_sync = UciManagerSync { runtime_handle, uci_manager };
         uci_manager_sync.redirect_notification(notification_manager_builder)?;
         Ok(uci_manager_sync)
