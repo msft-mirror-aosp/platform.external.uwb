@@ -28,7 +28,7 @@ use crate::error::{Error, Result};
 use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
     DeviceConfigTlv, FiraComponent, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig,
-    SessionId, SessionState, SessionType, SessionUpdateActiveRoundsDtTagResponse,
+    SessionId, SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse,
     SetAppConfigResponse, UpdateMulticastListAction,
 };
 #[cfg(any(test, feature = "mock-utils"))]
@@ -149,7 +149,6 @@ impl<U: UciManager> UciManagerSync<U> {
             mpsc::unbounded_channel::<RawUciMessage>();
         let (data_rcv_notification_sender, data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<DataRcvNotification>();
-        // TODO(b/261762781):Add a similar channel for Data Packet Rx
         self.runtime_handle.to_owned().block_on(async {
             self.uci_manager.set_core_notification_sender(core_notification_sender).await;
             self.uci_manager.set_session_notification_sender(session_notification_sender).await;
@@ -296,15 +295,21 @@ impl<U: UciManager> UciManagerSync<U> {
         )
     }
 
-    /// Update active ranging rounds update for DT
-    pub fn session_update_active_rounds_dt_tag(
+    /// Update ranging rounds for DT Tag
+    pub fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
         self.runtime_handle.block_on(
-            self.uci_manager.session_update_active_rounds_dt_tag(session_id, ranging_round_indexes),
+            self.uci_manager
+                .session_update_dt_tag_ranging_rounds(session_id, ranging_round_indexes),
         )
+    }
+
+    /// Send UCI command for getting max data size for session.
+    pub fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        self.runtime_handle.block_on(self.uci_manager.session_query_max_data_size(session_id))
     }
 
     /// Send UCI command for starting ranging of the session.
@@ -359,6 +364,10 @@ impl<U: UciManager> UciManagerSync<U> {
             uci_sequence_num,
             app_payload_data,
         ))
+    }
+    /// Get session token for session id.
+    pub fn get_session_token(&self, session_id : SessionId) -> Result<u32> {
+        self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
     }
 }
 

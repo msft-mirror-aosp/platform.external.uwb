@@ -18,7 +18,7 @@ use std::convert::TryInto;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{Packet, UciControlPacketHalPacket, UciControlPacketPacket};
+use uwb_uci_packets::{Packet, UciControlPacket, UciControlPacketHal};
 
 use crate::error::Result;
 use crate::params::uci_packets::SessionId;
@@ -32,7 +32,7 @@ pub type UciHalPacket = Vec<u8>;
 /// this trait and inject into the library.
 /// Note: Each method should be completed in 1000 ms.
 #[async_trait]
-pub trait UciHal: 'static + Send {
+pub trait UciHal: 'static + Send + Sync {
     /// Open the UCI HAL and power on the UWB Subsystem.
     ///
     /// All the other API should be called after the open() completes successfully. Once the method
@@ -50,15 +50,12 @@ pub trait UciHal: 'static + Send {
     ///
     /// The caller should call this method after the response of the previous send_command() is
     /// received.
-    ///
-    /// TODO(b/261886903): For the Data Packet Tx flow, we need to add a similar send_data()
-    /// API which implements fragmentation on the Data packet and calls send_packet().
     async fn send_command(&mut self, cmd: UciCommand) -> Result<()> {
         // A UCI command message may consist of multiple UCI packets when the payload is over the
         // maximum packet size. We convert the command into list of UciHalPacket, then send the
         // packets via send_packet().
-        let packet: UciControlPacketPacket = cmd.try_into()?;
-        let fragmented_packets: Vec<UciControlPacketHalPacket> = packet.into();
+        let packet: UciControlPacket = cmd.try_into()?;
+        let fragmented_packets: Vec<UciControlPacketHal> = packet.into();
         for packet in fragmented_packets.into_iter() {
             self.send_packet(packet.to_vec()).await?;
         }

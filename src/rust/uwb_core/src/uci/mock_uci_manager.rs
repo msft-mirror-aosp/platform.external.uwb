@@ -30,7 +30,7 @@ use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
     CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
     GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
+    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
     UpdateMulticastListAction,
 };
 use crate::uci::notification::{
@@ -264,19 +264,33 @@ impl MockUciManager {
     /// Prepare Mock to expect session_update_active_rounds_dt_tag.
     ///
     /// MockUciManager expects call with parameters, returns out as response.
-    pub fn expect_session_update_active_rounds_dt_tag(
+    pub fn expect_session_update_dt_tag_ranging_rounds(
         &mut self,
         expected_session_id: u32,
         expected_ranging_round_indexes: Vec<u8>,
-        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+        out: Result<SessionUpdateDtTagRangingRoundsResponse>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
-            ExpectedCall::SessionUpdateActiveRoundsDtTag {
+            ExpectedCall::SessionUpdateDtTagRangingRounds {
                 expected_session_id,
                 expected_ranging_round_indexes,
                 out,
             },
         );
+    }
+
+    /// Prepare Mock to expect for session_query_max_data_size.
+    ///
+    /// MockUciManager expects call, returns out as response.
+    pub fn expect_session_query_max_data_size(
+        &mut self,
+        expected_session_id: SessionId,
+        out: Result<u16>,
+    ) {
+        self.expected_calls
+            .lock()
+            .unwrap()
+            .push_back(ExpectedCall::SessionQueryMaxDataSize { expected_session_id, out });
     }
 
     /// Prepare Mock to expect range_start.
@@ -713,19 +727,36 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn session_update_active_rounds_dt_tag(
+    async fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionUpdateActiveRoundsDtTag {
+            Some(ExpectedCall::SessionUpdateDtTagRangingRounds {
                 expected_session_id,
                 expected_ranging_round_indexes,
                 out,
             }) if expected_session_id == session_id
                 && expected_ranging_round_indexes == ranging_round_indexes =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionQueryMaxDataSize { expected_session_id, out })
+                if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
                 out
@@ -887,6 +918,13 @@ impl UciManager for MockUciManager {
             None => Err(Error::MockUndefined),
         }
     }
+
+    async fn get_session_token_from_session_id(
+        &self,
+        _session_id: SessionId,
+    ) -> Result<SessionToken> {
+        Ok(1) // No uci call here, no mock required.
+    }
 }
 
 #[derive(Clone)]
@@ -953,10 +991,14 @@ enum ExpectedCall {
         notfs: Vec<UciNotification>,
         out: Result<()>,
     },
-    SessionUpdateActiveRoundsDtTag {
+    SessionUpdateDtTagRangingRounds {
         expected_session_id: u32,
         expected_ranging_round_indexes: Vec<u8>,
-        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+        out: Result<SessionUpdateDtTagRangingRoundsResponse>,
+    },
+    SessionQueryMaxDataSize {
+        expected_session_id: SessionId,
+        out: Result<u16>,
     },
     RangeStart {
         expected_session_id: SessionId,

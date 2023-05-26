@@ -331,7 +331,7 @@ impl FileFactory {
     fn build_empty_file(&mut self) -> Option<BufferedFile> {
         self.rotate_file()?;
         let file_path = self.get_file_path(0);
-        BufferedFile::new(&file_path, self.buffer_size)
+        BufferedFile::new(&self.log_directory, &file_path, self.buffer_size)
     }
 
     /// get file path for log files of given index.
@@ -376,11 +376,20 @@ struct BufferedFile {
 
 impl BufferedFile {
     /// Constructor.
-    pub fn new(file_path: &Path, buffer_size: usize) -> Option<Self> {
+    pub fn new(log_dir: &Path, file_path: &Path, buffer_size: usize) -> Option<Self> {
         if file_path.is_file() {
             if let Err(e) = fs::remove_file(file_path) {
                 error!("UCI Log: failed to remove {}: {:?}", file_path.display(), e);
             };
+        }
+        if !log_dir.is_dir() {
+            if let Err(e) = fs::create_dir_all(log_dir) {
+                error!(
+                    "UCI Log: failed to create log directory {}. Error: {:?}",
+                    log_dir.display(),
+                    e
+                );
+            }
         }
         let file = match fs::OpenOptions::new().write(true).create_new(true).open(file_path) {
             Ok(f) => f,
@@ -490,6 +499,34 @@ mod tests {
     }
 
     #[test]
+    fn test_no_preexisting_dir_created() {
+        let dir_root = Path::new("./uwb_test_dir_123");
+        let dir = dir_root.join("this/path/doesnt/exist");
+        {
+            let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
+            let mut file_manager = PcapngUciLoggerFactoryBuilder::new()
+                .buffer_size(1024)
+                .filename_prefix("log".to_owned())
+                .log_path(dir.clone())
+                .runtime_handle(runtime.handle().to_owned())
+                .build()
+                .unwrap();
+            let mut logger_0 = file_manager.build_logger("logger 0").unwrap();
+            let packet_0 = UciVendor_A_NotificationBuilder { opcode: 0, payload: None }.build();
+            logger_0.log_uci_control_packet(packet_0.into());
+            // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
+            thread::sleep(time::Duration::from_millis(10));
+        }
+        // Expect the dir was created.
+        assert!(dir.is_dir());
+        // Expect the log file exists.
+        let log_path = dir.join("log.pcapng");
+        assert!(log_path.is_file());
+        // Clear test dir
+        let _ = fs::remove_dir_all(dir_root);
+    }
+
+    #[test]
     fn test_single_file_write() {
         let dir = tempdir().unwrap();
         {
@@ -529,6 +566,7 @@ mod tests {
     #[test]
     fn test_file_switch_epb_unfit_case() {
         let dir = tempdir().unwrap();
+        let last_file_expected = dir.as_ref().to_owned().join("log_2.pcapng");
         {
             let runtime = Builder::new_multi_thread().enable_all().build().unwrap();
             let mut file_manager_140 = PcapngUciLoggerFactoryBuilder::new()
@@ -548,7 +586,15 @@ mod tests {
             let packet_2 = UciVendor_A_NotificationBuilder { opcode: 2, payload: None }.build();
             logger_0.log_uci_control_packet(packet_2.into());
             // Sleep needed to guarantee handling pending logs before runtime goes out of scope.
-            thread::sleep(time::Duration::from_millis(10));
+            let mut timeout = 100;
+            let timeout_slice = 10;
+            loop {
+                if last_file_expected.exists() || timeout == 0 {
+                    break;
+                }
+                thread::sleep(time::Duration::from_millis(timeout_slice));
+                timeout -= timeout_slice;
+            }
         }
         // Expect (Old to new):
         // File 2: SHB->IDB->EPB->IDB (cannot fit next)

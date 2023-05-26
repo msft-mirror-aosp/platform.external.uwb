@@ -14,17 +14,15 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use num_traits::ToPrimitive;
-
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, StatusCode, UciControlPacketPacket,
+    PowerStats, RawUciMessage, SessionHandle, SessionState,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) enum UciResponse {
     SetLoggerMode,
     SetNotification,
@@ -35,20 +33,22 @@ pub(super) enum UciResponse {
     CoreGetCapsInfo(Result<Vec<CapTlv>>),
     CoreSetConfig(CoreSetConfigResponse),
     CoreGetConfig(Result<Vec<DeviceConfigTlv>>),
-    SessionInit(Result<()>),
+    SessionInit(Result<Option<SessionHandle>>),
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
     SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
-    SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
+    SessionUpdateDtTagRangingRounds(Result<SessionUpdateDtTagRangingRoundsResponse>),
+    SessionQueryMaxDataSize(Result<u16>),
     SessionStart(Result<()>),
     SessionStop(Result<()>),
     SessionGetRangingCount(Result<usize>),
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
     RawUciCmd(Result<RawUciMessage>),
+    SendUciData(Result<()>),
 }
 
 impl UciResponse {
@@ -67,7 +67,7 @@ impl UciResponse {
             Self::SessionUpdateControllerMulticastList(result) => {
                 Self::matches_result_retry(result)
             }
-            Self::SessionUpdateActiveRoundsDtTag(result) => Self::matches_result_retry(result),
+            Self::SessionUpdateDtTagRangingRounds(result) => Self::matches_result_retry(result),
             Self::SessionStart(result) => Self::matches_result_retry(result),
             Self::SessionStop(result) => Self::matches_result_retry(result),
             Self::SessionGetRangingCount(result) => Self::matches_result_retry(result),
@@ -77,6 +77,10 @@ impl UciResponse {
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
+
+            Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
+            // TODO(b/273376343): Implement retry logic for Data packet send.
+            Self::SendUciData(_result) => false,
         }
     }
 
@@ -88,9 +92,9 @@ impl UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::UciResponse> for UciResponse {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciResponsePacket) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::UciResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
             UciResponseChild::CoreResponse(evt) => evt.try_into(),
@@ -107,11 +111,9 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::CoreResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::CoreResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::CoreResponseChild;
         match evt.specialize() {
             CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(UciResponse::CoreGetDeviceInfo(
@@ -144,16 +146,19 @@ impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionConfigResponsePacket,
+        evt: uwb_uci_packets::SessionConfigResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigResponseChild;
         match evt.specialize() {
             SessionConfigResponseChild::SessionInitRsp(evt) => {
-                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status())))
+                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status()).map(|_| None)))
             }
+            SessionConfigResponseChild::SessionInitRsp_V2(evt) => Ok(UciResponse::SessionInit(
+                status_code_to_result(evt.get_status()).map(|_| Some(evt.get_session_handle())),
+            )),
             SessionConfigResponseChild::SessionDeinitRsp(evt) => {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
@@ -172,9 +177,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
                     evt.get_status(),
                 )))
             }
-            SessionConfigResponseChild::SessionUpdateActiveRoundsDtTagRsp(evt) => {
-                Ok(UciResponse::SessionUpdateActiveRoundsDtTag(Ok(
-                    SessionUpdateActiveRoundsDtTagResponse {
+            SessionConfigResponseChild::SessionUpdateDtTagRangingRoundsRsp(evt) => {
+                Ok(UciResponse::SessionUpdateDtTagRangingRounds(Ok(
+                    SessionUpdateDtTagRangingRoundsResponse {
                         status: evt.get_status(),
                         ranging_round_indexes: evt.get_ranging_round_indexes().to_vec(),
                     },
@@ -193,15 +198,18 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
                     }),
                 ))
             }
+            SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
+                Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
+            }
             _ => Err(Error::Unknown),
         }
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionControlResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionControlResponsePacket,
+        evt: uwb_uci_packets::SessionControlResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionControlResponseChild;
         match evt.specialize() {
@@ -221,11 +229,9 @@ impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::AndroidResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::AndroidResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::AndroidResponseChild;
         match evt.specialize() {
             AndroidResponseChild::AndroidSetCountryCodeRsp(evt) => {
@@ -241,9 +247,9 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
     }
 }
 
-fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
-    let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
-    let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
-    let packet: UciControlPacketPacket = evt.into();
+fn raw_response(evt: uwb_uci_packets::UciResponse) -> Result<UciResponse> {
+    let gid: u32 = evt.get_group_id().into();
+    let oid: u32 = evt.get_opcode().into();
+    let packet: UciControlPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
