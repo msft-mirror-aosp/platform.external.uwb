@@ -356,7 +356,7 @@ rust_test {
 genrule {
     name: "uwb_core_artifacts",
     tools: [
-        "pdl",
+        "pdlc",
         "soong_zip",
     ],
     cmd:
@@ -368,7 +368,7 @@ genrule {
         "      $(genDir)/artifacts;" +
 
         // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
-        "$(location pdl) --output-format rust " +
+        "$(location pdlc) --output-format rust " +
         "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl " +
         "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs;" +
 
