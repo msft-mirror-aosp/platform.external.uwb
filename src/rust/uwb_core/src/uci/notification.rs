@@ -22,9 +22,9 @@ use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
     ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, RangingMeasurementType, RawUciMessage,
-    SessionId, SessionState, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, SessionState,
+    SessionToken, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -52,8 +52,8 @@ pub enum CoreNotification {
 pub enum SessionNotification {
     /// SessionStatusNtf equivalent.
     Status {
-        /// SessionId : u32
-        session_id: SessionId,
+        /// SessionToken : u32
+        session_token: SessionToken,
         /// uwb_uci_packets::SessionState.
         session_state: SessionState,
         /// uwb_uci_packets::Reasoncode.
@@ -61,8 +61,8 @@ pub enum SessionNotification {
     },
     /// SessionUpdateControllerMulticastListNtf equivalent.
     UpdateControllerMulticastList {
-        /// SessionId : u32
-        session_id: SessionId,
+        /// SessionToken : u32
+        session_token: SessionToken,
         /// count of controlees: u8
         remaining_multicast_list_size: usize,
         /// list of controlees.
@@ -72,15 +72,15 @@ pub enum SessionNotification {
     SessionInfo(SessionRangeData),
     /// DataCreditNtf equivalent.
     DataCredit {
-        /// SessionId : u32
-        session_id: SessionId,
+        /// SessionToken : u32
+        session_token: SessionToken,
         /// Credit Availability (for sending Data packets on UWB Session)
         credit_availability: CreditAvailability,
     },
     /// DataTransferStatusNtf equivalent.
     DataTransferStatus {
-        /// SessionId : u32
-        session_id: SessionId,
+        /// SessionToken : u32
+        session_token: SessionToken,
         /// Sequence Number: u8
         uci_sequence_number: u8,
         /// Data Transfer Status Code
@@ -95,7 +95,7 @@ pub struct SessionRangeData {
     pub sequence_number: u32,
 
     /// The identifier of the session.
-    pub session_id: SessionId,
+    pub session_token: SessionToken,
 
     /// The current ranging interval setting in the unit of ms.
     pub current_ranging_interval_ms: u32,
@@ -137,25 +137,19 @@ pub enum RangingMeasurements {
 }
 
 /// The DATA_RCV packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, std::cmp::PartialEq)]
 pub struct DataRcvNotification {
     /// The identifier of the session on which data transfer is happening.
-    pub session_id: SessionId,
+    pub session_token: SessionToken,
 
     /// The status of the data rx.
     pub status: DataRcvStatusCode,
 
     /// The sequence number of the data packet.
-    pub uci_sequence_num: u32,
+    pub uci_sequence_num: u16,
 
     /// MacAddress of the sender of the application data.
     pub source_address: UwbAddress,
-
-    /// Identifier for the source FiraComponent.
-    pub source_fira_component: FiraComponent,
-
-    /// Identifier for the destination FiraComponent.
-    pub dest_fira_component: FiraComponent,
 
     /// Application Payload Data
     pub payload: Vec<u8>,
@@ -166,12 +160,10 @@ impl TryFrom<uwb_uci_packets::UciDataPacket> for DataRcvNotification {
     fn try_from(evt: uwb_uci_packets::UciDataPacket) -> std::result::Result<Self, Self::Error> {
         match evt.specialize() {
             uwb_uci_packets::UciDataPacketChild::UciDataRcv(evt) => Ok(DataRcvNotification {
-                session_id: evt.get_session_id(),
+                session_token: evt.get_session_token(),
                 status: evt.get_status(),
                 uci_sequence_num: evt.get_uci_sequence_number(),
                 source_address: UwbAddress::Extended(evt.get_source_mac_address().to_le_bytes()),
-                source_fira_component: evt.get_source_fira_component(),
-                dest_fira_component: evt.get_dest_fira_component(),
                 payload: evt.get_data().to_vec(),
             }),
             _ => {
@@ -242,13 +234,13 @@ impl TryFrom<uwb_uci_packets::SessionConfigNotification> for SessionNotification
         use uwb_uci_packets::SessionConfigNotificationChild;
         match evt.specialize() {
             SessionConfigNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
-                session_id: evt.get_session_id(),
+                session_token: evt.get_session_token(),
                 session_state: evt.get_session_state(),
                 reason_code: evt.get_reason_code(),
             }),
             SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt) => {
                 Ok(Self::UpdateControllerMulticastList {
-                    session_id: evt.get_session_id(),
+                    session_token: evt.get_session_token(),
                     remaining_multicast_list_size: evt.get_remaining_multicast_list_size() as usize,
                     status_list: evt.get_controlee_status().clone(),
                 })
@@ -270,12 +262,12 @@ impl TryFrom<uwb_uci_packets::SessionControlNotification> for SessionNotificatio
         match evt.specialize() {
             SessionControlNotificationChild::SessionInfoNtf(evt) => evt.try_into(),
             SessionControlNotificationChild::DataCreditNtf(evt) => Ok(Self::DataCredit {
-                session_id: evt.get_session_id(),
+                session_token: evt.get_session_token(),
                 credit_availability: evt.get_credit_availability(),
             }),
             SessionControlNotificationChild::DataTransferStatusNtf(evt) => {
                 Ok(Self::DataTransferStatus {
-                    session_id: evt.get_session_id(),
+                    session_token: evt.get_session_token(),
                     uci_sequence_number: evt.get_uci_sequence_number(),
                     status: evt.get_status(),
                 })
@@ -307,7 +299,16 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
             SessionInfoNtfChild::ShortMacOwrAoaSessionInfoNtf(evt) => {
                 if evt.get_owr_aoa_ranging_measurements().clone().len() == 1 {
                     RangingMeasurements::ShortAddressOwrAoa(
-                        evt.get_owr_aoa_ranging_measurements().clone().pop().unwrap(),
+                        match evt.get_owr_aoa_ranging_measurements().clone().pop() {
+                            Some(r) => r,
+                            None => {
+                                error!(
+                                    "Unable to parse ShortAddress OwrAoA measurement: {:?}",
+                                    evt
+                                );
+                                return Err(Error::BadParameters);
+                            }
+                        },
                     )
                 } else {
                     error!("Wrong count of OwrAoA ranging measurements {:?}", evt);
@@ -317,7 +318,16 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
             SessionInfoNtfChild::ExtendedMacOwrAoaSessionInfoNtf(evt) => {
                 if evt.get_owr_aoa_ranging_measurements().clone().len() == 1 {
                     RangingMeasurements::ExtendedAddressOwrAoa(
-                        evt.get_owr_aoa_ranging_measurements().clone().pop().unwrap(),
+                        match evt.get_owr_aoa_ranging_measurements().clone().pop() {
+                            Some(r) => r,
+                            None => {
+                                error!(
+                                    "Unable to parse ExtendedAddress OwrAoA measurement: {:?}",
+                                    evt
+                                );
+                                return Err(Error::BadParameters);
+                            }
+                        },
                     )
                 } else {
                     error!("Wrong count of OwrAoA ranging measurements {:?}", evt);
@@ -363,7 +373,7 @@ impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
         };
         Ok(Self::SessionInfo(SessionRangeData {
             sequence_number: evt.get_sequence_number(),
-            session_id: evt.get_session_id(),
+            session_token: evt.get_session_token(),
             current_ranging_interval_ms: evt.get_current_ranging_interval(),
             ranging_measurement_type: evt.get_ranging_measurement_type(),
             ranging_measurements,
@@ -450,7 +460,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::uci_packets::OwrAoaStatusCode;
 
     #[test]
     fn test_ranging_measurements_trait() {
@@ -538,7 +547,7 @@ mod tests {
         let extended_two_way_session_info_ntf =
             uwb_uci_packets::ExtendedMacTwoWaySessionInfoNtfBuilder {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 two_way_ranging_measurements: vec![extended_measurement.clone()],
@@ -556,7 +565,7 @@ mod tests {
             uci_notification_from_extended_two_way_session_info_ntf,
             UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::ExtendedAddressTwoWay(vec![
@@ -588,7 +597,7 @@ mod tests {
         };
         let short_two_way_session_info_ntf = uwb_uci_packets::ShortMacTwoWaySessionInfoNtfBuilder {
             sequence_number: 0x10,
-            session_id: 0x11,
+            session_token: 0x11,
             rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             two_way_ranging_measurements: vec![short_measurement.clone()],
@@ -606,7 +615,7 @@ mod tests {
             uci_notification_from_short_two_way_session_info_ntf,
             UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::TwoWay,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::ShortAddressTwoWay(vec![
@@ -622,7 +631,7 @@ mod tests {
     fn test_session_notification_casting_from_extended_mac_owr_aoa_session_info_ntf() {
         let extended_measurement = uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement {
             mac_address: 0x1234_5678_90ab,
-            status: OwrAoaStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             nlos: 0,
             frame_sequence_number: 1,
             block_index: 1,
@@ -634,7 +643,7 @@ mod tests {
         let extended_owr_aoa_session_info_ntf =
             uwb_uci_packets::ExtendedMacOwrAoaSessionInfoNtfBuilder {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 rcr_indicator: 0x12,
                 current_ranging_interval: 0x13,
                 owr_aoa_ranging_measurements: vec![extended_measurement.clone()],
@@ -652,7 +661,7 @@ mod tests {
             uci_notification_from_extended_owr_aoa_session_info_ntf,
             UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::OwrAoa,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::ExtendedAddressOwrAoa(
@@ -668,7 +677,7 @@ mod tests {
     fn test_session_notification_casting_from_short_mac_owr_aoa_session_info_ntf() {
         let short_measurement = uwb_uci_packets::ShortAddressOwrAoaRangingMeasurement {
             mac_address: 0x1234,
-            status: OwrAoaStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             nlos: 0,
             frame_sequence_number: 1,
             block_index: 1,
@@ -679,7 +688,7 @@ mod tests {
         };
         let short_owr_aoa_session_info_ntf = uwb_uci_packets::ShortMacOwrAoaSessionInfoNtfBuilder {
             sequence_number: 0x10,
-            session_id: 0x11,
+            session_token: 0x11,
             rcr_indicator: 0x12,
             current_ranging_interval: 0x13,
             owr_aoa_ranging_measurements: vec![short_measurement.clone()],
@@ -697,7 +706,7 @@ mod tests {
             uci_notification_from_short_owr_aoa_session_info_ntf,
             UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
                 sequence_number: 0x10,
-                session_id: 0x11,
+                session_token: 0x11,
                 ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::OwrAoa,
                 current_ranging_interval_ms: 0x13,
                 ranging_measurements: RangingMeasurements::ShortAddressOwrAoa(short_measurement),
@@ -710,7 +719,7 @@ mod tests {
     #[test]
     fn test_session_notification_casting_from_session_status_ntf() {
         let session_status_ntf = uwb_uci_packets::SessionStatusNtfBuilder {
-            session_id: 0x20,
+            session_token: 0x20,
             session_state: uwb_uci_packets::SessionState::SessionStateActive,
             reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
                 .into(),
@@ -725,7 +734,7 @@ mod tests {
         assert_eq!(
             uci_notification_from_session_status_ntf,
             UciNotification::Session(SessionNotification::Status {
-                session_id: 0x20,
+                session_token: 0x20,
                 session_state: uwb_uci_packets::SessionState::SessionStateActive,
                 reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
                     .into(),
@@ -737,18 +746,18 @@ mod tests {
     fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_packet()
     {
         let controlee_status = uwb_uci_packets::ControleeStatus {
-            mac_address: 0xc0a8,
+            mac_address: [0x0c, 0xa8],
             subsession_id: 0x30,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
         };
         let another_controlee_status = uwb_uci_packets::ControleeStatus {
-            mac_address: 0xc0a9,
+            mac_address: [0x0c, 0xa9],
             subsession_id: 0x31,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
         };
         let session_update_controller_multicast_list_ntf =
             uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
-                session_id: 0x32,
+                session_token: 0x32,
                 remaining_multicast_list_size: 0x2,
                 controlee_status: vec![controlee_status.clone(), another_controlee_status.clone()],
             }
@@ -764,7 +773,7 @@ mod tests {
         assert_eq!(
             uci_notification_from_session_update_controller_multicast_list_ntf,
             UciNotification::Session(SessionNotification::UpdateControllerMulticastList {
-                session_id: 0x32,
+                session_token: 0x32,
                 remaining_multicast_list_size: 0x2,
                 status_list: vec![controlee_status, another_controlee_status],
             })
