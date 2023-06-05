@@ -456,7 +456,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,8 +482,7 @@ mod tests {
                 rssi: u8::MAX,
             },
         ]);
-        let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
-        assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
+        assert_eq!(extended_ranging_measurements, extended_ranging_measurements.clone());
         let empty_extended_ranging_measurements =
             RangingMeasurements::ExtendedAddressTwoWay(vec![]);
         assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
