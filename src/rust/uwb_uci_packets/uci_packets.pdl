@@ -428,6 +428,7 @@ enum SessionType: 8 {
     FIRA_RANGING_SESSION = 0x00,
     FIRA_DATA_TRANSFER = 0x01,
     CCC = 0xA0,
+    DEVICE_TEST_MODE = 0xD0,
 }
 
 enum MessageType: 3 {
@@ -1339,5 +1340,9 @@ packet UciVendor_E_Notification : UciNotification (group_id = VENDOR_RESERVED_E)
 }
 
 packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F) {
+    _payload_,
+}
+
+packet TestNotification : UciNotification (group_id = TEST) {
     _payload_,
 }

@@ -186,6 +186,7 @@ enum SessionType {
   FIRA_RANGING_SESSION = 0;
   FIRA_DATA_TRANSFER = 1;
   CCC = 2;
+  DEVICE_TEST_MODE = 3;
 }
 
 // Represent uwb_uci_packets::UpdateMulticastListAction.
