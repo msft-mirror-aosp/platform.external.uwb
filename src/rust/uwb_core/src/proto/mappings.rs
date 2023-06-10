@@ -528,6 +528,7 @@ enum_mapping! {
     FIRA_RANGING_SESSION => FiraRangingSession,
     FIRA_DATA_TRANSFER => FiraDataTransfer,
     CCC => Ccc,
+    DEVICE_TEST_MODE => DeviceTestMode,
 }
 
 enum_mapping! {
