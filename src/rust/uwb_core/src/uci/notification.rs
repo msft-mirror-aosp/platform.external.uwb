@@ -209,6 +209,7 @@ impl TryFrom<uwb_uci_packets::UciNotification> for UciNotification {
             UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
+            UciNotificationChild::TestNotification(evt) => vendor_notification(evt.into()),
             _ => {
                 error!("Unknown UciNotification: {:?}", evt);
                 Err(Error::Unknown)
@@ -458,6 +459,10 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
                 uwb_uci_packets::UciVendor_F_NotificationChild::None => Ok(Vec::new()),
             }
         }
+        uwb_uci_packets::UciNotificationChild::TestNotification(evt) => match evt.specialize() {
+            uwb_uci_packets::TestNotificationChild::Payload(payload) => Ok(payload.to_vec()),
+            uwb_uci_packets::TestNotificationChild::None => Ok(Vec::new()),
+        },
         _ => {
             error!("Unknown UciVendor packet: {:?}", evt);
             Err(Error::Unknown)
@@ -820,6 +825,21 @@ mod tests {
                 gid: 0xa,
                 oid: 0x41,
                 payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_test_to_vendor_notification_casting() {
+        let test_notification: uwb_uci_packets::UciNotification =
+            uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
+        let test_uci_notification = UciNotification::try_from(test_notification).unwrap();
+        assert_eq!(
+            test_uci_notification,
+            UciNotification::Vendor(RawUciMessage {
+                gid: 0x0d, // per enum Test GroupId in uci_packets.pdl
+                oid: 0x22,
+                payload: vec![],
             })
         );
     }
