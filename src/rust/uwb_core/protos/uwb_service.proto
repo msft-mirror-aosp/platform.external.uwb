@@ -375,7 +375,7 @@ message FiraAppConfigParams {
   bytes device_mac_address = 6;
   repeated bytes dst_mac_address = 7;
   uint32 slot_duration_rstu = 8;
-  uint32 ranging_interval_ms = 9;
+  uint32 ranging_duration_ms = 9;
   MacFcsType mac_fcs_type = 10;
   RangingRoundControl ranging_round_control = 11;
   AoaResultRequest aoa_result_request = 12;
