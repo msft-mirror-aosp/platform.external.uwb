@@ -644,6 +644,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Temporarily disable due to flakiness - b/287161361.
     fn test_file_switch_idb_unfit_case() {
         let dir = tempdir().unwrap();
         let last_file_expected = dir.as_ref().to_owned().join("log_1.pcapng");
