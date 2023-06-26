@@ -15,6 +15,7 @@
 //! Implements UciLoggerPcapng, a UciLogger with PCAPNG format log.
 
 use log::warn;
+use tokio::sync::mpsc;
 use uwb_uci_packets::{UciControlPacket, UciDataPacket};
 
 use crate::uci::pcapng_block::{BlockBuilder, BlockOption, EnhancedPacketBlockBuilder};
@@ -38,6 +39,11 @@ impl UciLoggerPcapng {
         if self.log_writer.send_bytes(bytes).is_none() {
             warn!("UCI log: Logging to LogWritter failed.")
         }
+    }
+
+    /// Flush the logs.
+    pub fn flush(&mut self) -> Option<mpsc::UnboundedReceiver<bool>> {
+        self.log_writer.flush()
     }
 }
 
