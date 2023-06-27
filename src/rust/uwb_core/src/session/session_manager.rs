@@ -376,6 +376,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 session_token,
                 uci_sequence_number: _,
                 status: _,
+                tx_count: _,
             } => {
                 match self.active_sessions.get(&session_token) {
                     Some(_) => {
