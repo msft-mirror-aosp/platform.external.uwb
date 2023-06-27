@@ -85,6 +85,8 @@ pub enum SessionNotification {
         uci_sequence_number: u8,
         /// Data Transfer Status Code
         status: DataTransferNtfStatusCode,
+        /// Transmission count
+        tx_count: u8,
     },
 }
 
@@ -271,6 +273,7 @@ impl TryFrom<uwb_uci_packets::SessionControlNotification> for SessionNotificatio
                     session_token: evt.get_session_token(),
                     uci_sequence_number: evt.get_uci_sequence_number(),
                     status: evt.get_status(),
+                    tx_count: evt.get_tx_count(),
                 })
             }
             _ => {
