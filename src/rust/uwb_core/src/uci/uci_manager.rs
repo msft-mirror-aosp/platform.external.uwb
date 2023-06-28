@@ -1179,6 +1179,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         session_token: _,
                         uci_sequence_number: _,
                         status: _,
+                        tx_count: _,
                     } => {
                         // Reset the UciDataSnd Retryer since we received a DataTransferStatusNtf.
                         let _ = self.uci_data_snd_retryer.take();
@@ -1233,10 +1234,12 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 session_token,
                 uci_sequence_number,
                 status,
+                tx_count,
             } => Ok(SessionNotification::DataTransferStatus {
                 session_token: self.get_session_id(&session_token).await?,
                 uci_sequence_number,
                 status,
+                tx_count,
             }),
             SessionNotification::DataCredit { session_token, credit_availability } => {
                 Ok(SessionNotification::DataCredit {
@@ -2760,6 +2763,7 @@ mod tests {
             0x01, 0x02, 0x03, // AppData
         ];
         let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+        let tx_count = 0x00;
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
             |mut hal| async move {
@@ -2776,6 +2780,7 @@ mod tests {
                         // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
                         uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));
@@ -2819,6 +2824,7 @@ mod tests {
         ];
         let mut expected_data_snd_payload_fragment_2 = Vec::new();
         let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+        let tx_count = 0x00;
 
         // Setup the app data for both the Tx data packet and expected packet fragments.
         let app_data_len_fragment_1 = 255 - expected_data_snd_payload_fragment_1.len();
@@ -2865,6 +2871,7 @@ mod tests {
                         // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
                         uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd_fragment_2, ntfs, Ok(()));
@@ -2892,6 +2899,7 @@ mod tests {
         let oid = 0x0;
         let session_id = 0x5;
         let session_token = 0x5;
+        let tx_count = 0x01;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
         let uci_sequence_number: u16 = 0xa;
         let app_data = vec![0x01, 0x02, 0x03];
@@ -2927,6 +2935,7 @@ mod tests {
                         // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
                         uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));

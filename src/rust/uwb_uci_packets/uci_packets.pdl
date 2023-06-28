@@ -193,7 +193,7 @@ enum AppConfigTlvType : 8 {
     DEVICE_MAC_ADDRESS = 0x06,
     DST_MAC_ADDRESS = 0x07,
     SLOT_DURATION = 0x08,
-    RANGING_INTERVAL = 0x09,
+    RANGING_DURATION = 0x09,
     STS_INDEX = 0x0A,
     MAC_FCS_TYPE = 0x0B,
     RANGING_ROUND_CONTROL = 0x0C,
@@ -209,6 +209,7 @@ enum AppConfigTlvType : 8 {
     PSDU_DATA_RATE = 0x16,
     PREAMBLE_DURATION = 0x17,
     LINK_LAYER_MODE = 0x18,
+    DATA_REPETITION_COUNT = 0x19,
     RANGING_TIME_STRUCT = 0x1A,
     SLOTS_PER_RR = 0x1B,
     TX_ADAPTIVE_PAYLOAD_POWER = 0x1C,
@@ -237,6 +238,8 @@ enum AppConfigTlvType : 8 {
     UL_TDOA_TX_INTERVAL = 0x33,
     UL_TDOA_RANDOM_WINDOW = 0x34,
     STS_LENGTH = 0x35,
+    SUSPEND_RANGING_ROUNDS = 0x36,
+    UL_TDOA_NTF_REPORT_CONFIG = 0x37,
     UL_TDOA_DEVICE_ID = 0x38,
     UL_TDOA_TX_TIMESTAMP = 0x39,
     MIN_FRAMES_PER_RR = 0x3A,
@@ -245,7 +248,8 @@ enum AppConfigTlvType : 8 {
     RFU_APP_CFG_TLV_TYPE_RANGE_1 = 0x3D..0x44,
     SESSION_KEY = 0x45,
     SUBSESSION_KEY = 0x46,
-    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x47..0x9F,
+    SESSION_DATA_TRANSFER_STATUS_NTF_CONFIG = 0x47,
+    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x48..0x9F,
 
     VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_1 = 0xA0..0xDF {
         // CCC specific
@@ -426,6 +430,7 @@ enum SessionType: 8 {
     FIRA_RANGING_SESSION = 0x00,
     FIRA_DATA_TRANSFER = 0x01,
     CCC = 0xA0,
+    DEVICE_TEST_MODE = 0xD0,
 }
 
 enum MessageType: 3 {
@@ -970,11 +975,11 @@ packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // S
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
     uci_sequence_number: 8,
     status: DataTransferNtfStatusCode,
-    // TODO(b/269779288): Add the tx_count field for implementing the DATA_REPETITION added in CR490.
+    tx_count: 8,
 }
 
 test DataTransferStatusNtf {
-    "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00",
+    "\x62\x05\x00\x06\x00\x00\x00\x00\x00\x00\x01\x01\x00\x00",
 }
 
 packet SessionQueryMaxDataSizeCmd : SessionConfigCommand (opcode = 0xB) { //QUERY_MAX_DATA_SIZE
@@ -1337,5 +1342,9 @@ packet UciVendor_E_Notification : UciNotification (group_id = VENDOR_RESERVED_E)
 }
 
 packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F) {
+    _payload_,
+}
+
+packet TestNotification : UciNotification (group_id = TEST) {
     _payload_,
 }

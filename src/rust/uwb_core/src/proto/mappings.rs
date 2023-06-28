@@ -528,6 +528,7 @@ enum_mapping! {
     FIRA_RANGING_SESSION => FiraRangingSession,
     FIRA_DATA_TRANSFER => FiraDataTransfer,
     CCC => Ccc,
+    DEVICE_TEST_MODE => DeviceTestMode,
 }
 
 enum_mapping! {
@@ -996,7 +997,7 @@ impl From<FiraAppConfigParams> for ProtoFiraAppConfigParams {
                 .into(),
         );
         res.set_slot_duration_rstu((*item.slot_duration_rstu()).into());
-        res.set_ranging_interval_ms(*item.ranging_interval_ms());
+        res.set_ranging_duration_ms(*item.ranging_duration_ms());
         res.set_mac_fcs_type((*item.mac_fcs_type()).into());
         res.set_ranging_round_control(item.ranging_round_control().clone().into());
         res.set_aoa_result_request((*item.aoa_result_request()).into());
@@ -1073,7 +1074,7 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .try_into()
                     .map_err(|_| "Failed to convert slot_duration_rstu")?,
             )
-            .ranging_interval_ms(item.ranging_interval_ms)
+            .ranging_duration_ms(item.ranging_duration_ms)
             .mac_fcs_type(item.mac_fcs_type.into())
             .ranging_round_control(
                 item.ranging_round_control.take().ok_or("ranging_round_control is empty")?.into(),
