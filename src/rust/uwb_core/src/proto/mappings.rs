@@ -29,8 +29,8 @@ use crate::params::fira_app_config_params::{
 };
 use crate::params::uci_packets::{
     Controlee, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode, SessionState, SessionType,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement, PowerStats,
+    RangingMeasurementType, ReasonCode, SessionState, SessionType,
     ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
@@ -42,8 +42,7 @@ use crate::proto::bindings::{
     FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
     KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
     MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
-    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
-    OwrAoaStatusCode as ProtoOwrAoaStatusCode, PowerStats as ProtoPowerStats,
+    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement, PowerStats as ProtoPowerStats,
     PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
     PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
     RangingMeasurementType as ProtoRangingMeasurementType,
@@ -167,9 +166,6 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED => {
                     StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded
             }
-            ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR => {
-                StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator
-            }
             ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST =>
                     StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList,
             ProtoStatusCode::UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED => {
@@ -256,9 +252,6 @@ impl From<StatusCode> for ProtoStatusCode {
             StatusCode::UciStatusErrorNumberOfActiveRangingRoundsExceeded => {
                 ProtoStatusCode::UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED
             }
-            StatusCode::UciStatusErrorRoundIndexNotSetAsInitiator => {
-                ProtoStatusCode::UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR
-            }
             StatusCode::UciStatusErrorDlTdoaDeviceAddressNotMatchingInReplyTimeList => {
                 ProtoStatusCode::UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST
             }
@@ -280,12 +273,6 @@ impl From<StatusCode> for ProtoStatusCode {
             _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
         }
     }
-}
-
-enum_mapping! {
-    ProtoOwrAoaStatusCode => OwrAoaStatusCode,
-    UCI_STATUS_SUCCESS => UciStatusSuccess,
-    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT => UciStatusInterFrameIntervalTimeout,
 }
 
 enum_mapping! {
@@ -541,6 +528,7 @@ enum_mapping! {
     FIRA_RANGING_SESSION => FiraRangingSession,
     FIRA_DATA_TRANSFER => FiraDataTransfer,
     CCC => Ccc,
+    DEVICE_TEST_MODE => DeviceTestMode,
 }
 
 enum_mapping! {
@@ -766,7 +754,7 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasuremen
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address.into());
-        result.set_owr_aoa_status_code(item.status.into());
+        result.set_status(item.status.into());
         result.set_nlos(item.nlos.into());
         result.set_block_index(item.block_index.into());
         result.set_frame_sequence_number(item.frame_sequence_number.into());
@@ -782,7 +770,7 @@ impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasure
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
         result.set_mac_address(item.mac_address);
-        result.set_owr_aoa_status_code(item.status.into());
+        result.set_status(item.status.into());
         result.set_nlos(item.nlos.into());
         result.set_block_index(item.block_index.into());
         result.set_frame_sequence_number(item.frame_sequence_number.into());
@@ -876,7 +864,7 @@ impl From<SessionRangeData> for ProtoSessionRangeData {
     fn from(item: SessionRangeData) -> Self {
         let mut result = Self::new();
         result.set_sequence_number(item.sequence_number);
-        result.set_session_id(item.session_id);
+        result.set_session_id(item.session_token);
         result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
         result.set_ranging_measurement_type(item.ranging_measurement_type.into());
         match to_proto_ranging_measurements(item.ranging_measurements) {
@@ -971,8 +959,7 @@ impl TryFrom<ProtoControlee> for Controlee {
     type Error = String;
     fn try_from(item: ProtoControlee) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            short_address: item
-                .short_address
+            short_address: item.short_address.to_ne_bytes()[0..2]
                 .try_into()
                 .map_err(|_| "Failed to convert short_address")?,
             subsession_id: item.subsession_id,
@@ -1010,7 +997,7 @@ impl From<FiraAppConfigParams> for ProtoFiraAppConfigParams {
                 .into(),
         );
         res.set_slot_duration_rstu((*item.slot_duration_rstu()).into());
-        res.set_ranging_interval_ms(*item.ranging_interval_ms());
+        res.set_ranging_duration_ms(*item.ranging_duration_ms());
         res.set_mac_fcs_type((*item.mac_fcs_type()).into());
         res.set_ranging_round_control(item.ranging_round_control().clone().into());
         res.set_aoa_result_request((*item.aoa_result_request()).into());
@@ -1087,7 +1074,7 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .try_into()
                     .map_err(|_| "Failed to convert slot_duration_rstu")?,
             )
-            .ranging_interval_ms(item.ranging_interval_ms)
+            .ranging_duration_ms(item.ranging_duration_ms)
             .mac_fcs_type(item.mac_fcs_type.into())
             .ranging_round_control(
                 item.ranging_round_control.take().ok_or("ranging_round_control is empty")?.into(),
