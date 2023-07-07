@@ -26,14 +26,14 @@ pub(super) enum UciMessage {
     Notification(UciNotification),
 }
 
-impl TryFrom<uwb_uci_packets::UciPacketPacket> for UciMessage {
+impl TryFrom<uwb_uci_packets::UciControlPacket> for UciMessage {
     type Error = Error;
-    fn try_from(packet: uwb_uci_packets::UciPacketPacket) -> Result<Self, Self::Error> {
+    fn try_from(packet: uwb_uci_packets::UciControlPacket) -> Result<Self, Self::Error> {
         match packet.specialize() {
-            uwb_uci_packets::UciPacketChild::UciResponse(evt) => {
+            uwb_uci_packets::UciControlPacketChild::UciResponse(evt) => {
                 Ok(UciMessage::Response(evt.try_into()?))
             }
-            uwb_uci_packets::UciPacketChild::UciNotification(evt) => {
+            uwb_uci_packets::UciControlPacketChild::UciNotification(evt) => {
                 Ok(UciMessage::Notification(evt.try_into()?))
             }
             _ => {

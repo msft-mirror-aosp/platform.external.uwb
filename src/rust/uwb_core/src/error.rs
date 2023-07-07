@@ -22,6 +22,9 @@ pub enum Error {
     /// current state.
     #[error("Bad parameters")]
     BadParameters,
+    /// Error across Foreign Function Interface.
+    #[error("Error across Foreign Function Interface")]
+    ForeignFunctionInterface,
     /// The maximum number of sessions has been reached.
     #[error("The maximum number of sessions has been reached")]
     MaxSessionsExceeded,
@@ -43,12 +46,15 @@ pub enum Error {
     /// Duplicated SessionId.
     #[error("Duplicated SessionId")]
     DuplicatedSessionId,
+    /// Packet Tx Error
+    #[error("The packet send failed with an error")]
+    PacketTxError,
     /// The unknown error.
     #[error("The unknown error")]
     Unknown,
 
     /// The result of the mock method is not assigned
-    #[cfg(test)]
+    #[cfg(any(test, feature = "mock-utils"))]
     #[error("The result of the mock method is not assigned")]
     MockUndefined,
 }

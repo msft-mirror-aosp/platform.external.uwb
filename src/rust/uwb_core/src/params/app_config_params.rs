@@ -26,7 +26,7 @@ pub(super) type AppConfigTlvMap = HashMap<AppConfigTlvType, Vec<u8>>;
 /// The application configuration parameters of the UWB session. It is used to generate the
 /// parameters for the SESSION_SET_APP_CONFIG_CMD, or converted from the result of the
 /// SESSION_GET_APP_CONFIG_CMD.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppConfigParams {
     Fira(FiraAppConfigParams),
     Ccc(CccAppConfigParams),
@@ -51,7 +51,7 @@ impl AppConfigParams {
     }
 
     fn config_map_to_tlvs(config_map: AppConfigTlvMap) -> Vec<AppConfigTlv> {
-        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv { cfg_id, v }).collect()
+        config_map.into_iter().map(|(cfg_id, v)| AppConfigTlv::new(cfg_id, v)).collect()
     }
 
     pub(super) fn generate_config_map(&self) -> AppConfigTlvMap {

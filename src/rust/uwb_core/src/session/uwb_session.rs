@@ -24,8 +24,8 @@ use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, ControleeStatus, MulticastUpdateStatusCode, SessionId, SessionState, SessionType,
-    UpdateMulticastListAction,
+    Controlee, ControleeStatus, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
+    SessionType, UpdateMulticastListAction,
 };
 use crate::uci::error::status_code_to_result;
 use crate::uci::uci_manager::UciManager;
@@ -102,6 +102,10 @@ impl UwbSession {
         ));
     }
 
+    pub fn params(&mut self, result_sender: ResponseSender) {
+        let _ = self.cmd_sender.send((Command::GetParams, result_sender));
+    }
+
     pub fn on_session_status_changed(&mut self, state: SessionState) {
         let _ = self.state_sender.send(state);
     }
@@ -160,7 +164,8 @@ impl<T: UciManager> UwbSessionActor<T> {
                                         notf_receiver,
                                     )
                                     .await
-                                }
+                                },
+                                Command::GetParams => self.params().await,
                             };
                             let _ = result_sender.send(result);
                         }
@@ -173,6 +178,8 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn initialize(&mut self, params: AppConfigParams) -> Result<Response> {
         debug_assert!(*self.state_receiver.borrow() == SessionState::SessionStateDeinit);
 
+        // TODO(b/279669973): Support CR-461 fully here. Need to wait for session init rsp.
+        // But, that does not seem to be fully plumbed up in session_manager yet.
         self.uci_manager.session_init(self.session_id, self.session_type).await?;
         self.wait_state(SessionState::SessionStateInit).await?;
 
@@ -211,8 +218,10 @@ impl<T: UciManager> UwbSessionActor<T> {
                             error!("Failed to get CCC app config after start ranging: {:?}", e);
                             e
                         })?;
-                    let config_map =
-                        HashMap::from_iter(tlvs.into_iter().map(|tlv| (tlv.cfg_id, tlv.v)));
+                    let config_map = HashMap::from_iter(tlvs.into_iter().map(|tlv| {
+                        let tlv = tlv.into_inner();
+                        (tlv.cfg_id, tlv.v.clone())
+                    }));
                     let params = CccStartedAppConfigParams::from_config_map(config_map)
                         .ok_or_else(|| {
                             error!("Failed to generate CccStartedAppConfigParams");
@@ -299,7 +308,11 @@ impl<T: UciManager> UwbSessionActor<T> {
         }
 
         self.uci_manager
-            .session_update_controller_multicast_list(self.session_id, action, controlees)
+            .session_update_controller_multicast_list(
+                self.session_id,
+                action,
+                Controlees::NoSessionKey(controlees),
+            )
             .await?;
 
         // Wait for the notification of the update status.
@@ -352,6 +365,13 @@ impl<T: UciManager> UwbSessionActor<T> {
 
         Ok(())
     }
+
+    async fn params(&mut self) -> Result<Response> {
+        match &self.params {
+            None => Err(Error::BadParameters),
+            Some(params) => Ok(Response::AppConfigParams(params.clone())),
+        }
+    }
 }
 
 enum Command {
@@ -369,4 +389,5 @@ enum Command {
         controlees: Vec<Controlee>,
         notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
     },
+    GetParams,
 }
