@@ -74,10 +74,12 @@ fn filter_uci_command(cmd: UciControlPacket) -> UciControlPacket {
         UciControlPacketChild::UciCommand(control_cmd) => match control_cmd.specialize() {
             UciCommandChild::SessionConfigCommand(session_cmd) => match session_cmd.specialize() {
                 SessionConfigCommandChild::SessionSetAppConfigCmd(set_config_cmd) => {
-                    let session_id = set_config_cmd.get_session_id();
+                    let session_token = set_config_cmd.get_session_token();
                     let tlvs = set_config_cmd.get_tlvs().to_owned();
                     let filtered_tlvs = tlvs.into_iter().map(filter_tlv).collect();
-                    SessionSetAppConfigCmdBuilder { session_id, tlvs: filtered_tlvs }.build().into()
+                    SessionSetAppConfigCmdBuilder { session_token, tlvs: filtered_tlvs }
+                        .build()
+                        .into()
                 }
                 _ => session_cmd.into(),
             },
@@ -214,7 +216,7 @@ mod tests {
     #[test]
     fn test_log_command_filter() -> Result<()> {
         let set_config_cmd = UciCommand::SessionSetAppConfig {
-            session_id: 0x1,
+            session_token: 0x1,
             config_tlvs: vec![
                 // Filtered to 0-filled of same length
                 AppConfigTlv { cfg_id: AppConfigTlvType::VendorId, v: vec![0, 1, 2] }.into(),
