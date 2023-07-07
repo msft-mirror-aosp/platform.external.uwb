@@ -17,12 +17,12 @@ use std::convert::{TryFrom, TryInto};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawUciMessage, SessionState, SessionUpdateDtTagRangingRoundsResponse,
-    SetAppConfigResponse, StatusCode, UciControlPacket,
+    PowerStats, RawUciMessage, SessionHandle, SessionState,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) enum UciResponse {
     SetLoggerMode,
     SetNotification,
@@ -33,7 +33,8 @@ pub(super) enum UciResponse {
     CoreGetCapsInfo(Result<Vec<CapTlv>>),
     CoreSetConfig(CoreSetConfigResponse),
     CoreGetConfig(Result<Vec<DeviceConfigTlv>>),
-    SessionInit(Result<()>),
+    CoreQueryTimeStamp(Result<u64>),
+    SessionInit(Result<Option<SessionHandle>>),
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
@@ -59,6 +60,7 @@ impl UciResponse {
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetCapsInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetConfig(result) => Self::matches_result_retry(result),
+            Self::CoreQueryTimeStamp(result) => Self::matches_result_retry(result),
             Self::SessionInit(result) => Self::matches_result_retry(result),
             Self::SessionDeinit(result) => Self::matches_result_retry(result),
             Self::SessionGetAppConfig(result) => Self::matches_result_retry(result),
@@ -141,6 +143,9 @@ impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
             CoreResponseChild::GetConfigRsp(evt) => Ok(UciResponse::CoreGetConfig(
                 status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
             )),
+            CoreResponseChild::CoreQueryTimeStampRsp(evt) => Ok(UciResponse::CoreQueryTimeStamp(
+                status_code_to_result(evt.get_status()).map(|_| evt.get_timeStamp()),
+            )),
             _ => Err(Error::Unknown),
         }
     }
@@ -154,8 +159,11 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
         use uwb_uci_packets::SessionConfigResponseChild;
         match evt.specialize() {
             SessionConfigResponseChild::SessionInitRsp(evt) => {
-                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status())))
+                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status()).map(|_| None)))
             }
+            SessionConfigResponseChild::SessionInitRsp_V2(evt) => Ok(UciResponse::SessionInit(
+                status_code_to_result(evt.get_status()).map(|_| Some(evt.get_session_handle())),
+            )),
             SessionConfigResponseChild::SessionDeinitRsp(evt) => {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
