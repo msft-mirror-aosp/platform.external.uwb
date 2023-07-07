@@ -178,6 +178,8 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn initialize(&mut self, params: AppConfigParams) -> Result<Response> {
         debug_assert!(*self.state_receiver.borrow() == SessionState::SessionStateDeinit);
 
+        // TODO(b/279669973): Support CR-461 fully here. Need to wait for session init rsp.
+        // But, that does not seem to be fully plumbed up in session_manager yet.
         self.uci_manager.session_init(self.session_id, self.session_type).await?;
         self.wait_state(SessionState::SessionStateInit).await?;
 
