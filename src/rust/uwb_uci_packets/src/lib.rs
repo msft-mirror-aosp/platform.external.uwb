@@ -39,8 +39,19 @@ pub const UCI_PACKET_HEADER_LEN: usize = 7;
 const UCI_DATA_SND_PACKET_HEADER_LEN: usize = 6;
 
 // Opcode field byte position (within UCI packet header) and mask (of bits to be used).
-const UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION: usize = 1;
-const UCI_CONTROL_PACKET_HEADER_OPCODE_MASK: u8 = 0x3F;
+const UCI_HEADER_MT_BYTE_POSITION: usize = 0;
+const UCI_HEADER_MT_BIT_SHIFT: u8 = 5;
+const UCI_HEADER_MT_MASK: u8 = 0x7;
+
+const UCI_HEADER_PBF_BYTE_POSITION: usize = 0;
+const UCI_HEADER_PBF_BIT_SHIFT: u8 = 4;
+const UCI_HEADER_PBF_MASK: u8 = 0x1;
+
+const UCI_CONTROL_HEADER_GID_BYTE_POSITION: usize = 0;
+const UCI_CONTROL_HEADER_GID_MASK: u8 = 0xF;
+
+const UCI_CONTROL_HEADER_OID_BYTE_POSITION: usize = 1;
+const UCI_CONTROL_HEADER_OID_MASK: u8 = 0x3F;
 
 #[derive(Debug, Clone, PartialEq, FromPrimitive)]
 pub enum TimeStampLength {
@@ -295,12 +306,28 @@ impl UciControlPacketHeader {
     }
 }
 
+// Helper methods to extract the UCI Packet header fields.
+fn get_mt_from_uci_packet(packet: &[u8]) -> u8 {
+    (packet[UCI_HEADER_MT_BYTE_POSITION] >> UCI_HEADER_MT_BIT_SHIFT) & UCI_HEADER_MT_MASK
+}
+
+fn get_pbf_from_uci_packet(packet: &[u8]) -> u8 {
+    (packet[UCI_HEADER_PBF_BYTE_POSITION] >> UCI_HEADER_PBF_BIT_SHIFT) & UCI_HEADER_PBF_MASK
+}
+
+fn get_gid_from_uci_control_packet(packet: &[u8]) -> u8 {
+    packet[UCI_CONTROL_HEADER_GID_BYTE_POSITION] & UCI_CONTROL_HEADER_GID_MASK
+}
+
+fn get_oid_from_uci_control_packet(packet: &[u8]) -> u8 {
+    packet[UCI_CONTROL_HEADER_OID_BYTE_POSITION] & UCI_CONTROL_HEADER_OID_MASK
+}
+
 // This function parses the packet bytes to return the Control Packet Opcode (OID) field. The
 // caller should check that the packet bytes represent a UCI control packet. The code will not
 // panic because UciPacketHal::to_bytes() should always be larger then the place we access.
 fn get_opcode_from_uci_control_packet(packet: &UciPacketHal) -> u8 {
-    packet.clone().to_bytes()[UCI_CONTROL_PACKET_HEADER_OPCODE_BYTE_POSITION]
-        & UCI_CONTROL_PACKET_HEADER_OPCODE_MASK
+    get_oid_from_uci_control_packet(&packet.clone().to_bytes())
 }
 
 fn is_uci_control_packet(message_type: MessageType) -> bool {
@@ -383,6 +410,25 @@ impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
             .build()
             .to_bytes(),
         )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RawUciControlPacket {
+    pub mt: u8,
+    pub gid: u8,
+    pub oid: u8,
+    pub payload: Vec<u8>,
+}
+
+impl RawUciControlPacket {
+    // Match the GID and OID to confirm the UCI packet (represented by header) is
+    // the same as the stored signature. We don't match the MT because they can be
+    // different (eg: CMD/RSP pair).
+    pub fn is_same_signature_bytes(&self, header: &[u8]) -> bool {
+        let gid = get_gid_from_uci_control_packet(header);
+        let oid = get_oid_from_uci_control_packet(header);
+        gid == self.gid && oid == self.oid
     }
 }
 
@@ -543,15 +589,42 @@ pub struct PacketDefrager {
     control_fragment_cache: Vec<UciPacketHal>,
     // TODO(b/261762781): Prefer this to be UciDataPacketHal
     data_fragment_cache: Vec<UciPacketHal>,
+    // Raw packet payload bytes cache
+    raw_fragment_cache: Vec<u8>,
 }
 
 pub enum UciDefragPacket {
     Control(UciControlPacket),
     Data(UciDataPacket),
+    Raw(Result<()>, RawUciControlPacket),
 }
 
 impl PacketDefrager {
-    pub fn defragment_packet(&mut self, msg: &[u8]) -> Option<UciDefragPacket> {
+    pub fn defragment_packet(
+        &mut self,
+        msg: &[u8],
+        last_raw_cmd: Option<RawUciControlPacket>,
+    ) -> Option<UciDefragPacket> {
+        if let Some(raw_cmd) = last_raw_cmd {
+            let mt_u8 = get_mt_from_uci_packet(msg);
+            match MessageType::try_from(u8::from(mt_u8)) {
+                Ok(mt) => match mt {
+                    // Parse only a UCI response packet as a Raw packet.
+                    MessageType::Response => {
+                        return self.defragment_raw_uci_response_packet(msg, raw_cmd);
+                    }
+                    _ => { /* Fallthrough to de-frag as a normal UCI packet below */ }
+                },
+                Err(_) => {
+                    error!("Rx packet from HAL has unrecognized MT={}", mt_u8);
+                    return Some(UciDefragPacket::Raw(
+                        Err(Error::InvalidPacketError),
+                        RawUciControlPacket { mt: mt_u8, gid: 0, oid: 0, payload: Vec::new() },
+                    ));
+                }
+            };
+        }
+
         let packet = UciPacketHal::parse(msg)
             .or_else(|e| {
                 error!("Failed to parse packet: {:?}", e);
@@ -598,12 +671,52 @@ impl PacketDefrager {
             }
         }
     }
+
+    fn defragment_raw_uci_response_packet(
+        &mut self,
+        msg: &[u8],
+        raw_cmd: RawUciControlPacket,
+    ) -> Option<UciDefragPacket> {
+        let mt_u8 = get_mt_from_uci_packet(msg);
+        let pbf = get_pbf_from_uci_packet(msg);
+        let gid = get_gid_from_uci_control_packet(msg);
+        let oid = get_oid_from_uci_control_packet(msg);
+        if raw_cmd.is_same_signature_bytes(msg) {
+            // Store only the packet payload bytes (UCI header should not be stored).
+            self.raw_fragment_cache.extend_from_slice(&msg[UCI_PACKET_HAL_HEADER_LEN..]);
+
+            if pbf == u8::from(PacketBoundaryFlag::NotComplete) {
+                return None;
+            }
+
+            // All fragments received, defragment and return the Raw packet's payload bytes.
+            return Some(UciDefragPacket::Raw(
+                Ok(()),
+                RawUciControlPacket {
+                    mt: mt_u8,
+                    gid,
+                    oid,
+                    payload: self.raw_fragment_cache.drain(..).collect(),
+                },
+            ));
+        } else {
+            error!(
+                "Rx packet from HAL (MT={}, PBF={}, GID={}, OID={}) has non-matching\
+                   RawCmd signature",
+                mt_u8, pbf, gid, oid
+            );
+            return Some(UciDefragPacket::Raw(
+                Err(Error::InvalidPacketError),
+                RawUciControlPacket { mt: mt_u8, gid, oid, payload: Vec::new() },
+            ));
+        }
+    }
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ParsedDiagnosticNtfPacket {
-    session_id: u32,
+    session_token: u32,
     sequence_number: u32,
     frame_reports: Vec<ParsedFrameReport>,
 }
@@ -620,7 +733,7 @@ pub struct ParsedFrameReport {
 }
 
 pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDiagnosticNtfPacket> {
-    let session_id = evt.get_session_id();
+    let session_token = evt.get_session_token();
     let sequence_number = evt.get_sequence_number();
     let mut parsed_frame_reports = Vec::new();
     for report in evt.get_frame_reports() {
@@ -660,7 +773,7 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
         });
     }
     Ok(ParsedDiagnosticNtfPacket {
-        session_id,
+        session_token,
         sequence_number,
         frame_reports: parsed_frame_reports,
     })
@@ -676,8 +789,7 @@ pub enum Controlees {
 // TODO(ziyiw): Replace these functions after making uwb_uci_packets::Controlee::write_to() public.
 pub fn write_controlee(controlee: &Controlee) -> BytesMut {
     let mut buffer = BytesMut::new();
-    let short_address = controlee.short_address;
-    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    buffer.extend_from_slice(&controlee.short_address);
     let subsession_id = controlee.subsession_id;
     buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
     buffer
@@ -685,8 +797,7 @@ pub fn write_controlee(controlee: &Controlee) -> BytesMut {
 
 pub fn write_controlee_2_0_16byte(controlee: &Controlee_V2_0_16_Byte_Version) -> BytesMut {
     let mut buffer = BytesMut::new();
-    let short_address = controlee.short_address;
-    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    buffer.extend_from_slice(&controlee.short_address);
     let subsession_id = controlee.subsession_id;
     buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
     buffer.extend_from_slice(&controlee.subsession_key);
@@ -695,8 +806,7 @@ pub fn write_controlee_2_0_16byte(controlee: &Controlee_V2_0_16_Byte_Version) ->
 
 pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) -> BytesMut {
     let mut buffer = BytesMut::new();
-    let short_address = controlee.short_address;
-    buffer.extend_from_slice(&short_address.to_le_bytes()[0..2]);
+    buffer.extend_from_slice(&controlee.short_address);
     let subsession_id = controlee.subsession_id;
     buffer.extend_from_slice(&subsession_id.to_le_bytes()[0..4]);
     buffer.extend_from_slice(&controlee.subsession_key);
@@ -708,7 +818,7 @@ pub fn write_controlee_2_0_32byte(controlee: &Controlee_V2_0_32_Byte_Version) ->
 /// This function can build the packet with/without message control, which
 /// is indicated by action parameter.
 pub fn build_session_update_controller_multicast_list_cmd(
-    session_id: u32,
+    session_token: u32,
     action: UpdateMulticastListAction,
     controlees: Controlees,
 ) -> Result<SessionUpdateControllerMulticastListCmd> {
@@ -742,7 +852,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
         _ => return Err(Error::InvalidPacketError),
     }
     Ok(SessionUpdateControllerMulticastListCmdBuilder {
-        session_id,
+        session_token,
         action,
         payload: Some(controlees_buf.freeze()),
     }
@@ -790,9 +900,12 @@ mod tests {
         let frame_report =
             FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
         frame_reports.push(frame_report);
-        let packet =
-            AndroidRangeDiagnosticsNtfBuilder { session_id: 1, sequence_number: 1, frame_reports }
-                .build();
+        let packet = AndroidRangeDiagnosticsNtfBuilder {
+            session_token: 1,
+            sequence_number: 1,
+            frame_reports,
+        }
+        .build();
         let mut parsed_packet = parse_diagnostics_ntf(packet).unwrap();
         let parsed_frame_report = parsed_packet.frame_reports.pop().unwrap();
         assert_eq!(rssi_vec, parsed_frame_report.rssi);
@@ -803,7 +916,8 @@ mod tests {
 
     #[test]
     fn test_write_controlee() {
-        let controlee: Controlee = Controlee { short_address: 2, subsession_id: 3 };
+        let short_address: [u8; 2] = [2, 3];
+        let controlee: Controlee = Controlee { short_address, subsession_id: 3 };
         let bytes = write_controlee(&controlee);
         let parsed_controlee = Controlee::parse(&bytes).unwrap();
         assert_eq!(controlee, parsed_controlee);
@@ -811,7 +925,8 @@ mod tests {
 
     #[test]
     fn test_build_multicast_update_packet() {
-        let controlee = Controlee { short_address: 0x1234, subsession_id: 0x1324_3546 };
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlee = Controlee { short_address, subsession_id: 0x1324_3546 };
         let packet: UciControlPacket = build_session_update_controller_multicast_list_cmd(
             0x1425_3647,
             UpdateMulticastListAction::AddControlee,
@@ -826,7 +941,7 @@ mod tests {
             vec![
                 0x21, 0x07, 0x00, 0x0c, // 2(packet info), RFU, payload length(12)
                 0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
-                0x00, 0x01, 0x34, 0x12, // action, # controlee, 2(short address (LE))
+                0x00, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
                 0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
             ]
         );

@@ -27,9 +27,9 @@ fn main() {
         return;
     }
 
-    // The binary should be compiled by `m pdl` before calling cargo.
+    // The binary should be compiled by `m pdlc` before calling cargo.
     let output = Command::new("env")
-        .arg("pdl")
+        .arg("pdlc")
         .arg("--output-format")
         .arg("rust")
         .arg("uci_packets.pdl")
