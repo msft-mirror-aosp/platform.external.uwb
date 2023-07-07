@@ -14,12 +14,20 @@
 
 //! This module provides the public interface of the UWB core library.
 
+#[cfg(feature = "proto")]
+pub mod proto_uwb_service;
 pub mod uwb_service;
 pub mod uwb_service_builder;
+pub mod uwb_service_callback_builder;
 
 #[cfg(test)]
 mod mock_uwb_service_callback;
 
 // Re-export the public elements.
-pub use uwb_service::{UwbService, UwbServiceCallback};
-pub use uwb_service_builder::UwbServiceBuilder;
+#[cfg(feature = "proto")]
+pub use proto_uwb_service::{ProtoUwbService, ProtoUwbServiceCallback};
+pub use uwb_service::{
+    NopUwbServiceCallback, UwbService, UwbServiceCallback, UwbServiceCallbackBuilder,
+};
+pub use uwb_service_builder::{default_runtime, UwbServiceBuilder};
+pub use uwb_service_callback_builder::UwbServiceCallbackSendBuilder;
