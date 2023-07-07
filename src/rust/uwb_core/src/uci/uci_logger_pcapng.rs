@@ -15,7 +15,8 @@
 //! Implements UciLoggerPcapng, a UciLogger with PCAPNG format log.
 
 use log::warn;
-use uwb_uci_packets::UciPacketPacket;
+use tokio::sync::mpsc;
+use uwb_uci_packets::{UciControlPacket, UciDataPacket};
 
 use crate::uci::pcapng_block::{BlockBuilder, BlockOption, EnhancedPacketBlockBuilder};
 use crate::uci::pcapng_uci_logger_factory::LogWriter;
@@ -39,10 +40,15 @@ impl UciLoggerPcapng {
             warn!("UCI log: Logging to LogWritter failed.")
         }
     }
+
+    /// Flush the logs.
+    pub fn flush(&mut self) -> Option<mpsc::UnboundedReceiver<bool>> {
+        self.log_writer.flush()
+    }
 }
 
 impl UciLogger for UciLoggerPcapng {
-    fn log_uci_packet(&mut self, packet: UciPacketPacket) {
+    fn log_uci_control_packet(&mut self, packet: UciControlPacket) {
         let block_bytes = match EnhancedPacketBlockBuilder::new()
             .interface_id(self.interface_id)
             .packet(packet.into())
@@ -52,6 +58,18 @@ impl UciLogger for UciLoggerPcapng {
             None => return,
         };
         self.send_block_bytes(block_bytes);
+    }
+
+    fn log_uci_data_packet(&mut self, packet: &UciDataPacket) {
+        let packet_header_bytes = match EnhancedPacketBlockBuilder::new()
+            .interface_id(self.interface_id)
+            .packet(packet.clone().into())
+            .into_le_bytes()
+        {
+            Some(b) => b,
+            None => return,
+        };
+        self.send_block_bytes(packet_header_bytes);
     }
 
     fn log_hal_open(&mut self, result: crate::error::Result<()>) {

@@ -294,23 +294,33 @@ impl<T: UciManager> SessionManagerActor<T> {
 
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
-            UciSessionNotification::Status { session_id, session_state, reason_code } => {
+            UciSessionNotification::Status { session_token, session_state, reason_code } => {
+                let reason_code = match ReasonCode::try_from(reason_code) {
+                    Ok(r) => r,
+                    Err(_) => {
+                        error!(
+                            "Received unknown reason_code {:?} in UciSessionNotification",
+                            reason_code
+                        );
+                        return;
+                    }
+                };
                 if session_state == SessionState::SessionStateDeinit {
-                    debug!("Session {} is deinitialized", session_id);
-                    let _ = self.active_sessions.remove(&session_id);
+                    debug!("Session {} is deinitialized", session_token);
+                    let _ = self.active_sessions.remove(&session_token);
                     let _ = self.session_notf_sender.send(SessionNotification::SessionState {
-                        session_id,
+                        session_id: session_token,
                         session_state,
                         reason_code,
                     });
                     return;
                 }
 
-                match self.active_sessions.get_mut(&session_id) {
+                match self.active_sessions.get_mut(&session_token) {
                     Some(session) => {
                         session.on_session_status_changed(session_state);
                         let _ = self.session_notf_sender.send(SessionNotification::SessionState {
-                            session_id,
+                            session_id: session_token,
                             session_state,
                             reason_code,
                         });
@@ -318,32 +328,69 @@ impl<T: UciManager> SessionManagerActor<T> {
                     None => {
                         warn!(
                             "Received notification of the unknown Session {}: {:?}, {:?}",
-                            session_id, session_state, reason_code
+                            session_token, session_state, reason_code
                         );
                     }
                 }
             }
             UciSessionNotification::UpdateControllerMulticastList {
-                session_id,
+                session_token,
                 remaining_multicast_list_size: _,
                 status_list,
-            } => match self.active_sessions.get_mut(&session_id) {
+            } => match self.active_sessions.get_mut(&session_token) {
                 Some(session) => session.on_controller_multicast_list_udpated(status_list),
                 None => {
                     warn!(
                         "Received the notification of the unknown Session {}: {:?}",
-                        session_id, status_list
+                        session_token, status_list
                     );
                 }
             },
-            UciSessionNotification::RangeData(range_data) => {
-                if self.active_sessions.get(&range_data.session_id).is_some() {
+            UciSessionNotification::SessionInfo(range_data) => {
+                if self.active_sessions.get(&range_data.session_token).is_some() {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
-                        session_id: range_data.session_id,
+                        session_id: range_data.session_token,
                         range_data,
                     });
                 } else {
                     warn!("Received range data of the unknown Session: {:?}", range_data);
+                }
+            }
+            UciSessionNotification::DataCredit { session_token, credit_availability: _ } => {
+                match self.active_sessions.get(&session_token) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/270443790): Handle the DataCredit notification in the new
+                         * code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received the Data Credit notification for an unknown Session {}",
+                            session_token
+                        );
+                    }
+                }
+            }
+            UciSessionNotification::DataTransferStatus {
+                session_token,
+                uci_sequence_number: _,
+                status: _,
+                tx_count: _,
+            } => {
+                match self.active_sessions.get(&session_token) {
+                    Some(_) => {
+                        /*
+                         * TODO(b/270443790): Handle the DataTransferStatus notification in the
+                         * new code flow.
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received a Data Transfer Status notification for unknown Session {}",
+                            session_token
+                        );
+                    }
                 }
             }
         }
@@ -435,10 +482,10 @@ pub(crate) mod test_utils {
     pub(crate) fn session_range_data(session_id: SessionId) -> SessionRangeData {
         SessionRangeData {
             sequence_number: 1,
-            session_id,
+            session_token: session_id,
             current_ranging_interval_ms: 3,
             ranging_measurement_type: RangingMeasurementType::TwoWay,
-            ranging_measurements: RangingMeasurements::Short(vec![
+            ranging_measurements: RangingMeasurements::ShortAddressTwoWay(vec![
                 ShortAddressTwoWayRangingMeasurement {
                     mac_address: 0x123,
                     status: StatusCode::UciStatusOk,
@@ -466,14 +513,14 @@ pub(crate) mod test_utils {
         session_state: SessionState,
     ) -> UciNotification {
         UciNotification::Session(UciSessionNotification::Status {
-            session_id,
+            session_token: session_id,
             session_state,
-            reason_code: ReasonCode::StateChangeWithSessionManagementCommands,
+            reason_code: ReasonCode::StateChangeWithSessionManagementCommands.into(),
         })
     }
 
     pub(crate) fn range_data_notf(range_data: SessionRangeData) -> UciNotification {
-        UciNotification::Session(UciSessionNotification::RangeData(range_data))
+        UciNotification::Session(UciSessionNotification::SessionInfo(range_data))
     }
 
     pub(super) async fn setup_session_manager<F>(
@@ -508,8 +555,8 @@ mod tests {
 
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
-        AppConfigTlv, AppConfigTlvType, ControleeStatus, MulticastUpdateStatusCode,
-        SetAppConfigResponse, StatusCode,
+        AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
+        ReasonCode, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
     use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
@@ -676,7 +723,7 @@ mod tests {
             (AppConfigTlvType::StsIndex, u32_to_bytes(3)),
             (AppConfigTlvType::CccHopModeKey, u32_to_bytes(5)),
             (AppConfigTlvType::CccUwbTime0, u64_to_bytes(7)),
-            (AppConfigTlvType::RangingInterval, u32_to_bytes(96)),
+            (AppConfigTlvType::RangingDuration, u32_to_bytes(96)),
             (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(9)),
         ]);
         let received_tlvs = received_config_map
@@ -727,17 +774,18 @@ mod tests {
         let params = generate_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let multicast_list_notf = vec![UciNotification::Session(
                     UciSessionNotification::UpdateControllerMulticastList {
-                        session_id,
+                        session_token: session_id,
                         remaining_multicast_list_size: 1,
                         status_list: vec![ControleeStatus {
-                            mac_address: 0x13,
+                            mac_address: [0x34, 0x12],
                             subsession_id: 0x24,
                             status: MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
                         }],
@@ -761,7 +809,7 @@ mod tests {
                 uci_manager.expect_session_update_controller_multicast_list(
                     session_id,
                     action,
-                    controlees_clone,
+                    Controlees::NoSessionKey(controlees_clone),
                     multicast_list_notf,
                     Ok(()),
                 );
@@ -784,7 +832,8 @@ mod tests {
         let params = generate_ccc_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
@@ -823,7 +872,8 @@ mod tests {
         let params = generate_params();
         let tlvs = params.generate_tlvs();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let controlees_clone = controlees.clone();
         let (mut session_manager, mut mock_uci_manager, _) =
@@ -846,7 +896,7 @@ mod tests {
                 uci_manager.expect_session_update_controller_multicast_list(
                     session_id,
                     action,
-                    controlees_clone,
+                    uwb_uci_packets::Controlees::NoSessionKey(controlees_clone),
                     vec![], // Not sending notification.
                     Ok(()),
                 );

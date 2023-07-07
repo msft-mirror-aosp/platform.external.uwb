@@ -14,8 +14,10 @@
 
 //! Builders for PCAPNG blocks.
 
-use std::{convert::TryInto, time::Instant};
+use std::convert::TryInto;
+use std::time::SystemTime;
 
+use log::debug;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::cast::ToPrimitive;
 
@@ -141,7 +143,7 @@ pub struct InterfaceDescriptionBlockBuilder {
 impl Default for InterfaceDescriptionBlockBuilder {
     fn default() -> Self {
         Self {
-            link_type: 293, // USB 2.0 Low Speed
+            link_type: 299, // FiRa UCI
             snap_len: 0,    // unlimited
             block_options: vec![],
         }
@@ -197,7 +199,14 @@ pub struct EnhancedPacketBlockBuilder {
 
 impl Default for EnhancedPacketBlockBuilder {
     fn default() -> Self {
-        let timestamp = Instant::now().elapsed().as_micros() as u64;
+        let timestamp = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
+            // as_micros return u128. However, u64 will not overflow until year 586524.
+            Ok(duration) => duration.as_micros() as u64,
+            Err(e) => {
+                debug!("UCI log: system time is before Unix Epoch: {:?}", e);
+                0u64
+            }
+        };
         Self {
             interface_id: 0,
             timestamp,
@@ -413,7 +422,7 @@ mod tests {
     #[test]
     fn test_interface_description_block_with_options_build() {
         let comment_opt = BlockOption::new(0x1, "ABCDEF".to_owned().into_bytes());
-        let link_type: u16 = 293; // 0x125
+        let link_type: u16 = 299; // 0x12b
         let snap_len: u32 = 0;
         let interface_description_block = InterfaceDescriptionBlockBuilder::new()
             .link_type(link_type)
@@ -424,7 +433,7 @@ mod tests {
         let expected_block: Vec<u8> = vec![
             0x01, 0x00, 0x00, 0x00, // block type
             0x24, 0x00, 0x00, 0x00, // block length
-            0x25, 0x01, 0x00, 0x00, // link type, reserved
+            0x2b, 0x01, 0x00, 0x00, // link type, reserved
             0x00, 0x00, 0x00, 0x00, // SnapLen
             0x01, 0x00, 0x06, 0x00, // option code, padded length
             0x41, 0x42, 0x43, 0x44, // option (ABCD)
