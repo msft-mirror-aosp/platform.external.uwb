@@ -18,8 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use log::warn;
-
 use num_derive::{FromPrimitive, ToPrimitive};
+use zeroize::Zeroize;
 
 use crate::params::app_config_params::{AppConfigParams, AppConfigTlvMap};
 use crate::params::uci_packets::{AppConfigTlvType, SessionState, SubSessionId};
@@ -31,7 +31,7 @@ const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
 const DEFAULT_STS_CONFIG: StsConfig = StsConfig::Static;
 const DEFAULT_CHANNEL_NUMBER: UwbChannel = UwbChannel::Channel9;
 const DEFAULT_SLOT_DURATION_RSTU: u16 = 2400;
-const DEFAULT_RANGING_INTERVAL_MS: u32 = 200;
+const DEFAULT_RANGING_DURATION_MS: u32 = 200;
 const DEFAULT_MAC_FCS_TYPE: MacFcsType = MacFcsType::Crc16;
 const DEFAULT_RANGING_ROUND_CONTROL: RangingRoundControl = RangingRoundControl {
     ranging_result_report_message: true,
@@ -75,7 +75,7 @@ const DEFAULT_NUMBER_OF_AOA_ELEVATION_MEASUREMENTS: u8 = 0;
 
 /// The FiRa's application configuration parameters.
 /// Ref: FiRa Consortium UWB Command Interface Generic Techinal Specification Version 1.1.0.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct FiraAppConfigParams {
     // FiRa standard config.
     device_type: DeviceType,
@@ -86,7 +86,7 @@ pub struct FiraAppConfigParams {
     device_mac_address: UwbAddress,
     dst_mac_address: Vec<UwbAddress>,
     slot_duration_rstu: u16,
-    ranging_interval_ms: u32,
+    ranging_duration_ms: u32,
     mac_fcs_type: MacFcsType,
     ranging_round_control: RangingRoundControl,
     aoa_result_request: AoaResultRequest,
@@ -129,6 +129,74 @@ pub struct FiraAppConfigParams {
     number_of_aoa_elevation_measurements: u8,
 }
 
+/// Explicitly implement Debug trait to prevent logging PII data.
+impl std::fmt::Debug for FiraAppConfigParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        static REDACTED_STR: &str = "redacted";
+
+        f.debug_struct("FiraAppConfigParams")
+            .field("device_type", &self.device_type)
+            .field("ranging_round_usage", &self.ranging_round_usage)
+            .field("sts_config", &self.sts_config)
+            .field("multi_node_mode", &self.multi_node_mode)
+            .field("channel_number", &self.channel_number)
+            .field("device_mac_address", &self.device_mac_address)
+            .field("dst_mac_address", &self.dst_mac_address)
+            .field("slot_duration_rstu", &self.slot_duration_rstu)
+            .field("ranging_duration_ms", &self.ranging_duration_ms)
+            .field("mac_fcs_type", &self.mac_fcs_type)
+            .field("ranging_round_control", &self.ranging_round_control)
+            .field("aoa_result_request", &self.aoa_result_request)
+            .field("range_data_ntf_config", &self.range_data_ntf_config)
+            .field("range_data_ntf_proximity_near_cm", &self.range_data_ntf_proximity_near_cm)
+            .field("range_data_ntf_proximity_far_cm", &self.range_data_ntf_proximity_far_cm)
+            .field("device_role", &self.device_role)
+            .field("rframe_config", &self.rframe_config)
+            .field("preamble_code_index", &self.preamble_code_index)
+            .field("sfd_id", &self.sfd_id)
+            .field("psdu_data_rate", &self.psdu_data_rate)
+            .field("preamble_duration", &self.preamble_duration)
+            .field("ranging_time_struct", &self.ranging_time_struct)
+            .field("slots_per_rr", &self.slots_per_rr)
+            .field("tx_adaptive_payload_power", &self.tx_adaptive_payload_power)
+            .field("responder_slot_index", &self.responder_slot_index)
+            .field("prf_mode", &self.prf_mode)
+            .field("scheduled_mode", &self.scheduled_mode)
+            .field("key_rotation", &self.key_rotation)
+            .field("key_rotation_rate", &self.key_rotation_rate)
+            .field("session_priority", &self.session_priority)
+            .field("mac_address_mode", &self.mac_address_mode)
+            .field("vendor_id", &REDACTED_STR) // vendor_id field is PII.
+            .field("static_sts_iv", &REDACTED_STR) // static_sts_iv field is PII.
+            .field("number_of_sts_segments", &self.number_of_sts_segments)
+            .field("max_rr_retry", &self.max_rr_retry)
+            .field("uwb_initiation_time_ms", &self.uwb_initiation_time_ms)
+            .field("hopping_mode", &self.hopping_mode)
+            .field("block_stride_length", &self.block_stride_length)
+            .field("result_report_config", &self.result_report_config)
+            .field("in_band_termination_attempt_count", &self.in_band_termination_attempt_count)
+            .field("sub_session_id", &self.sub_session_id)
+            .field("bprf_phr_data_rate", &self.bprf_phr_data_rate)
+            .field("max_number_of_measurements", &self.max_number_of_measurements)
+            .field("sts_length", &self.sts_length)
+            .field("number_of_range_measurements", &self.number_of_range_measurements)
+            .field("number_of_aoa_azimuth_measurements", &self.number_of_aoa_azimuth_measurements)
+            .field(
+                "number_of_aoa_elevation_measurements",
+                &self.number_of_aoa_elevation_measurements,
+            )
+            .finish()
+    }
+}
+
+impl Drop for FiraAppConfigParams {
+    fn drop(&mut self) {
+        self.vendor_id.zeroize();
+        self.static_sts_iv.zeroize();
+        self.sub_session_id.zeroize();
+    }
+}
+
 #[allow(missing_docs)]
 impl FiraAppConfigParams {
     // Generate the getter methods for all the fields.
@@ -140,7 +208,7 @@ impl FiraAppConfigParams {
     getter_field!(device_mac_address, UwbAddress);
     getter_field!(dst_mac_address, Vec<UwbAddress>);
     getter_field!(slot_duration_rstu, u16);
-    getter_field!(ranging_interval_ms, u32);
+    getter_field!(ranging_duration_ms, u32);
     getter_field!(mac_fcs_type, MacFcsType);
     getter_field!(ranging_round_control, RangingRoundControl);
     getter_field!(aoa_result_request, AoaResultRequest);
@@ -328,7 +396,7 @@ impl FiraAppConfigParams {
         match session_state {
             SessionState::SessionStateActive => {
                 let avalible_list = HashSet::from([
-                    AppConfigTlvType::RangingInterval,
+                    AppConfigTlvType::RangingDuration,
                     AppConfigTlvType::RngDataNtf,
                     AppConfigTlvType::RngDataNtfProximityNear,
                     AppConfigTlvType::RngDataNtfProximityFar,
@@ -355,7 +423,7 @@ impl FiraAppConfigParams {
             (AppConfigTlvType::DeviceMacAddress, self.device_mac_address.clone().into()),
             (AppConfigTlvType::DstMacAddress, addresses_to_bytes(self.dst_mac_address.clone())),
             (AppConfigTlvType::SlotDuration, u16_to_bytes(self.slot_duration_rstu)),
-            (AppConfigTlvType::RangingInterval, u32_to_bytes(self.ranging_interval_ms)),
+            (AppConfigTlvType::RangingDuration, u32_to_bytes(self.ranging_duration_ms)),
             (AppConfigTlvType::MacFcsType, u8_to_bytes(self.mac_fcs_type as u8)),
             (
                 AppConfigTlvType::RangingRoundControl,
@@ -435,7 +503,7 @@ pub struct FiraAppConfigParamsBuilder {
     device_mac_address: Option<UwbAddress>,
     dst_mac_address: Vec<UwbAddress>,
     slot_duration_rstu: u16,
-    ranging_interval_ms: u32,
+    ranging_duration_ms: u32,
     mac_fcs_type: MacFcsType,
     ranging_round_control: RangingRoundControl,
     aoa_result_request: AoaResultRequest,
@@ -490,7 +558,7 @@ impl FiraAppConfigParamsBuilder {
             device_mac_address: None,
             dst_mac_address: vec![],
             slot_duration_rstu: DEFAULT_SLOT_DURATION_RSTU,
-            ranging_interval_ms: DEFAULT_RANGING_INTERVAL_MS,
+            ranging_duration_ms: DEFAULT_RANGING_DURATION_MS,
             mac_fcs_type: DEFAULT_MAC_FCS_TYPE,
             ranging_round_control: DEFAULT_RANGING_ROUND_CONTROL,
             aoa_result_request: DEFAULT_AOA_RESULT_REQUEST,
@@ -543,7 +611,7 @@ impl FiraAppConfigParamsBuilder {
                 device_mac_address: Some(params.device_mac_address.clone()),
                 dst_mac_address: params.dst_mac_address.clone(),
                 slot_duration_rstu: params.slot_duration_rstu,
-                ranging_interval_ms: params.ranging_interval_ms,
+                ranging_duration_ms: params.ranging_duration_ms,
                 mac_fcs_type: params.mac_fcs_type,
                 ranging_round_control: params.ranging_round_control.clone(),
                 aoa_result_request: params.aoa_result_request,
@@ -597,7 +665,7 @@ impl FiraAppConfigParamsBuilder {
             device_mac_address: self.device_mac_address.clone()?,
             dst_mac_address: self.dst_mac_address.clone(),
             slot_duration_rstu: self.slot_duration_rstu,
-            ranging_interval_ms: self.ranging_interval_ms,
+            ranging_duration_ms: self.ranging_duration_ms,
             mac_fcs_type: self.mac_fcs_type,
             ranging_round_control: self.ranging_round_control.clone(),
             aoa_result_request: self.aoa_result_request,
@@ -651,7 +719,7 @@ impl FiraAppConfigParamsBuilder {
     builder_field!(device_mac_address, UwbAddress, Some);
     builder_field!(dst_mac_address, Vec<UwbAddress>);
     builder_field!(slot_duration_rstu, u16);
-    builder_field!(ranging_interval_ms, u32);
+    builder_field!(ranging_duration_ms, u32);
     builder_field!(mac_fcs_type, MacFcsType);
     builder_field!(ranging_round_control, RangingRoundControl);
     builder_field!(aoa_result_request, AoaResultRequest);
@@ -1082,7 +1150,7 @@ mod tests {
         let dst_mac_address1 = [2, 2, 3, 4, 5, 6, 7, 8];
         let dst_mac_address2 = [3, 2, 3, 4, 5, 6, 7, 8];
         let slot_duration_rstu = 0x0A28;
-        let ranging_interval_ms = 100;
+        let ranging_duration_ms = 100;
         let mac_fcs_type = MacFcsType::Crc32;
         let ranging_round_control = RangingRoundControl {
             ranging_result_report_message: false,
@@ -1133,7 +1201,7 @@ mod tests {
                 UwbAddress::Extended(dst_mac_address2),
             ])
             .slot_duration_rstu(slot_duration_rstu)
-            .ranging_interval_ms(ranging_interval_ms)
+            .ranging_duration_ms(ranging_duration_ms)
             .mac_fcs_type(mac_fcs_type)
             .ranging_round_control(ranging_round_control.clone())
             .aoa_result_request(aoa_result_request)
@@ -1182,7 +1250,7 @@ mod tests {
                 [dst_mac_address1, dst_mac_address2].concat().to_vec(),
             ),
             (AppConfigTlvType::SlotDuration, slot_duration_rstu.to_le_bytes().to_vec()),
-            (AppConfigTlvType::RangingInterval, ranging_interval_ms.to_le_bytes().to_vec()),
+            (AppConfigTlvType::RangingDuration, ranging_duration_ms.to_le_bytes().to_vec()),
             (AppConfigTlvType::MacFcsType, vec![mac_fcs_type as u8]),
             (AppConfigTlvType::RangingRoundControl, vec![ranging_round_control.as_u8()]),
             (AppConfigTlvType::AoaResultReq, vec![aoa_result_request as u8]),
@@ -1197,8 +1265,8 @@ mod tests {
             ),
             (AppConfigTlvType::DeviceRole, vec![device_role as u8]),
             (AppConfigTlvType::RframeConfig, vec![rframe_config as u8]),
-            (AppConfigTlvType::PreambleCodeIndex, vec![preamble_code_index as u8]),
-            (AppConfigTlvType::SfdId, vec![sfd_id as u8]),
+            (AppConfigTlvType::PreambleCodeIndex, vec![preamble_code_index]),
+            (AppConfigTlvType::SfdId, vec![sfd_id]),
             (AppConfigTlvType::PsduDataRate, vec![psdu_data_rate as u8]),
             (AppConfigTlvType::PreambleDuration, vec![preamble_duration as u8]),
             (AppConfigTlvType::RangingTimeStruct, vec![DEFAULT_RANGING_TIME_STRUCT as u8]),
@@ -1221,7 +1289,7 @@ mod tests {
             (AppConfigTlvType::ResultReportConfig, vec![result_report_config.as_u8()]),
             (
                 AppConfigTlvType::InBandTerminationAttemptCount,
-                vec![in_band_termination_attempt_count as u8],
+                vec![in_band_termination_attempt_count],
             ),
             (AppConfigTlvType::BprfPhrDataRate, vec![DEFAULT_BPRF_PHR_DATA_RATE as u8]),
             (
@@ -1286,5 +1354,23 @@ mod tests {
         assert!(updated_params
             .generate_updated_config_map(&params, SessionState::SessionStateActive)
             .is_none());
+    }
+
+    #[test]
+    fn test_redacted_pii_fields() {
+        let mut builder = FiraAppConfigParamsBuilder::new();
+        builder
+            .device_type(DeviceType::Controller)
+            .multi_node_mode(MultiNodeMode::Unicast)
+            .device_mac_address(UwbAddress::Short([1, 2]))
+            .dst_mac_address(vec![UwbAddress::Short([3, 4])])
+            .device_role(DeviceRole::Initiator)
+            .vendor_id([0xFE, 0xDC])
+            .static_sts_iv([0xDF, 0xCE, 0xAB, 0x12, 0x34, 0x56]);
+        let params = builder.build().unwrap();
+
+        let format_str = format!("{params:?}");
+        assert!(format_str.contains("vendor_id: \"redacted\""));
+        assert!(format_str.contains("static_sts_iv: \"redacted\""));
     }
 }
