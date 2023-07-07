@@ -34,7 +34,7 @@ impl CccStartedAppConfigParams {
             sts_index: bytes_to_u32(config_map.remove(&AppConfigTlvType::StsIndex)?)?,
             hop_mode_key: bytes_to_u32(config_map.remove(&AppConfigTlvType::CccHopModeKey)?)?,
             uwb_time0: bytes_to_u64(config_map.remove(&AppConfigTlvType::CccUwbTime0)?)?,
-            ran_multiplier: bytes_to_u32(config_map.remove(&AppConfigTlvType::RangingInterval)?)?
+            ran_multiplier: bytes_to_u32(config_map.remove(&AppConfigTlvType::RangingDuration)?)?
                 / MINIMUM_BLOCK_DURATION_MS,
             sync_code_index: bytes_to_u8(config_map.remove(&AppConfigTlvType::PreambleCodeIndex)?)?,
         })
@@ -62,7 +62,7 @@ mod tests {
             (AppConfigTlvType::CccHopModeKey, u32_to_bytes(hop_mode_key)),
             (AppConfigTlvType::CccUwbTime0, u64_to_bytes(uwb_time0)),
             (
-                AppConfigTlvType::RangingInterval,
+                AppConfigTlvType::RangingDuration,
                 u32_to_bytes(ran_multiplier * MINIMUM_BLOCK_DURATION_MS),
             ),
             (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(sync_code_index)),
