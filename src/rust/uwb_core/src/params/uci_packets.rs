@@ -24,11 +24,10 @@ pub use uwb_uci_packets::{
     Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
     DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, GroupId, MessageType,
-    MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode,
-    ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
-    UpdateMulticastListAction,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
+    PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
@@ -38,6 +37,10 @@ use crate::error::Error;
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
 pub type SubSessionId = u32;
+/// The type of the session handle.
+pub type SessionHandle = u32;
+/// Generic type used to represent either a session id or session handle.
+pub type SessionToken = u32;
 
 /// Wrap the original AppConfigTlv type to redact the PII fields when logging.
 #[derive(Clone, PartialEq)]
