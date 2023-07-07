@@ -73,7 +73,7 @@ impl CccAppConfigParams {
         match session_state {
             SessionState::SessionStateIdle => {
                 // Only ran_multiplier can be updated at idle state.
-                config_map.keys().all(|key| key == &AppConfigTlvType::RangingInterval)
+                config_map.keys().all(|key| key == &AppConfigTlvType::RangingDuration)
             }
             _ => false,
         }
@@ -93,7 +93,7 @@ impl CccAppConfigParams {
                 u16_to_bytes((self.chaps_per_slot as u16) * CHAP_IN_RSTU),
             ),
             (
-                AppConfigTlvType::RangingInterval,
+                AppConfigTlvType::RangingDuration,
                 u32_to_bytes(self.ran_multiplier * MINIMUM_BLOCK_DURATION_MS),
             ),
             (AppConfigTlvType::RngDataNtf, u8_to_bytes(CCC_RANGE_DATA_NTF_CONFIG as u8)),
@@ -329,7 +329,7 @@ mod tests {
             (AppConfigTlvType::NoOfControlee, u8_to_bytes(num_responder_nodes)),
             (AppConfigTlvType::SlotDuration, u16_to_bytes((chaps_per_slot as u16) * CHAP_IN_RSTU)),
             (
-                AppConfigTlvType::RangingInterval,
+                AppConfigTlvType::RangingDuration,
                 u32_to_bytes(ran_multiplier * MINIMUM_BLOCK_DURATION_MS),
             ),
             (AppConfigTlvType::RngDataNtf, u8_to_bytes(CCC_RANGE_DATA_NTF_CONFIG as u8)),
@@ -349,7 +349,7 @@ mod tests {
         let updated_ran_multiplier = 5;
         assert_ne!(ran_multiplier, updated_ran_multiplier);
         let expected_updated_config_map = HashMap::from([(
-            AppConfigTlvType::RangingInterval,
+            AppConfigTlvType::RangingDuration,
             u32_to_bytes(updated_ran_multiplier * MINIMUM_BLOCK_DURATION_MS),
         )]);
 
