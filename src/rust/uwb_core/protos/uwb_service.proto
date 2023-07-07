@@ -95,8 +95,7 @@ enum StatusCode {
   UCI_STATUS_RANGING_RX_MAC_IE_MISSING = 39;
   UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED = 40;
   UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED = 41;
-  UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR = 42;
-  UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 43;
+  UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 42;
 
   UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 48;
   UCI_STATUS_DATA_RX_CRC_ERROR = 49;
@@ -187,6 +186,7 @@ enum SessionType {
   FIRA_RANGING_SESSION = 0;
   FIRA_DATA_TRANSFER = 1;
   CCC = 2;
+  DEVICE_TEST_MODE = 3;
 }
 
 // Represent uwb_uci_packets::UpdateMulticastListAction.
@@ -375,7 +375,7 @@ message FiraAppConfigParams {
   bytes device_mac_address = 6;
   repeated bytes dst_mac_address = 7;
   uint32 slot_duration_rstu = 8;
-  uint32 ranging_interval_ms = 9;
+  uint32 ranging_duration_ms = 9;
   MacFcsType mac_fcs_type = 10;
   RangingRoundControl ranging_round_control = 11;
   AoaResultRequest aoa_result_request = 12;
