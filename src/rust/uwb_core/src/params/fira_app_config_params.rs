@@ -31,7 +31,7 @@ const DEFAULT_RANGING_ROUND_USAGE: RangingRoundUsage = RangingRoundUsage::DsTwr;
 const DEFAULT_STS_CONFIG: StsConfig = StsConfig::Static;
 const DEFAULT_CHANNEL_NUMBER: UwbChannel = UwbChannel::Channel9;
 const DEFAULT_SLOT_DURATION_RSTU: u16 = 2400;
-const DEFAULT_RANGING_INTERVAL_MS: u32 = 200;
+const DEFAULT_RANGING_DURATION_MS: u32 = 200;
 const DEFAULT_MAC_FCS_TYPE: MacFcsType = MacFcsType::Crc16;
 const DEFAULT_RANGING_ROUND_CONTROL: RangingRoundControl = RangingRoundControl {
     ranging_result_report_message: true,
@@ -86,7 +86,7 @@ pub struct FiraAppConfigParams {
     device_mac_address: UwbAddress,
     dst_mac_address: Vec<UwbAddress>,
     slot_duration_rstu: u16,
-    ranging_interval_ms: u32,
+    ranging_duration_ms: u32,
     mac_fcs_type: MacFcsType,
     ranging_round_control: RangingRoundControl,
     aoa_result_request: AoaResultRequest,
@@ -143,7 +143,7 @@ impl std::fmt::Debug for FiraAppConfigParams {
             .field("device_mac_address", &self.device_mac_address)
             .field("dst_mac_address", &self.dst_mac_address)
             .field("slot_duration_rstu", &self.slot_duration_rstu)
-            .field("ranging_interval_ms", &self.ranging_interval_ms)
+            .field("ranging_duration_ms", &self.ranging_duration_ms)
             .field("mac_fcs_type", &self.mac_fcs_type)
             .field("ranging_round_control", &self.ranging_round_control)
             .field("aoa_result_request", &self.aoa_result_request)
@@ -208,7 +208,7 @@ impl FiraAppConfigParams {
     getter_field!(device_mac_address, UwbAddress);
     getter_field!(dst_mac_address, Vec<UwbAddress>);
     getter_field!(slot_duration_rstu, u16);
-    getter_field!(ranging_interval_ms, u32);
+    getter_field!(ranging_duration_ms, u32);
     getter_field!(mac_fcs_type, MacFcsType);
     getter_field!(ranging_round_control, RangingRoundControl);
     getter_field!(aoa_result_request, AoaResultRequest);
@@ -396,7 +396,7 @@ impl FiraAppConfigParams {
         match session_state {
             SessionState::SessionStateActive => {
                 let avalible_list = HashSet::from([
-                    AppConfigTlvType::RangingInterval,
+                    AppConfigTlvType::RangingDuration,
                     AppConfigTlvType::RngDataNtf,
                     AppConfigTlvType::RngDataNtfProximityNear,
                     AppConfigTlvType::RngDataNtfProximityFar,
@@ -423,7 +423,7 @@ impl FiraAppConfigParams {
             (AppConfigTlvType::DeviceMacAddress, self.device_mac_address.clone().into()),
             (AppConfigTlvType::DstMacAddress, addresses_to_bytes(self.dst_mac_address.clone())),
             (AppConfigTlvType::SlotDuration, u16_to_bytes(self.slot_duration_rstu)),
-            (AppConfigTlvType::RangingInterval, u32_to_bytes(self.ranging_interval_ms)),
+            (AppConfigTlvType::RangingDuration, u32_to_bytes(self.ranging_duration_ms)),
             (AppConfigTlvType::MacFcsType, u8_to_bytes(self.mac_fcs_type as u8)),
             (
                 AppConfigTlvType::RangingRoundControl,
@@ -503,7 +503,7 @@ pub struct FiraAppConfigParamsBuilder {
     device_mac_address: Option<UwbAddress>,
     dst_mac_address: Vec<UwbAddress>,
     slot_duration_rstu: u16,
-    ranging_interval_ms: u32,
+    ranging_duration_ms: u32,
     mac_fcs_type: MacFcsType,
     ranging_round_control: RangingRoundControl,
     aoa_result_request: AoaResultRequest,
@@ -558,7 +558,7 @@ impl FiraAppConfigParamsBuilder {
             device_mac_address: None,
             dst_mac_address: vec![],
             slot_duration_rstu: DEFAULT_SLOT_DURATION_RSTU,
-            ranging_interval_ms: DEFAULT_RANGING_INTERVAL_MS,
+            ranging_duration_ms: DEFAULT_RANGING_DURATION_MS,
             mac_fcs_type: DEFAULT_MAC_FCS_TYPE,
             ranging_round_control: DEFAULT_RANGING_ROUND_CONTROL,
             aoa_result_request: DEFAULT_AOA_RESULT_REQUEST,
@@ -611,7 +611,7 @@ impl FiraAppConfigParamsBuilder {
                 device_mac_address: Some(params.device_mac_address.clone()),
                 dst_mac_address: params.dst_mac_address.clone(),
                 slot_duration_rstu: params.slot_duration_rstu,
-                ranging_interval_ms: params.ranging_interval_ms,
+                ranging_duration_ms: params.ranging_duration_ms,
                 mac_fcs_type: params.mac_fcs_type,
                 ranging_round_control: params.ranging_round_control.clone(),
                 aoa_result_request: params.aoa_result_request,
@@ -665,7 +665,7 @@ impl FiraAppConfigParamsBuilder {
             device_mac_address: self.device_mac_address.clone()?,
             dst_mac_address: self.dst_mac_address.clone(),
             slot_duration_rstu: self.slot_duration_rstu,
-            ranging_interval_ms: self.ranging_interval_ms,
+            ranging_duration_ms: self.ranging_duration_ms,
             mac_fcs_type: self.mac_fcs_type,
             ranging_round_control: self.ranging_round_control.clone(),
             aoa_result_request: self.aoa_result_request,
@@ -719,7 +719,7 @@ impl FiraAppConfigParamsBuilder {
     builder_field!(device_mac_address, UwbAddress, Some);
     builder_field!(dst_mac_address, Vec<UwbAddress>);
     builder_field!(slot_duration_rstu, u16);
-    builder_field!(ranging_interval_ms, u32);
+    builder_field!(ranging_duration_ms, u32);
     builder_field!(mac_fcs_type, MacFcsType);
     builder_field!(ranging_round_control, RangingRoundControl);
     builder_field!(aoa_result_request, AoaResultRequest);
@@ -1150,7 +1150,7 @@ mod tests {
         let dst_mac_address1 = [2, 2, 3, 4, 5, 6, 7, 8];
         let dst_mac_address2 = [3, 2, 3, 4, 5, 6, 7, 8];
         let slot_duration_rstu = 0x0A28;
-        let ranging_interval_ms = 100;
+        let ranging_duration_ms = 100;
         let mac_fcs_type = MacFcsType::Crc32;
         let ranging_round_control = RangingRoundControl {
             ranging_result_report_message: false,
@@ -1201,7 +1201,7 @@ mod tests {
                 UwbAddress::Extended(dst_mac_address2),
             ])
             .slot_duration_rstu(slot_duration_rstu)
-            .ranging_interval_ms(ranging_interval_ms)
+            .ranging_duration_ms(ranging_duration_ms)
             .mac_fcs_type(mac_fcs_type)
             .ranging_round_control(ranging_round_control.clone())
             .aoa_result_request(aoa_result_request)
@@ -1250,7 +1250,7 @@ mod tests {
                 [dst_mac_address1, dst_mac_address2].concat().to_vec(),
             ),
             (AppConfigTlvType::SlotDuration, slot_duration_rstu.to_le_bytes().to_vec()),
-            (AppConfigTlvType::RangingInterval, ranging_interval_ms.to_le_bytes().to_vec()),
+            (AppConfigTlvType::RangingDuration, ranging_duration_ms.to_le_bytes().to_vec()),
             (AppConfigTlvType::MacFcsType, vec![mac_fcs_type as u8]),
             (AppConfigTlvType::RangingRoundControl, vec![ranging_round_control.as_u8()]),
             (AppConfigTlvType::AoaResultReq, vec![aoa_result_request as u8]),

@@ -210,7 +210,7 @@ genrule {
     cmd: "$(location aprotoc)" +
          " --proto_path=`dirname $(in)`" +
          " --dependency_out=$(depfile)" +
-         " --plugin=$(location protoc-gen-rust)" +
+         " --plugin=protoc-gen-rust=$(location protoc-gen-rust)" +
          " --rust_out=$(genDir) $(in)",
     srcs: [
         "rust/uwb_core/protos/uwb_service.proto",
@@ -356,7 +356,7 @@ rust_test {
 genrule {
     name: "uwb_core_artifacts",
     tools: [
-        "pdl",
+        "pdlc",
         "soong_zip",
     ],
     cmd:
@@ -368,7 +368,7 @@ genrule {
         "      $(genDir)/artifacts;" +
 
         // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
-        "$(location pdl) --output-format rust " +
+        "$(location pdlc) --output-format rust " +
         "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl " +
         "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs;" +
 
