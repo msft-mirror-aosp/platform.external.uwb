@@ -20,7 +20,7 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
-    ResetConfig, SessionId, SessionType, UpdateMulticastListAction,
+    ResetConfig, SessionId, SessionToken, SessionType, UpdateMulticastListAction,
 };
 use uwb_uci_packets::{build_session_update_controller_multicast_list_cmd, GroupId, MessageType};
 
@@ -39,45 +39,46 @@ pub enum UciCommand {
     CoreGetConfig {
         cfg_id: Vec<DeviceConfigId>,
     },
+    CoreQueryTimeStamp,
     SessionInit {
         session_id: SessionId,
         session_type: SessionType,
     },
     SessionDeinit {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     SessionSetAppConfig {
-        session_id: SessionId,
+        session_token: SessionToken,
         config_tlvs: Vec<AppConfigTlv>,
     },
     SessionGetAppConfig {
-        session_id: SessionId,
+        session_token: SessionToken,
         app_cfg: Vec<AppConfigTlvType>,
     },
     SessionGetCount,
     SessionGetState {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     SessionUpdateControllerMulticastList {
-        session_id: SessionId,
+        session_token: SessionToken,
         action: UpdateMulticastListAction,
         controlees: Controlees,
     },
-    SessionUpdateActiveRoundsDtTag {
-        session_id: u32,
+    SessionUpdateDtTagRangingRounds {
+        session_token: u32,
         ranging_round_indexes: Vec<u8>,
     },
     SessionQueryMaxDataSize {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     SessionStart {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     SessionStop {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     SessionGetRangingCount {
-        session_id: SessionId,
+        session_token: SessionToken,
     },
     AndroidSetCountryCode {
         country_code: CountryCode,
@@ -99,21 +100,27 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             UciCommand::SessionInit { session_id, session_type } => {
                 uwb_uci_packets::SessionInitCmdBuilder { session_id, session_type }.build().into()
             }
-            UciCommand::SessionDeinit { session_id } => {
-                uwb_uci_packets::SessionDeinitCmdBuilder { session_id }.build().into()
+            UciCommand::SessionDeinit { session_token } => {
+                uwb_uci_packets::SessionDeinitCmdBuilder { session_token }.build().into()
             }
             UciCommand::CoreGetDeviceInfo => {
                 uwb_uci_packets::GetDeviceInfoCmdBuilder {}.build().into()
             }
             UciCommand::CoreGetCapsInfo => uwb_uci_packets::GetCapsInfoCmdBuilder {}.build().into(),
-            UciCommand::SessionGetState { session_id } => {
-                uwb_uci_packets::SessionGetStateCmdBuilder { session_id }.build().into()
+            UciCommand::SessionGetState { session_token } => {
+                uwb_uci_packets::SessionGetStateCmdBuilder { session_token }.build().into()
             }
-            UciCommand::SessionUpdateControllerMulticastList { session_id, action, controlees } => {
-                build_session_update_controller_multicast_list_cmd(session_id, action, controlees)
-                    .map_err(|_| Error::BadParameters)?
-                    .into()
-            }
+            UciCommand::SessionUpdateControllerMulticastList {
+                session_token,
+                action,
+                controlees,
+            } => build_session_update_controller_multicast_list_cmd(
+                session_token,
+                action,
+                controlees,
+            )
+            .map_err(|_| Error::BadParameters)?
+            .into(),
             UciCommand::CoreSetConfig { config_tlvs } => {
                 uwb_uci_packets::SetConfigCmdBuilder { tlvs: config_tlvs }.build().into()
             }
@@ -122,30 +129,34 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             }
             .build()
             .into(),
-            UciCommand::SessionSetAppConfig { session_id, config_tlvs } => {
+            UciCommand::CoreQueryTimeStamp {} => {
+                uwb_uci_packets::CoreQueryTimeStampCmdBuilder {}.build().into()
+            }
+            UciCommand::SessionSetAppConfig { session_token, config_tlvs } => {
                 uwb_uci_packets::SessionSetAppConfigCmdBuilder {
-                    session_id,
+                    session_token,
                     tlvs: config_tlvs.into_iter().map(|tlv| tlv.into_inner()).collect(),
                 }
                 .build()
                 .into()
             }
-            UciCommand::SessionGetAppConfig { session_id, app_cfg } => {
+            UciCommand::SessionGetAppConfig { session_token, app_cfg } => {
                 uwb_uci_packets::SessionGetAppConfigCmdBuilder {
-                    session_id,
+                    session_token,
                     app_cfg: app_cfg.into_iter().map(u8::from).collect(),
                 }
                 .build()
                 .into()
             }
-            UciCommand::SessionUpdateActiveRoundsDtTag { session_id, ranging_round_indexes } => {
-                uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
-                    session_id,
-                    ranging_round_indexes,
-                }
-                .build()
-                .into()
+            UciCommand::SessionUpdateDtTagRangingRounds {
+                session_token,
+                ranging_round_indexes,
+            } => uwb_uci_packets::SessionUpdateDtTagRangingRoundsCmdBuilder {
+                session_token,
+                ranging_round_indexes,
             }
+            .build()
+            .into(),
             UciCommand::AndroidGetPowerStats => {
                 uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into()
             }
@@ -166,17 +177,17 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 uwb_uci_packets::DeviceResetCmdBuilder { reset_config }.build().into()
             }
             // UCI Session Control Commands
-            UciCommand::SessionStart { session_id } => {
-                uwb_uci_packets::SessionStartCmdBuilder { session_id }.build().into()
+            UciCommand::SessionStart { session_token } => {
+                uwb_uci_packets::SessionStartCmdBuilder { session_token }.build().into()
             }
-            UciCommand::SessionStop { session_id } => {
-                uwb_uci_packets::SessionStopCmdBuilder { session_id }.build().into()
+            UciCommand::SessionStop { session_token } => {
+                uwb_uci_packets::SessionStopCmdBuilder { session_token }.build().into()
             }
-            UciCommand::SessionGetRangingCount { session_id } => {
-                uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id }.build().into()
+            UciCommand::SessionGetRangingCount { session_token } => {
+                uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_token }.build().into()
             }
-            UciCommand::SessionQueryMaxDataSize { session_id } => {
-                uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id }.build().into()
+            UciCommand::SessionQueryMaxDataSize { session_token } => {
+                uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_token }.build().into()
             }
         };
         Ok(packet)
@@ -266,27 +277,27 @@ mod tests {
             .into()
         );
 
-        cmd = UciCommand::SessionDeinit { session_id: 1 };
+        cmd = UciCommand::SessionDeinit { session_token: 1 };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionDeinitCmdBuilder { session_id: 1 }.build().into()
+            uwb_uci_packets::SessionDeinitCmdBuilder { session_token: 1 }.build().into()
         );
 
-        cmd = UciCommand::SessionSetAppConfig { session_id: 1, config_tlvs: vec![] };
+        cmd = UciCommand::SessionSetAppConfig { session_token: 1, config_tlvs: vec![] };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionSetAppConfigCmdBuilder { session_id: 1, tlvs: vec![] }
+            uwb_uci_packets::SessionSetAppConfigCmdBuilder { session_token: 1, tlvs: vec![] }
                 .build()
                 .into()
         );
 
-        cmd = UciCommand::SessionGetAppConfig { session_id: 1, app_cfg: vec![] };
+        cmd = UciCommand::SessionGetAppConfig { session_token: 1, app_cfg: vec![] };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionGetAppConfigCmdBuilder { session_id: 1, app_cfg: vec![] }
+            uwb_uci_packets::SessionGetAppConfigCmdBuilder { session_token: 1, app_cfg: vec![] }
                 .build()
                 .into()
         );
@@ -295,15 +306,15 @@ mod tests {
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(packet, uwb_uci_packets::SessionGetCountCmdBuilder {}.build().into());
 
-        cmd = UciCommand::SessionGetState { session_id: 1 };
+        cmd = UciCommand::SessionGetState { session_token: 1 };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionGetStateCmdBuilder { session_id: 1 }.build().into()
+            uwb_uci_packets::SessionGetStateCmdBuilder { session_token: 1 }.build().into()
         );
 
         cmd = UciCommand::SessionUpdateControllerMulticastList {
-            session_id: 1,
+            session_token: 1,
             action: UpdateMulticastListAction::AddControlee,
             controlees: Controlees::NoSessionKey(vec![]),
         };
@@ -320,44 +331,47 @@ mod tests {
             .into()
         );
 
-        cmd = UciCommand::SessionUpdateActiveRoundsDtTag {
-            session_id: 1,
+        cmd = UciCommand::SessionUpdateDtTagRangingRounds {
+            session_token: 1,
             ranging_round_indexes: vec![0],
         };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionUpdateActiveRoundsDtTagCmdBuilder {
-                session_id: 1,
+            uwb_uci_packets::SessionUpdateDtTagRangingRoundsCmdBuilder {
+                session_token: 1,
                 ranging_round_indexes: vec![0]
             }
             .build()
             .into()
         );
 
-        cmd = UciCommand::SessionQueryMaxDataSize { session_id: 1 };
+        cmd = UciCommand::SessionQueryMaxDataSize { session_token: 1 };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_id: 1 }.build().into()
+            uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_token: 1 }.build().into()
         );
 
-        cmd = UciCommand::SessionStart { session_id: 1 };
+        cmd = UciCommand::SessionStart { session_token: 1 };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionStartCmdBuilder { session_id: 1 }.build().into()
+            uwb_uci_packets::SessionStartCmdBuilder { session_token: 1 }.build().into()
         );
 
-        cmd = UciCommand::SessionStop { session_id: 1 };
-        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
-        assert_eq!(packet, uwb_uci_packets::SessionStopCmdBuilder { session_id: 1 }.build().into());
-
-        cmd = UciCommand::SessionGetRangingCount { session_id: 1 };
+        cmd = UciCommand::SessionStop { session_token: 1 };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
             packet,
-            uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_id: 1 }.build().into()
+            uwb_uci_packets::SessionStopCmdBuilder { session_token: 1 }.build().into()
+        );
+
+        cmd = UciCommand::SessionGetRangingCount { session_token: 1 };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionGetRangingCountCmdBuilder { session_token: 1 }.build().into()
         );
 
         let country_code: [u8; 2] = [85, 83];

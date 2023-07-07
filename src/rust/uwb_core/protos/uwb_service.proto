@@ -95,8 +95,7 @@ enum StatusCode {
   UCI_STATUS_RANGING_RX_MAC_IE_MISSING = 39;
   UCI_STATUS_ERROR_ROUND_INDEX_NOT_ACTIVATED = 40;
   UCI_STATUS_ERROR_NUMBER_OF_ACTIVE_RANGING_ROUNDS_EXCEEDED = 41;
-  UCI_STATUS_ERROR_ROUND_INDEX_NOT_SET_AS_INITIATOR = 42;
-  UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 43;
+  UCI_STATUS_ERROR_DL_TDOA_DEVICE_ADDRESS_NOT_MATCHING_IN_REPLY_TIME_LIST = 42;
 
   UCI_STATUS_DATA_MAX_TX_PSDU_SIZE_EXCEEDED = 48;
   UCI_STATUS_DATA_RX_CRC_ERROR = 49;
@@ -106,12 +105,6 @@ enum StatusCode {
   UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 82;
   // All vendor specific status code will be mapped to UCI_STATUS_VENDOR_SPECIFIC.
   UCI_STATUS_RFU_OR_VENDOR_SPECIFIC = 255;
-}
-
-// Represents uwb_uci_packets::OwrAoaStatusCode
-enum OwrAoaStatusCode {
-    UCI_STATUS_SUCCESS = 0;
-    UCI_STATUS_INTER_FRAME_INTERVAL_TIMEOUT = 1;
 }
 
 // Represent uwb_uci_packets::DeviceState.
@@ -174,6 +167,8 @@ enum ReasonCode {
   ERROR_REF_UWB_SESSION_LOST = 63;
   ERROR_INVALID_CHANNEL_WITH_AOA = 128;
   ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 129;
+  ERROR_DT_ANCHOR_RANGING_ROUNDS_NOT_CONFIGURED = 130;
+  ERROR_DT_TAG_RANGING_ROUNDS_NOT_CONFIGURED = 131;
   // All vendor reason code will be mapped to ERROR_VENDOR_SPECIFIC.
   ERROR_RFU_OR_VENDOR_SPECIFIC = 255;
 }
@@ -191,6 +186,7 @@ enum SessionType {
   FIRA_RANGING_SESSION = 0;
   FIRA_DATA_TRANSFER = 1;
   CCC = 2;
+  DEVICE_TEST_MODE = 3;
 }
 
 // Represent uwb_uci_packets::UpdateMulticastListAction.
@@ -379,7 +375,7 @@ message FiraAppConfigParams {
   bytes device_mac_address = 6;
   repeated bytes dst_mac_address = 7;
   uint32 slot_duration_rstu = 8;
-  uint32 ranging_interval_ms = 9;
+  uint32 ranging_duration_ms = 9;
   MacFcsType mac_fcs_type = 10;
   RangingRoundControl ranging_round_control = 11;
   AoaResultRequest aoa_result_request = 12;
@@ -449,7 +445,7 @@ message TwoWayRangingMeasurement {
 // uwb_uci_packets::ExtendedAddressOwrAoaRangingMeasurement.
 message OwrAoaRangingMeasurement {
   uint64 mac_address = 1;
-  OwrAoaStatusCode owr_aoa_status_code = 2;
+  StatusCode status = 2;
   uint32 nlos = 3;
   uint32 block_index = 4;
   uint32 frame_sequence_number = 5;
