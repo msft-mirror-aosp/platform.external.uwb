@@ -28,10 +28,9 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
-    GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateActiveRoundsDtTagResponse, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
+    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken, SessionType,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -144,6 +143,13 @@ impl MockUciManager {
             .lock()
             .unwrap()
             .push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
+    }
+
+    /// Prepare Mock to expect core_query_uwb_timestamp.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_core_query_uwb_timestamp(&mut self, out: Result<u64>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreQueryTimeStamp { out });
     }
 
     /// Prepare Mock to expect session_init.
@@ -264,14 +270,14 @@ impl MockUciManager {
     /// Prepare Mock to expect session_update_active_rounds_dt_tag.
     ///
     /// MockUciManager expects call with parameters, returns out as response.
-    pub fn expect_session_update_active_rounds_dt_tag(
+    pub fn expect_session_update_dt_tag_ranging_rounds(
         &mut self,
         expected_session_id: u32,
         expected_ranging_round_indexes: Vec<u8>,
-        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+        out: Result<SessionUpdateDtTagRangingRoundsResponse>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
-            ExpectedCall::SessionUpdateActiveRoundsDtTag {
+            ExpectedCall::SessionUpdateDtTagRangingRounds {
                 expected_session_id,
                 expected_ranging_round_indexes,
                 out,
@@ -389,15 +395,13 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendDataPacket {
             expected_session_id,
             expected_address,
-            expected_dest_end_point,
             expected_uci_sequence_num,
             expected_app_payload_data,
             out,
@@ -576,6 +580,21 @@ impl UciManager for MockUciManager {
         }
     }
 
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::CoreQueryTimeStamp { out }) => {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
@@ -727,14 +746,14 @@ impl UciManager for MockUciManager {
         }
     }
 
-    async fn session_update_active_rounds_dt_tag(
+    async fn session_update_dt_tag_ranging_rounds(
         &self,
         session_id: u32,
         ranging_round_indexes: Vec<u8>,
-    ) -> Result<SessionUpdateActiveRoundsDtTagResponse> {
+    ) -> Result<SessionUpdateDtTagRangingRoundsResponse> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionUpdateActiveRoundsDtTag {
+            Some(ExpectedCall::SessionUpdateDtTagRangingRounds {
                 expected_session_id,
                 expected_ranging_round_indexes,
                 out,
@@ -752,10 +771,10 @@ impl UciManager for MockUciManager {
         }
     }
 
-     async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
+    async fn session_query_max_data_size(&self, session_id: SessionId) -> Result<u16> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionQueryMaxDataSize {expected_session_id, out})
+            Some(ExpectedCall::SessionQueryMaxDataSize { expected_session_id, out })
                 if expected_session_id == session_id =>
             {
                 self.expect_call_consumed.notify_one();
@@ -889,8 +908,7 @@ impl UciManager for MockUciManager {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_num: u8,
+        uci_sequence_num: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
@@ -898,13 +916,11 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::SendDataPacket {
                 expected_session_id,
                 expected_address,
-                expected_dest_end_point,
                 expected_uci_sequence_num,
                 expected_app_payload_data,
                 out,
             }) if expected_session_id == session_id
                 && expected_address == address
-                && expected_dest_end_point == dest_end_point
                 && expected_uci_sequence_num == uci_sequence_num
                 && expected_app_payload_data == app_payload_data =>
             {
@@ -917,6 +933,13 @@ impl UciManager for MockUciManager {
             }
             None => Err(Error::MockUndefined),
         }
+    }
+
+    async fn get_session_token_from_session_id(
+        &self,
+        _session_id: SessionId,
+    ) -> Result<SessionToken> {
+        Ok(1) // No uci call here, no mock required.
     }
 }
 
@@ -947,6 +970,9 @@ enum ExpectedCall {
     CoreGetConfig {
         expected_config_ids: Vec<DeviceConfigId>,
         out: Result<Vec<DeviceConfigTlv>>,
+    },
+    CoreQueryTimeStamp {
+        out: Result<u64>,
     },
     SessionInit {
         expected_session_id: SessionId,
@@ -984,10 +1010,10 @@ enum ExpectedCall {
         notfs: Vec<UciNotification>,
         out: Result<()>,
     },
-    SessionUpdateActiveRoundsDtTag {
+    SessionUpdateDtTagRangingRounds {
         expected_session_id: u32,
         expected_ranging_round_indexes: Vec<u8>,
-        out: Result<SessionUpdateActiveRoundsDtTagResponse>,
+        out: Result<SessionUpdateDtTagRangingRoundsResponse>,
     },
     SessionQueryMaxDataSize {
         expected_session_id: SessionId,
@@ -1024,8 +1050,7 @@ enum ExpectedCall {
     SendDataPacket {
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     },
