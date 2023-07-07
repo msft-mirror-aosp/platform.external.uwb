@@ -60,7 +60,7 @@ pub trait UwbServiceCallback: 'static {
     /// Notify the vendor notification is received.
     fn on_vendor_notification_received(&mut self, gid: u32, oid: u32, payload: Vec<u8>);
 
-    // TODO(b/261762781): In the future, add a callback here to notify the Data Rx packet.
+    // TODO(b/270443790): In the future, add a callback here to notify the Data Rx packet.
 }
 
 /// A placeholder implementation for UwbServiceCallback that does nothing.
@@ -709,7 +709,8 @@ mod tests {
         let session_type = SessionType::FiraRangingSession;
         let params = generate_params();
         let action = UpdateMulticastListAction::AddControlee;
-        let controlees = vec![Controlee { short_address: 0x13, subsession_id: 0x24 }];
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlees = vec![Controlee { short_address, subsession_id: 0x24 }];
 
         let uci_manager = MockUciManager::new();
         let (service, _, _runtime) = setup_uwb_service(uci_manager);
