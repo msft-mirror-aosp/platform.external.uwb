@@ -5,11 +5,11 @@ build and test the library by cargo.
 
 ## Building `uwb_uci_packets` package
 
-The `uwb_uci_packets` package depends on `pdl` and thus simply using `cargo
+The `uwb_uci_packets` package depends on `pdlc and thus simply using `cargo
 build` will fail. Follow the steps below before using cargo.
 
 1. Enter Android environment by `source build/make/rbesetup.sh; lunch <target>`
-2. Run `m pdl` to compile the `pdl` Rust binary.
+2. Run `m pdlc` to compile the `pdlc` Rust binary.
 
 After that, we could build or test the package by `cargo test --features proto`.
 
