@@ -28,10 +28,9 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
-    GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
+    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken, SessionType,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -144,6 +143,13 @@ impl MockUciManager {
             .lock()
             .unwrap()
             .push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
+    }
+
+    /// Prepare Mock to expect core_query_uwb_timestamp.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_core_query_uwb_timestamp(&mut self, out: Result<u64>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreQueryTimeStamp { out });
     }
 
     /// Prepare Mock to expect session_init.
@@ -389,15 +395,13 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendDataPacket {
             expected_session_id,
             expected_address,
-            expected_dest_end_point,
             expected_uci_sequence_num,
             expected_app_payload_data,
             out,
@@ -565,6 +569,21 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::CoreGetConfig { expected_config_ids, out })
                 if expected_config_ids == config_ids =>
             {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::CoreQueryTimeStamp { out }) => {
                 self.expect_call_consumed.notify_one();
                 out
             }
@@ -889,8 +908,7 @@ impl UciManager for MockUciManager {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_num: u8,
+        uci_sequence_num: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
@@ -898,13 +916,11 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::SendDataPacket {
                 expected_session_id,
                 expected_address,
-                expected_dest_end_point,
                 expected_uci_sequence_num,
                 expected_app_payload_data,
                 out,
             }) if expected_session_id == session_id
                 && expected_address == address
-                && expected_dest_end_point == dest_end_point
                 && expected_uci_sequence_num == uci_sequence_num
                 && expected_app_payload_data == app_payload_data =>
             {
@@ -954,6 +970,9 @@ enum ExpectedCall {
     CoreGetConfig {
         expected_config_ids: Vec<DeviceConfigId>,
         out: Result<Vec<DeviceConfigTlv>>,
+    },
+    CoreQueryTimeStamp {
+        out: Result<u64>,
     },
     SessionInit {
         expected_session_id: SessionId,
@@ -1031,8 +1050,7 @@ enum ExpectedCall {
     SendDataPacket {
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     },

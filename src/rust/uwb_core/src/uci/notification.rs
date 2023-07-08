@@ -22,9 +22,9 @@ use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
     ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, RangingMeasurementType, RawUciMessage,
-    SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, SessionState,
+    SessionToken, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -85,6 +85,8 @@ pub enum SessionNotification {
         uci_sequence_number: u8,
         /// Data Transfer Status Code
         status: DataTransferNtfStatusCode,
+        /// Transmission count
+        tx_count: u8,
     },
 }
 
@@ -137,7 +139,7 @@ pub enum RangingMeasurements {
 }
 
 /// The DATA_RCV packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, std::cmp::PartialEq)]
 pub struct DataRcvNotification {
     /// The identifier of the session on which data transfer is happening.
     pub session_token: SessionToken,
@@ -146,16 +148,10 @@ pub struct DataRcvNotification {
     pub status: DataRcvStatusCode,
 
     /// The sequence number of the data packet.
-    pub uci_sequence_num: u32,
+    pub uci_sequence_num: u16,
 
     /// MacAddress of the sender of the application data.
     pub source_address: UwbAddress,
-
-    /// Identifier for the source FiraComponent.
-    pub source_fira_component: FiraComponent,
-
-    /// Identifier for the destination FiraComponent.
-    pub dest_fira_component: FiraComponent,
 
     /// Application Payload Data
     pub payload: Vec<u8>,
@@ -170,8 +166,6 @@ impl TryFrom<uwb_uci_packets::UciDataPacket> for DataRcvNotification {
                 status: evt.get_status(),
                 uci_sequence_num: evt.get_uci_sequence_number(),
                 source_address: UwbAddress::Extended(evt.get_source_mac_address().to_le_bytes()),
-                source_fira_component: evt.get_source_fira_component(),
-                dest_fira_component: evt.get_dest_fira_component(),
                 payload: evt.get_data().to_vec(),
             }),
             _ => {
@@ -209,6 +203,7 @@ impl TryFrom<uwb_uci_packets::UciNotification> for UciNotification {
             UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
+            UciNotificationChild::TestNotification(evt) => vendor_notification(evt.into()),
             _ => {
                 error!("Unknown UciNotification: {:?}", evt);
                 Err(Error::Unknown)
@@ -278,6 +273,7 @@ impl TryFrom<uwb_uci_packets::SessionControlNotification> for SessionNotificatio
                     session_token: evt.get_session_token(),
                     uci_sequence_number: evt.get_uci_sequence_number(),
                     status: evt.get_status(),
+                    tx_count: evt.get_tx_count(),
                 })
             }
             _ => {
@@ -458,13 +454,16 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
                 uwb_uci_packets::UciVendor_F_NotificationChild::None => Ok(Vec::new()),
             }
         }
+        uwb_uci_packets::UciNotificationChild::TestNotification(evt) => match evt.specialize() {
+            uwb_uci_packets::TestNotificationChild::Payload(payload) => Ok(payload.to_vec()),
+            uwb_uci_packets::TestNotificationChild::None => Ok(Vec::new()),
+        },
         _ => {
             error!("Unknown UciVendor packet: {:?}", evt);
             Err(Error::Unknown)
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,8 +490,7 @@ mod tests {
                 rssi: u8::MAX,
             },
         ]);
-        let extended_ranging_measurements_copy = extended_ranging_measurements.clone();
-        assert_eq!(extended_ranging_measurements, extended_ranging_measurements_copy);
+        assert_eq!(extended_ranging_measurements, extended_ranging_measurements.clone());
         let empty_extended_ranging_measurements =
             RangingMeasurements::ExtendedAddressTwoWay(vec![]);
         assert_eq!(empty_short_ranging_measurements, empty_short_ranging_measurements);
@@ -820,6 +818,21 @@ mod tests {
                 gid: 0xa,
                 oid: 0x41,
                 payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_test_to_vendor_notification_casting() {
+        let test_notification: uwb_uci_packets::UciNotification =
+            uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
+        let test_uci_notification = UciNotification::try_from(test_notification).unwrap();
+        assert_eq!(
+            test_uci_notification,
+            UciNotification::Vendor(RawUciMessage {
+                gid: 0x0d, // per enum Test GroupId in uci_packets.pdl
+                oid: 0x22,
+                payload: vec![],
             })
         );
     }

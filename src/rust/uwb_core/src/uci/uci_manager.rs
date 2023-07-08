@@ -25,10 +25,10 @@ use crate::uci::command::UciCommand;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
-    CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, FiraComponent,
-    GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId,
-    SessionState, SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse,
-    SetAppConfigResponse, UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
+    CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse,
+    GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
+    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    UciDataPacket, UciDataPacketHal, UpdateMulticastListAction,
 };
 use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
@@ -88,6 +88,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         config_ids: Vec<DeviceConfigId>,
     ) -> Result<Vec<DeviceConfigTlv>>;
+    async fn core_query_uwb_timestamp(&self) -> Result<u64>;
     async fn session_init(&self, session_id: SessionId, session_type: SessionType) -> Result<()>;
     async fn session_deinit(&self, session_id: SessionId) -> Result<()>;
     async fn session_set_app_config(
@@ -140,8 +141,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_number: u8,
+        uci_sequence_number: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
 
@@ -314,6 +314,15 @@ impl UciManager for UciManagerImpl {
         let cmd = UciCommand::CoreGetConfig { cfg_id };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::CoreGetConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let cmd = UciCommand::CoreQueryTimeStamp;
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::CoreQueryTimeStamp(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -513,8 +522,7 @@ impl UciManager for UciManagerImpl {
         &self,
         session_id: SessionId,
         dest_mac_address_bytes: Vec<u8>,
-        dest_fira_component: FiraComponent,
-        uci_sequence_number: u8,
+        uci_sequence_number: u16,
         data: Vec<u8>,
     ) -> Result<()> {
         debug!(
@@ -525,7 +533,6 @@ impl UciManager for UciManagerImpl {
         let data_snd_packet = uwb_uci_packets::UciDataSndBuilder {
             session_token: self.get_session_token(&session_id).await?,
             dest_mac_address,
-            dest_fira_component,
             uci_sequence_number,
             data,
         }
@@ -1172,6 +1179,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                         session_token: _,
                         uci_sequence_number: _,
                         status: _,
+                        tx_count: _,
                     } => {
                         // Reset the UciDataSnd Retryer since we received a DataTransferStatusNtf.
                         let _ = self.uci_data_snd_retryer.take();
@@ -1226,10 +1234,12 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 session_token,
                 uci_sequence_number,
                 status,
+                tx_count,
             } => Ok(SessionNotification::DataTransferStatus {
                 session_token: self.get_session_id(&session_token).await?,
                 uci_sequence_number,
                 status,
+                tx_count,
             }),
             SessionNotification::DataCredit { session_token, credit_availability } => {
                 Ok(SessionNotification::DataCredit {
@@ -1382,9 +1392,10 @@ mod tests {
     use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
 
     use crate::params::uci_packets::{
-        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataTransferNtfStatusCode,
-        StatusCode,
+        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataRcvStatusCode,
+        DataTransferNtfStatusCode, StatusCode,
     };
+    use crate::params::UwbAddress;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
     use crate::uci::uci_logger::NopUciLogger;
@@ -2538,14 +2549,6 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-    // TODO(b/276320369): Listing down the Data Packet Rx scenarios below, will add unit tests
-    // for them in subsequent CLs.
-    #[tokio::test]
-    async fn test_data_packet_recv_ok() {}
-
-    #[tokio::test]
-    async fn test_data_packet_recv_fragmented_packet_ok() {}
-
     fn setup_hal_for_session_active(
         hal: &mut MockUciHal,
         session_type: SessionType,
@@ -2606,6 +2609,140 @@ mod tests {
         (uci_manager, hal)
     }
 
+    // Test Data packet receive for a single packet (on an active UWB session).
+    #[tokio::test]
+    async fn test_data_packet_recv_ok() {
+        let mt_data = 0x0;
+        let pbf = 0x0;
+        let dpf = 0x2;
+        let oid = 0x0;
+        let session_id = 0x3;
+        let session_token = 0x5;
+        let uci_sequence_num = 0xa;
+        let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
+        let app_data = vec![0x01, 0x02, 0x03];
+        let data_rcv_payload = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionToken
+            0x00, // DataRcvStatusCode
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x0a, 0x00, // UciSequenceNumber
+            0x03, 0x00, // AppDataLen
+            0x01, 0x02, 0x03, // AppData
+        ];
+
+        // Setup the DataPacketRcv (Rx by HAL) and the expected DataRcvNotification.
+        let data_packet_rcv = build_uci_packet(mt_data, pbf, dpf, oid, data_rcv_payload);
+        let expected_data_rcv_notification = DataRcvNotification {
+            session_token,
+            status: DataRcvStatusCode::UciStatusSuccess,
+            uci_sequence_num,
+            source_address,
+            payload: app_data,
+        };
+
+        // Setup an active UWBS session over which the DataPacket will be received by the Host.
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let (data_rcv_notification_sender, mut data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<DataRcvNotification>();
+        uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+
+        // Inject the UCI DataPacketRcv into HAL.
+        let result = mock_hal.receive_packet(data_packet_rcv);
+        assert!(result.is_ok());
+
+        // UciManager should send a DataRcvNotification (for the valid Rx packet).
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), data_rcv_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_data_rcv_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    // Test Data packet receive for two packet fragments (on an active UWB session).
+    #[tokio::test]
+    async fn test_data_packet_recv_fragmented_packets_ok() {
+        let mt_data = 0x0;
+        let pbf_fragment_1 = 0x1;
+        let pbf_fragment_2 = 0x0;
+        let dpf = 0x2;
+        let oid = 0x0;
+        let session_id = 0x3;
+        let session_token = 0x5;
+        let uci_sequence_num = 0xa;
+        let source_address = UwbAddress::Extended([0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1]);
+        let app_data_len = 300;
+        let app_data_fragment_1_len = 200;
+        let mut data_rcv_payload_fragment_1: Vec<u8> = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionToken
+            0x00, // DataRcvStatusCode
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x0a, 0x00, // UciSequenceNumber
+            0x2c, 0x01, // AppData Length (300)
+        ];
+
+        // Setup the application data (payload) for the 2 DataPacketRcv fragments.
+        let mut app_data: Vec<u8> = Vec::new();
+        for i in 0..app_data_len {
+            app_data.push((i & 0xff).try_into().unwrap());
+        }
+        data_rcv_payload_fragment_1.extend_from_slice(&app_data[0..app_data_fragment_1_len]);
+        let mut data_rcv_payload_fragment_2: Vec<u8> = Vec::new();
+        data_rcv_payload_fragment_2.extend_from_slice(&app_data[app_data_fragment_1_len..]);
+
+        // Setup the DataPacketRcv fragments (Rx by HAL) and the expected DataRcvNotification.
+        let data_packet_rcv_fragment_1 =
+            build_uci_packet(mt_data, pbf_fragment_1, dpf, oid, data_rcv_payload_fragment_1);
+        let data_packet_rcv_fragment_2 =
+            build_uci_packet(mt_data, pbf_fragment_2, dpf, oid, data_rcv_payload_fragment_2);
+        let expected_data_rcv_notification = DataRcvNotification {
+            session_token,
+            status: DataRcvStatusCode::UciStatusSuccess,
+            uci_sequence_num,
+            source_address,
+            payload: app_data,
+        };
+
+        // Setup an active UWBS session over which the DataPacket will be received by the Host.
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let (data_rcv_notification_sender, mut data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<DataRcvNotification>();
+        uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+
+        // Inject the 2 UCI DataPacketRcv into HAL.
+        let result = mock_hal.receive_packet(data_packet_rcv_fragment_1);
+        assert!(result.is_ok());
+        let result = mock_hal.receive_packet(data_packet_rcv_fragment_2);
+        assert!(result.is_ok());
+
+        // UciManager should send a DataRcvNotification (for the valid Rx packet).
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), data_rcv_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_data_rcv_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_data_packet_recv_bad_payload_len_failure() {}
+
     #[tokio::test]
     async fn test_data_packet_send_ok() {
         // Test Data packet send for a single packet (on a UWB session).
@@ -2616,18 +2753,17 @@ mod tests {
         let session_id = 0x5;
         let session_token = 0x5;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data = vec![0x01, 0x02, 0x03];
         let expected_data_snd_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
             0x01, 0x02, 0x03, // AppData
         ];
         let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+        let tx_count = 0x00;
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
             |mut hal| async move {
@@ -2641,8 +2777,10 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));
@@ -2655,13 +2793,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
@@ -2681,19 +2813,18 @@ mod tests {
         let session_id = 0x5;
         let session_token = 0x5;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data_len = 300; // Larger than MAX_PAYLOAD_LEN=255, so fragmentation occurs.
         let mut app_data = Vec::new();
         let mut expected_data_snd_payload_fragment_1 = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x2c, 0x01, // AppDataLen = 300
         ];
         let mut expected_data_snd_payload_fragment_2 = Vec::new();
         let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+        let tx_count = 0x00;
 
         // Setup the app data for both the Tx data packet and expected packet fragments.
         let app_data_len_fragment_1 = 255 - expected_data_snd_payload_fragment_1.len();
@@ -2737,8 +2868,10 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd_fragment_2, ntfs, Ok(()));
@@ -2751,13 +2884,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
@@ -2772,15 +2899,14 @@ mod tests {
         let oid = 0x0;
         let session_id = 0x5;
         let session_token = 0x5;
+        let tx_count = 0x01;
         let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
-        let dest_fira_component = FiraComponent::Host;
-        let uci_sequence_number = 0xa;
+        let uci_sequence_number: u16 = 0xa;
         let app_data = vec![0x01, 0x02, 0x03];
         let expected_data_snd_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionID
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
-            0x01, // FiraComponent
-            0x0a, // UciSequenceNumber
+            0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
             0x01, 0x02, 0x03, // AppData
         ];
@@ -2806,8 +2932,10 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        uci_sequence_number,
+                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
+                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
                         status,
+                        tx_count,
                     },
                 ));
                 hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));
@@ -2820,13 +2948,7 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .send_data_packet(
-                session_id,
-                dest_mac_address,
-                dest_fira_component,
-                uci_sequence_number,
-                app_data,
-            )
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);

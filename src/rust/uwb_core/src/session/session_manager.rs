@@ -376,6 +376,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 session_token,
                 uci_sequence_number: _,
                 status: _,
+                tx_count: _,
             } => {
                 match self.active_sessions.get(&session_token) {
                     Some(_) => {
@@ -722,7 +723,7 @@ mod tests {
             (AppConfigTlvType::StsIndex, u32_to_bytes(3)),
             (AppConfigTlvType::CccHopModeKey, u32_to_bytes(5)),
             (AppConfigTlvType::CccUwbTime0, u64_to_bytes(7)),
-            (AppConfigTlvType::RangingInterval, u32_to_bytes(96)),
+            (AppConfigTlvType::RangingDuration, u32_to_bytes(96)),
             (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(9)),
         ]);
         let received_tlvs = received_config_map
