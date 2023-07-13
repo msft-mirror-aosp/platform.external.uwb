@@ -1383,7 +1383,7 @@ enum UciManagerCmd {
     },
 }
 
-#[cfg(any(test))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
