@@ -20,9 +20,9 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
-    ResetConfig, SessionId, SessionToken, SessionType, UpdateMulticastListAction,
+    ResetConfig, SessionId, SessionToken, SessionType, UpdateMulticastListAction, UpdateTime,
 };
-use uwb_uci_packets::{build_session_update_controller_multicast_list_cmd, GroupId, MessageType};
+use uwb_uci_packets::{ build_session_update_controller_multicast_list_cmd, GroupId, MessageType, PhaseList,};
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
 #[allow(missing_docs)]
@@ -79,6 +79,12 @@ pub enum UciCommand {
     },
     SessionGetRangingCount {
         session_token: SessionToken,
+    },
+    SessionSetHybridConfig {
+        session_token: SessionToken,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
     },
     AndroidSetCountryCode {
         country_code: CountryCode,
@@ -189,6 +195,19 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             UciCommand::SessionQueryMaxDataSize { session_token } => {
                 uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_token }.build().into()
             }
+            UciCommand::SessionSetHybridConfig {
+                session_token,
+                number_of_phases,
+                update_time,
+                phase_list,
+            } => uwb_uci_packets::SessionSetHybridConfigCmdBuilder {
+                session_token,
+                number_of_phases,
+                update_time: update_time.into(),
+                phase_list,
+            }
+            .build()
+            .into(),
         };
         Ok(packet)
     }
