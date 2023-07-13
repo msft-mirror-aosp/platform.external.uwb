@@ -50,6 +50,7 @@ pub(super) enum UciResponse {
     AndroidGetPowerStats(Result<PowerStats>),
     RawUciCmd(Result<RawUciMessage>),
     SendUciData(Result<()>),
+    SessionSetHybridConfig(Result<()>),
 }
 
 impl UciResponse {
@@ -76,6 +77,7 @@ impl UciResponse {
             Self::AndroidSetCountryCode(result) => Self::matches_result_retry(result),
             Self::AndroidGetPowerStats(result) => Self::matches_result_retry(result),
             Self::RawUciCmd(result) => Self::matches_result_retry(result),
+            Self::SessionSetHybridConfig(result) => Self::matches_result_retry(result),
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
@@ -206,6 +208,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
             SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
                 Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
             }
+            SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => Ok(
+                UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())),
+            ),
             _ => Err(Error::Unknown),
         }
     }
