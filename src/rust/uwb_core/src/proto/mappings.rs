@@ -526,7 +526,11 @@ enum_mapping! {
 enum_mapping! {
     ProtoSessionType => SessionType,
     FIRA_RANGING_SESSION => FiraRangingSession,
-    FIRA_DATA_TRANSFER => FiraDataTransfer,
+    FIRA_DATA_TRANSFER => FiraDataTransferSession,
+    FIRA_RANGING_AND_IN_BAND_DATA_SESSION => FiraRangingAndInBandDataSession,
+    FIRA_RANGING_ONLY_PHASE => FiraRangingOnlyPhase,
+    FIRA_IN_BAND_DATA_PHASE => FiraInBandDataPhase,
+    FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
