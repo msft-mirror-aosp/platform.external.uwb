@@ -94,8 +94,12 @@ impl AppConfigParams {
     pub fn is_type_matched(&self, session_type: SessionType) -> bool {
         match self {
             Self::Fira(_) => {
-                session_type == SessionType::FiraDataTransfer
+                session_type == SessionType::FiraDataTransferSession
                     || session_type == SessionType::FiraRangingSession
+                    || session_type == SessionType::FiraRangingAndInBandDataSession
+                    || session_type == SessionType::FiraRangingOnlyPhase
+                    || session_type == SessionType::FiraInBandDataPhase
+                    || session_type == SessionType::FiraRangingWithDataPhase
             }
             Self::Ccc(_) | Self::CccStarted(_) => session_type == SessionType::Ccc,
         }

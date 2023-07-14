@@ -25,8 +25,8 @@ pub use uwb_uci_packets::{
     DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
-    PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
-    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    PhaseList, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState,
+    SessionType, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
@@ -181,6 +181,23 @@ impl TryFrom<String> for CountryCode {
     fn try_from(item: String) -> Result<Self, Self::Error> {
         let code = item.as_bytes().try_into().map_err(|_| Error::BadParameters)?;
         Self::new(code).ok_or(Error::BadParameters)
+    }
+}
+
+/// absolute time in UWBS Time domain(ms) when this configuration applies
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub struct UpdateTime([u8; 8]);
+
+impl UpdateTime {
+    /// Create a UpdateTime instance.
+    pub fn new(update_time: &[u8; 8]) -> Option<Self> {
+        Some(Self(*update_time))
+    }
+}
+
+impl From<UpdateTime> for [u8; 8] {
+    fn from(item: UpdateTime) -> [u8; 8] {
+        item.0
     }
 }
 

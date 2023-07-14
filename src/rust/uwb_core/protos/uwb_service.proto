@@ -183,10 +183,14 @@ enum RangingMeasurementType {
 
 // Represent uwb_uci_packets::SessionType.
 enum SessionType {
-  FIRA_RANGING_SESSION = 0;
-  FIRA_DATA_TRANSFER = 1;
-  CCC = 2;
-  DEVICE_TEST_MODE = 3;
+  FIRA_RANGING_SESSION = 0x00;
+  FIRA_RANGING_AND_IN_BAND_DATA_SESSION = 0x01;
+  FIRA_DATA_TRANSFER = 0x02;
+  FIRA_RANGING_ONLY_PHASE = 0x03;
+  FIRA_IN_BAND_DATA_PHASE = 0x04;
+  FIRA_RANGING_WITH_DATA_PHASE = 0x05;
+  CCC = 0xA0;
+  DEVICE_TEST_MODE = 0xD0;
 }
 
 // Represent uwb_uci_packets::UpdateMulticastListAction.
