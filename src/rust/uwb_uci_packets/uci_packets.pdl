@@ -144,6 +144,7 @@ enum StatusCode : 8 {
         UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
         UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
         UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
+        UCI_STATUS_REGULATION_UWB_OFF = 0x53,
     },
 
     // For internal usage, we will use 0xFF as default.
