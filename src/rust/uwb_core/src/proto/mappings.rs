@@ -179,6 +179,7 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
                 StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict
             }
+            ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF => StatusCode::UciStatusRegulationUwbOff,
             _ =>  StatusCode::VendorSpecificStatusCode2,
         }
     }
@@ -269,6 +270,9 @@ impl From<StatusCode> for ProtoStatusCode {
             }
             StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict => {
                 ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
+            }
+            StatusCode::UciStatusRegulationUwbOff => {
+                ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF
             }
             _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
         }
