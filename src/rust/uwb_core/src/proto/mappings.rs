@@ -16,7 +16,6 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use protobuf::RepeatedField;
 use zeroize::Zeroize;
 
 use crate::error::{Error, Result};
@@ -58,6 +57,7 @@ use crate::proto::bindings::{
 };
 use crate::uci::notification::{RangingMeasurements, SessionRangeData};
 use crate::uci::uci_logger::UciLoggerMode;
+use protobuf::{EnumOrUnknown, MessageField};
 
 /// Generate the conversion functions between 2 enum types, which field is 1-to-1 mapping.
 ///
@@ -711,20 +711,20 @@ impl<T> From<Result<T>> for ProtoStatus {
 impl From<ShortAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ShortAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address.into());
-        result.set_status(item.status.into());
-        result.set_nlos(item.nlos.into());
-        result.set_distance(item.distance.into());
-        result.set_aoa_azimuth(item.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
-        result.set_aoa_destination_azimuth(item.aoa_destination_azimuth.into());
-        result.set_aoa_destination_azimuth_fom(item.aoa_destination_azimuth_fom.into());
-        result.set_aoa_destination_elevation(item.aoa_destination_elevation.into());
-        result.set_aoa_destination_elevation_fom(item.aoa_destination_elevation_fom.into());
-        result.set_slot_index(item.slot_index.into());
-        result.set_rssi(item.rssi.into());
+        result.mac_address = item.mac_address.into();
+        result.status = EnumOrUnknown::new(item.status.into());
+        result.nlos = item.nlos.into();
+        result.distance = item.distance.into();
+        result.aoa_azimuth = item.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.aoa_elevation.into();
+        result.aoa_elevation_fom = item.aoa_elevation_fom.into();
+        result.aoa_destination_azimuth = item.aoa_destination_azimuth.into();
+        result.aoa_destination_azimuth_fom = item.aoa_destination_azimuth_fom.into();
+        result.aoa_destination_elevation = item.aoa_destination_elevation.into();
+        result.aoa_destination_elevation_fom = item.aoa_destination_elevation_fom.into();
+        result.slot_index = item.slot_index.into();
+        result.rssi = item.rssi.into();
         result
     }
 }
@@ -732,20 +732,20 @@ impl From<ShortAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasuremen
 impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasurement {
     fn from(item: ExtendedAddressTwoWayRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address);
-        result.set_status(item.status.into());
-        result.set_nlos(item.nlos.into());
-        result.set_distance(item.distance.into());
-        result.set_aoa_azimuth(item.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
-        result.set_aoa_destination_azimuth(item.aoa_destination_azimuth.into());
-        result.set_aoa_destination_azimuth_fom(item.aoa_destination_azimuth_fom.into());
-        result.set_aoa_destination_elevation(item.aoa_destination_elevation.into());
-        result.set_aoa_destination_elevation_fom(item.aoa_destination_elevation_fom.into());
-        result.set_slot_index(item.slot_index.into());
-        result.set_rssi(item.rssi.into());
+        result.mac_address = item.mac_address;
+        result.status = EnumOrUnknown::new(item.status.into());
+        result.nlos = item.nlos.into();
+        result.distance = item.distance.into();
+        result.aoa_azimuth = item.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.aoa_elevation.into();
+        result.aoa_elevation_fom = item.aoa_elevation_fom.into();
+        result.aoa_destination_azimuth = item.aoa_destination_azimuth.into();
+        result.aoa_destination_azimuth_fom = item.aoa_destination_azimuth_fom.into();
+        result.aoa_destination_elevation = item.aoa_destination_elevation.into();
+        result.aoa_destination_elevation_fom = item.aoa_destination_elevation_fom.into();
+        result.slot_index = item.slot_index.into();
+        result.rssi = item.rssi.into();
         result
     }
 }
@@ -753,15 +753,15 @@ impl From<ExtendedAddressTwoWayRangingMeasurement> for ProtoTwoWayRangingMeasure
 impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ShortAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address.into());
-        result.set_status(item.status.into());
-        result.set_nlos(item.nlos.into());
-        result.set_block_index(item.block_index.into());
-        result.set_frame_sequence_number(item.frame_sequence_number.into());
-        result.set_aoa_azimuth(item.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
+        result.mac_address = item.mac_address.into();
+        result.status = EnumOrUnknown::new(item.status.into());
+        result.nlos = item.nlos.into();
+        result.block_index = item.block_index.into();
+        result.frame_sequence_number = item.frame_sequence_number.into();
+        result.aoa_azimuth = item.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.aoa_elevation.into();
+        result.aoa_elevation_fom = item.aoa_elevation_fom.into();
         result
     }
 }
@@ -769,15 +769,15 @@ impl From<ShortAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasuremen
 impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasurement {
     fn from(item: ExtendedAddressOwrAoaRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address);
-        result.set_status(item.status.into());
-        result.set_nlos(item.nlos.into());
-        result.set_block_index(item.block_index.into());
-        result.set_frame_sequence_number(item.frame_sequence_number.into());
-        result.set_aoa_azimuth(item.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.aoa_elevation_fom.into());
+        result.mac_address = item.mac_address;
+        result.status = EnumOrUnknown::new(item.status.into());
+        result.nlos = item.nlos.into();
+        result.block_index = item.block_index.into();
+        result.frame_sequence_number = item.frame_sequence_number.into();
+        result.aoa_azimuth = item.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.aoa_elevation.into();
+        result.aoa_elevation_fom = item.aoa_elevation_fom.into();
         result
     }
 }
@@ -785,38 +785,36 @@ impl From<ExtendedAddressOwrAoaRangingMeasurement> for ProtoOwrAoaRangingMeasure
 impl From<ShortAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasurement {
     fn from(item: ShortAddressDlTdoaRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address.into());
-        result.set_status(
+        result.mac_address = item.mac_address.into();
+        result.status = EnumOrUnknown::new(
             StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
-        result.set_message_control(item.measurement.message_control.into());
-        result.set_block_index(item.measurement.block_index.into());
-        result.set_round_index(item.measurement.round_index.into());
-        result.set_nlos(item.measurement.nlos.into());
-        result.set_aoa_azimuth(item.measurement.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.measurement.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.measurement.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.measurement.aoa_elevation_fom.into());
-        result.set_rssi(item.measurement.rssi.into());
-        result.set_tx_timestamp(item.measurement.tx_timestamp);
-        result.set_rx_timestamp(item.measurement.rx_timestamp);
-        result.set_anchor_cfo(item.measurement.anchor_cfo.into());
-        result.set_cfo(item.measurement.cfo.into());
-        result.set_initiator_reply_time(item.measurement.initiator_reply_time);
-        result.set_responder_reply_time(item.measurement.responder_reply_time);
-        result.set_initiator_responder_tof(item.measurement.initiator_responder_tof.into());
-        result.set_dt_anchor_location(
-            item.measurement
-                .dt_anchor_location
-                .into_iter()
-                .map(|val| val as u32)
-                .collect::<Vec<u32>>(),
-        );
-        result.set_ranging_rounds(
-            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>(),
-        );
+        result.message_control = item.measurement.message_control.into();
+        result.block_index = item.measurement.block_index.into();
+        result.round_index = item.measurement.round_index.into();
+        result.nlos = item.measurement.nlos.into();
+        result.aoa_azimuth = item.measurement.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.measurement.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.measurement.aoa_elevation.into();
+        result.aoa_elevation_fom = item.measurement.aoa_elevation_fom.into();
+        result.rssi = item.measurement.rssi.into();
+        result.tx_timestamp = item.measurement.tx_timestamp;
+        result.rx_timestamp = item.measurement.rx_timestamp;
+        result.anchor_cfo = item.measurement.anchor_cfo.into();
+        result.cfo = item.measurement.cfo.into();
+        result.initiator_reply_time = item.measurement.initiator_reply_time;
+        result.responder_reply_time = item.measurement.responder_reply_time;
+        result.initiator_responder_tof = item.measurement.initiator_responder_tof.into();
+        result.dt_anchor_location = item
+            .measurement
+            .dt_anchor_location
+            .into_iter()
+            .map(|val| val as u32)
+            .collect::<Vec<u32>>();
+        result.ranging_rounds =
+            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>();
         result
     }
 }
@@ -824,38 +822,36 @@ impl From<ShortAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasuremen
 impl From<ExtendedAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasurement {
     fn from(item: ExtendedAddressDlTdoaRangingMeasurement) -> Self {
         let mut result = Self::new();
-        result.set_mac_address(item.mac_address);
-        result.set_status(
+        result.mac_address = item.mac_address;
+        result.status = EnumOrUnknown::new(
             StatusCode::try_from(item.measurement.status)
                 .unwrap_or(StatusCode::UciStatusFailed)
                 .into(),
         );
-        result.set_message_control(item.measurement.message_control.into());
-        result.set_block_index(item.measurement.block_index.into());
-        result.set_round_index(item.measurement.round_index.into());
-        result.set_nlos(item.measurement.nlos.into());
-        result.set_aoa_azimuth(item.measurement.aoa_azimuth.into());
-        result.set_aoa_azimuth_fom(item.measurement.aoa_azimuth_fom.into());
-        result.set_aoa_elevation(item.measurement.aoa_elevation.into());
-        result.set_aoa_elevation_fom(item.measurement.aoa_elevation_fom.into());
-        result.set_rssi(item.measurement.rssi.into());
-        result.set_tx_timestamp(item.measurement.tx_timestamp);
-        result.set_rx_timestamp(item.measurement.rx_timestamp);
-        result.set_anchor_cfo(item.measurement.anchor_cfo.into());
-        result.set_cfo(item.measurement.cfo.into());
-        result.set_initiator_reply_time(item.measurement.initiator_reply_time);
-        result.set_responder_reply_time(item.measurement.responder_reply_time);
-        result.set_initiator_responder_tof(item.measurement.initiator_responder_tof.into());
-        result.set_dt_anchor_location(
-            item.measurement
-                .dt_anchor_location
-                .into_iter()
-                .map(|val| val as u32)
-                .collect::<Vec<u32>>(),
-        );
-        result.set_ranging_rounds(
-            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>(),
-        );
+        result.message_control = item.measurement.message_control.into();
+        result.block_index = item.measurement.block_index.into();
+        result.round_index = item.measurement.round_index.into();
+        result.nlos = item.measurement.nlos.into();
+        result.aoa_azimuth = item.measurement.aoa_azimuth.into();
+        result.aoa_azimuth_fom = item.measurement.aoa_azimuth_fom.into();
+        result.aoa_elevation = item.measurement.aoa_elevation.into();
+        result.aoa_elevation_fom = item.measurement.aoa_elevation_fom.into();
+        result.rssi = item.measurement.rssi.into();
+        result.tx_timestamp = item.measurement.tx_timestamp;
+        result.rx_timestamp = item.measurement.rx_timestamp;
+        result.anchor_cfo = item.measurement.anchor_cfo.into();
+        result.cfo = item.measurement.cfo.into();
+        result.initiator_reply_time = item.measurement.initiator_reply_time;
+        result.responder_reply_time = item.measurement.responder_reply_time;
+        result.initiator_responder_tof = item.measurement.initiator_responder_tof.into();
+        result.dt_anchor_location = item
+            .measurement
+            .dt_anchor_location
+            .into_iter()
+            .map(|val| val as u32)
+            .collect::<Vec<u32>>();
+        result.ranging_rounds =
+            item.measurement.ranging_rounds.into_iter().map(|val| val as u32).collect::<Vec<u32>>();
         result
     }
 }
@@ -863,19 +859,19 @@ impl From<ExtendedAddressDlTdoaRangingMeasurement> for ProtoDlTDoARangingMeasure
 impl From<SessionRangeData> for ProtoSessionRangeData {
     fn from(item: SessionRangeData) -> Self {
         let mut result = Self::new();
-        result.set_sequence_number(item.sequence_number);
-        result.set_session_id(item.session_token);
-        result.set_current_ranging_interval_ms(item.current_ranging_interval_ms);
-        result.set_ranging_measurement_type(item.ranging_measurement_type.into());
+        result.sequence_number = item.sequence_number;
+        result.session_id = item.session_token;
+        result.current_ranging_interval_ms = item.current_ranging_interval_ms;
+        result.ranging_measurement_type = EnumOrUnknown::new(item.ranging_measurement_type.into());
         match to_proto_ranging_measurements(item.ranging_measurements) {
             ProtoRangingMeasurements::TwoWay(twoway_measurements) => {
-                result.set_twoway_ranging_measurements(RepeatedField::from_vec(twoway_measurements))
+                result.twoway_ranging_measurements = twoway_measurements;
             }
             ProtoRangingMeasurements::OwrAoa(owraoa_measurement) => {
-                result.set_owraoa_ranging_measurement(owraoa_measurement)
+                result.owraoa_ranging_measurement = MessageField::from(Some(owraoa_measurement));
             }
             ProtoRangingMeasurements::DlTDoa(dltdoa_measurements) => {
-                result.set_dltdoa_ranging_measurements(RepeatedField::from_vec(dltdoa_measurements))
+                result.dltdoa_ranging_measurements = dltdoa_measurements;
             }
         }
         result
@@ -914,9 +910,9 @@ impl From<ProtoRangingRoundControl> for RangingRoundControl {
 impl From<RangingRoundControl> for ProtoRangingRoundControl {
     fn from(item: RangingRoundControl) -> Self {
         let mut res = Self::new();
-        res.set_ranging_result_report_message(item.ranging_result_report_message);
-        res.set_control_message(item.control_message);
-        res.set_measurement_report_message(item.measurement_report_message);
+        res.ranging_result_report_message = item.ranging_result_report_message;
+        res.control_message = item.control_message;
+        res.measurement_report_message = item.measurement_report_message;
         res
     }
 }
@@ -935,10 +931,10 @@ impl From<ProtoResultReportConfig> for ResultReportConfig {
 impl From<ResultReportConfig> for ProtoResultReportConfig {
     fn from(item: ResultReportConfig) -> Self {
         let mut res = Self::new();
-        res.set_tof(item.tof);
-        res.set_aoa_azimuth(item.aoa_azimuth);
-        res.set_aoa_elevation(item.aoa_elevation);
-        res.set_aoa_fom(item.aoa_fom);
+        res.tof = item.tof;
+        res.aoa_azimuth = item.aoa_azimuth;
+        res.aoa_elevation = item.aoa_elevation;
+        res.aoa_fom = item.aoa_fom;
         res
     }
 }
@@ -970,11 +966,11 @@ impl TryFrom<ProtoControlee> for Controlee {
 impl From<PowerStats> for ProtoPowerStats {
     fn from(item: PowerStats) -> Self {
         let mut res = Self::new();
-        res.set_status(item.status.into());
-        res.set_idle_time_ms(item.idle_time_ms);
-        res.set_tx_time_ms(item.tx_time_ms);
-        res.set_rx_time_ms(item.rx_time_ms);
-        res.set_total_wake_count(item.total_wake_count);
+        res.status = ProtoStatusCode::from(item.status).into();
+        res.idle_time_ms = item.idle_time_ms;
+        res.tx_time_ms = item.tx_time_ms;
+        res.rx_time_ms = item.rx_time_ms;
+        res.total_wake_count = item.total_wake_count;
         res
     }
 }
@@ -982,66 +978,62 @@ impl From<PowerStats> for ProtoPowerStats {
 impl From<FiraAppConfigParams> for ProtoFiraAppConfigParams {
     fn from(item: FiraAppConfigParams) -> Self {
         let mut res = Self::new();
-        res.set_device_type((*item.device_type()).into());
-        res.set_ranging_round_usage((*item.ranging_round_usage()).into());
-        res.set_sts_config((*item.sts_config()).into());
-        res.set_multi_node_mode((*item.multi_node_mode()).into());
-        res.set_channel_number((*item.channel_number()).into());
-        res.set_device_mac_address(item.device_mac_address().clone().into());
-        res.set_dst_mac_address(
-            item.dst_mac_address()
-                .clone()
-                .into_iter()
-                .map(|addr| addr.into())
-                .collect::<Vec<_>>()
-                .into(),
-        );
-        res.set_slot_duration_rstu((*item.slot_duration_rstu()).into());
-        res.set_ranging_interval_ms(*item.ranging_interval_ms());
-        res.set_mac_fcs_type((*item.mac_fcs_type()).into());
-        res.set_ranging_round_control(item.ranging_round_control().clone().into());
-        res.set_aoa_result_request((*item.aoa_result_request()).into());
-        res.set_range_data_ntf_config((*item.range_data_ntf_config()).into());
-        res.set_range_data_ntf_proximity_near_cm((*item.range_data_ntf_proximity_near_cm()).into());
-        res.set_range_data_ntf_proximity_far_cm((*item.range_data_ntf_proximity_far_cm()).into());
-        res.set_device_role((*item.device_role()).into());
-        res.set_rframe_config((*item.rframe_config()).into());
-        res.set_preamble_code_index((*item.preamble_code_index()).into());
-        res.set_sfd_id((*item.sfd_id()).into());
-        res.set_psdu_data_rate((*item.psdu_data_rate()).into());
-        res.set_preamble_duration((*item.preamble_duration()).into());
-        res.set_ranging_time_struct((*item.ranging_time_struct()).into());
-        res.set_slots_per_rr((*item.slots_per_rr()).into());
-        res.set_tx_adaptive_payload_power((*item.tx_adaptive_payload_power()).into());
-        res.set_responder_slot_index((*item.responder_slot_index()).into());
-        res.set_prf_mode((*item.prf_mode()).into());
-        res.set_scheduled_mode((*item.scheduled_mode()).into());
-        res.set_key_rotation((*item.key_rotation()).into());
-        res.set_key_rotation_rate((*item.key_rotation_rate()).into());
-        res.set_session_priority((*item.session_priority()).into());
-        res.set_mac_address_mode((*item.mac_address_mode()).into());
-        res.set_vendor_id((*item.vendor_id()).into());
-        res.set_static_sts_iv((*item.static_sts_iv()).into());
-        res.set_number_of_sts_segments((*item.number_of_sts_segments()).into());
-        res.set_max_rr_retry((*item.max_rr_retry()).into());
-        res.set_uwb_initiation_time_ms(*item.uwb_initiation_time_ms());
-        res.set_hopping_mode((*item.hopping_mode()).into());
-        res.set_block_stride_length((*item.block_stride_length()).into());
-        res.set_result_report_config(item.result_report_config().clone().into());
-        res.set_in_band_termination_attempt_count(
-            (*item.in_band_termination_attempt_count()).into(),
-        );
-        res.set_sub_session_id(*item.sub_session_id());
-        res.set_bprf_phr_data_rate((*item.bprf_phr_data_rate()).into());
-        res.set_max_number_of_measurements((*item.max_number_of_measurements()).into());
-        res.set_sts_length((*item.sts_length()).into());
-        res.set_number_of_range_measurements((*item.number_of_range_measurements()).into());
-        res.set_number_of_aoa_azimuth_measurements(
-            (*item.number_of_aoa_azimuth_measurements()).into(),
-        );
-        res.set_number_of_aoa_elevation_measurements(
-            (*item.number_of_aoa_elevation_measurements()).into(),
-        );
+        res.device_type = EnumOrUnknown::new((*item.device_type()).into());
+        res.ranging_round_usage = ProtoRangingRoundUsage::from(*item.ranging_round_usage()).into();
+        res.sts_config = ProtoStsConfig::from(*item.sts_config()).into();
+        res.multi_node_mode = ProtoMultiNodeMode::from(*item.multi_node_mode()).into();
+        res.channel_number = ProtoUwbChannel::from(*item.channel_number()).into();
+        res.device_mac_address = item.device_mac_address().clone().into();
+        res.dst_mac_address =
+            item.dst_mac_address().clone().into_iter().map(|addr| addr.into()).collect::<Vec<_>>();
+        res.slot_duration_rstu = (*item.slot_duration_rstu()).into();
+        res.ranging_duration_ms = *item.ranging_duration_ms();
+        res.mac_fcs_type = ProtoMacFcsType::from(*item.mac_fcs_type()).into();
+        res.ranging_round_control = MessageField::from(Some(ProtoRangingRoundControl::from(
+            item.ranging_round_control().clone(),
+        )));
+        res.aoa_result_request = ProtoAoaResultRequest::from(*item.aoa_result_request()).into();
+        res.range_data_ntf_config =
+            ProtoRangeDataNtfConfig::from(*item.range_data_ntf_config()).into();
+        res.range_data_ntf_proximity_near_cm = (*item.range_data_ntf_proximity_near_cm()).into();
+        res.range_data_ntf_proximity_far_cm = (*item.range_data_ntf_proximity_far_cm()).into();
+        res.device_role = ProtoDeviceRole::from(*item.device_role()).into();
+        res.rframe_config = ProtoRframeConfig::from(*item.rframe_config()).into();
+        res.preamble_code_index = (*item.preamble_code_index()).into();
+        res.sfd_id = (*item.sfd_id()).into();
+        res.psdu_data_rate = ProtoPsduDataRate::from(*item.psdu_data_rate()).into();
+        res.preamble_duration = ProtoPreambleDuration::from(*item.preamble_duration()).into();
+        res.ranging_time_struct = ProtoRangingTimeStruct::from(*item.ranging_time_struct()).into();
+        res.slots_per_rr = (*item.slots_per_rr()).into();
+        res.tx_adaptive_payload_power =
+            ProtoTxAdaptivePayloadPower::from(*item.tx_adaptive_payload_power()).into();
+        res.responder_slot_index = (*item.responder_slot_index()).into();
+        res.prf_mode = ProtoPrfMode::from(*item.prf_mode()).into();
+        res.scheduled_mode = ProtoScheduledMode::from(*item.scheduled_mode()).into();
+        res.key_rotation = ProtoKeyRotation::from(*item.key_rotation()).into();
+        res.key_rotation_rate = (*item.key_rotation_rate()).into();
+        res.session_priority = (*item.session_priority()).into();
+        res.mac_address_mode = ProtoMacAddressMode::from(*item.mac_address_mode()).into();
+        res.vendor_id = (*item.vendor_id()).into();
+        res.static_sts_iv = (*item.static_sts_iv()).into();
+        res.number_of_sts_segments = (*item.number_of_sts_segments()).into();
+        res.max_rr_retry = (*item.max_rr_retry()).into();
+        res.uwb_initiation_time_ms = *item.uwb_initiation_time_ms();
+        res.hopping_mode = ProtoHoppingMode::from(*item.hopping_mode()).into();
+        res.block_stride_length = (*item.block_stride_length()).into();
+        res.result_report_config = MessageField::from(Some(ProtoResultReportConfig::from(
+            item.result_report_config().clone(),
+        )));
+        res.in_band_termination_attempt_count = (*item.in_band_termination_attempt_count()).into();
+        res.sub_session_id = *item.sub_session_id();
+        res.bprf_phr_data_rate = ProtoBprfPhrDataRate::from(*item.bprf_phr_data_rate()).into();
+        res.max_number_of_measurements = (*item.max_number_of_measurements()).into();
+        res.sts_length = ProtoStsLength::from(*item.sts_length()).into();
+        res.number_of_range_measurements = (*item.number_of_range_measurements()).into();
+        res.number_of_aoa_azimuth_measurements =
+            (*item.number_of_aoa_azimuth_measurements()).into();
+        res.number_of_aoa_elevation_measurements =
+            (*item.number_of_aoa_elevation_measurements()).into();
 
         res
     }
@@ -1050,23 +1042,49 @@ impl From<FiraAppConfigParams> for ProtoFiraAppConfigParams {
 impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
     type Error = String;
     fn try_from(mut item: ProtoFiraAppConfigParams) -> std::result::Result<Self, Self::Error> {
-        let device_mac_address =
-            to_uwb_address(item.device_mac_address.clone(), item.mac_address_mode)
-                .ok_or("Failed to convert device_mac_address")?;
+        let device_mac_address = to_uwb_address(
+            item.device_mac_address.clone(),
+            item.mac_address_mode.enum_value().map_err(|_| "Failed to read mac_address_mode")?,
+        )
+        .ok_or("Failed to convert device_mac_address")?;
         let mut dst_mac_address = vec![];
         for addr in item.dst_mac_address.clone().into_iter() {
-            let addr = to_uwb_address(addr, item.mac_address_mode)
-                .ok_or("Failed to convert dst_mac_address")?;
+            let addr = to_uwb_address(
+                addr,
+                item.mac_address_mode
+                    .enum_value()
+                    .map_err(|_| "Failed to convert mac_address_mode")?,
+            )
+            .ok_or("Failed to convert dst_mac_address")?;
             dst_mac_address.push(addr);
         }
 
         let mut builder = FiraAppConfigParamsBuilder::new();
         builder
-            .device_type(item.device_type.into())
-            .ranging_round_usage(item.ranging_round_usage.into())
-            .sts_config(item.sts_config.into())
-            .multi_node_mode(item.multi_node_mode.into())
-            .channel_number(item.channel_number.into())
+            .device_type(
+                item.device_type.enum_value().map_err(|_| "Failed to convert device_type")?.into(),
+            )
+            .ranging_round_usage(
+                item.ranging_round_usage
+                    .enum_value()
+                    .map_err(|_| "Failed to convert ranging_round_usage")?
+                    .into(),
+            )
+            .sts_config(
+                item.sts_config.enum_value().map_err(|_| "Failed to convert sts_config")?.into(),
+            )
+            .multi_node_mode(
+                item.multi_node_mode
+                    .enum_value()
+                    .map_err(|_| "Failed to convert multi_node_mode")?
+                    .into(),
+            )
+            .channel_number(
+                item.channel_number
+                    .enum_value()
+                    .map_err(|_| "Failed to convert channel_number")?
+                    .into(),
+            )
             .device_mac_address(device_mac_address)
             .dst_mac_address(dst_mac_address)
             .slot_duration_rstu(
@@ -1074,13 +1092,28 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .try_into()
                     .map_err(|_| "Failed to convert slot_duration_rstu")?,
             )
-            .ranging_interval_ms(item.ranging_interval_ms)
-            .mac_fcs_type(item.mac_fcs_type.into())
+            .ranging_duration_ms(item.ranging_duration_ms)
+            .mac_fcs_type(
+                item.mac_fcs_type
+                    .enum_value()
+                    .map_err(|_| "Failed to convert mac_fcs_type")?
+                    .into(),
+            )
             .ranging_round_control(
                 item.ranging_round_control.take().ok_or("ranging_round_control is empty")?.into(),
             )
-            .aoa_result_request(item.aoa_result_request.into())
-            .range_data_ntf_config(item.range_data_ntf_config.into())
+            .aoa_result_request(
+                item.aoa_result_request
+                    .enum_value()
+                    .map_err(|_| "Failed to convert aoa_result_request")?
+                    .into(),
+            )
+            .range_data_ntf_config(
+                item.range_data_ntf_config
+                    .enum_value()
+                    .map_err(|_| "Failed to convert range_data_ntf_config")?
+                    .into(),
+            )
             .range_data_ntf_proximity_near_cm(
                 item.range_data_ntf_proximity_near_cm
                     .try_into()
@@ -1091,29 +1124,66 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .try_into()
                     .map_err(|_| "Failed to convert range_data_ntf_proximity_far_cm")?,
             )
-            .device_role(item.device_role.into())
-            .rframe_config(item.rframe_config.into())
+            .device_role(
+                item.device_role.enum_value().map_err(|_| "Failed to convert device_role")?.into(),
+            )
+            .rframe_config(
+                item.rframe_config
+                    .enum_value()
+                    .map_err(|_| "Failed to convert rframe_config")?
+                    .into(),
+            )
             .preamble_code_index(
                 item.preamble_code_index
                     .try_into()
                     .map_err(|_| "Failed to convert preamble_code_index")?,
             )
             .sfd_id(item.sfd_id.try_into().map_err(|_| "Failed to convert sfd_id")?)
-            .psdu_data_rate(item.psdu_data_rate.into())
-            .preamble_duration(item.preamble_duration.into())
-            .ranging_time_struct(item.ranging_time_struct.into())
+            .psdu_data_rate(
+                item.psdu_data_rate
+                    .enum_value()
+                    .map_err(|_| "Failed to convert psdu_data_rate")?
+                    .into(),
+            )
+            .preamble_duration(
+                item.preamble_duration
+                    .enum_value()
+                    .map_err(|_| "Failed to convert preamble_duration")?
+                    .into(),
+            )
+            .ranging_time_struct(
+                item.ranging_time_struct
+                    .enum_value()
+                    .map_err(|_| "Failed to convert ranging_time_struct")?
+                    .into(),
+            )
             .slots_per_rr(
                 item.slots_per_rr.try_into().map_err(|_| "Failed to convert slots_per_rr")?,
             )
-            .tx_adaptive_payload_power(item.tx_adaptive_payload_power.into())
+            .tx_adaptive_payload_power(
+                item.tx_adaptive_payload_power
+                    .enum_value()
+                    .map_err(|_| "Failed to convert tx_adaptive_payload_power")?
+                    .into(),
+            )
             .responder_slot_index(
                 item.responder_slot_index
                     .try_into()
                     .map_err(|_| "Failed to convert responder_slot_index")?,
             )
-            .prf_mode(item.prf_mode.into())
-            .scheduled_mode(item.scheduled_mode.into())
-            .key_rotation(item.key_rotation.into())
+            .prf_mode(item.prf_mode.enum_value().map_err(|_| "Failed to convert prf_mode")?.into())
+            .scheduled_mode(
+                item.scheduled_mode
+                    .enum_value()
+                    .map_err(|_| "Failed to convert scheduled_mode")?
+                    .into(),
+            )
+            .key_rotation(
+                item.key_rotation
+                    .enum_value()
+                    .map_err(|_| "Failed to convert key_rotation")?
+                    .into(),
+            )
             .key_rotation_rate(
                 item.key_rotation_rate
                     .try_into()
@@ -1124,7 +1194,12 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .try_into()
                     .map_err(|_| "Failed to convert session_priority")?,
             )
-            .mac_address_mode(item.mac_address_mode.into())
+            .mac_address_mode(
+                item.mac_address_mode
+                    .enum_value()
+                    .map_err(|_| "Failed to convert mac_address_mode")?
+                    .into(),
+            )
             .vendor_id(
                 item.vendor_id.clone().try_into().map_err(|_| "Failed to convert vendor_id")?,
             )
@@ -1143,7 +1218,7 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                 item.max_rr_retry.try_into().map_err(|_| "Failed to convert max_rr_retry")?,
             )
             .uwb_initiation_time_ms(item.uwb_initiation_time_ms)
-            .hopping_mode(item.hopping_mode.into())
+            .hopping_mode(item.hopping_mode.unwrap().into())
             .block_stride_length(
                 item.block_stride_length
                     .try_into()
@@ -1158,13 +1233,20 @@ impl TryFrom<ProtoFiraAppConfigParams> for AppConfigParams {
                     .map_err(|_| "Failed to convert in_band_termination_attempt_count")?,
             )
             .sub_session_id(item.sub_session_id)
-            .bprf_phr_data_rate(item.bprf_phr_data_rate.into())
+            .bprf_phr_data_rate(
+                item.bprf_phr_data_rate
+                    .enum_value()
+                    .map_err(|_| "Failed to convert bprf_phr_data_rate")?
+                    .into(),
+            )
             .max_number_of_measurements(
                 item.max_number_of_measurements
                     .try_into()
                     .map_err(|_| "Failed to convert max_number_of_measurements")?,
             )
-            .sts_length(item.sts_length.into())
+            .sts_length(
+                item.sts_length.enum_value().map_err(|_| "Failed to convert sts_length")?.into(),
+            )
             .number_of_range_measurements(
                 item.number_of_range_measurements
                     .try_into()
