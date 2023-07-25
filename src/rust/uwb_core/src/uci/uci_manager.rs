@@ -2847,8 +2847,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -2938,8 +2937,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -3002,8 +3000,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
