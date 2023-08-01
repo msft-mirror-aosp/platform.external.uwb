@@ -996,7 +996,7 @@ test DataCreditNtf {
 
 packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    uci_sequence_number: 8,
+    uci_sequence_number: 16,
     status: DataTransferNtfStatusCode,
     tx_count: 8,
 }
