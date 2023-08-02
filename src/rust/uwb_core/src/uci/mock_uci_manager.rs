@@ -28,9 +28,9 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
+    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList,
     PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken, SessionType,
-    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,  UpdateTime,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -404,6 +404,26 @@ impl MockUciManager {
             expected_address,
             expected_uci_sequence_num,
             expected_app_payload_data,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect session_set_hybrid_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response
+    pub fn expect_session_set_hybrid_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_number_of_phases: u8,
+        expected_update_time: UpdateTime,
+        expected_phase_list: Vec<PhaseList>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetHybridConfig {
+            expected_session_id,
+            expected_number_of_phases,
+            expected_update_time,
+            expected_phase_list,
             out,
         });
     }
@@ -941,6 +961,38 @@ impl UciManager for MockUciManager {
     ) -> Result<SessionToken> {
         Ok(1) // No uci call here, no mock required.
     }
+
+    async fn session_set_hybrid_config(
+        &self,
+        session_id: SessionId,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionSetHybridConfig {
+                expected_session_id,
+                expected_number_of_phases,
+                expected_update_time,
+                expected_phase_list,
+                out,
+            }) if expected_session_id == session_id
+                && expected_number_of_phases == number_of_phases
+                && expected_update_time == update_time
+                && expected_phase_list.len() == phase_list.len()
+                && expected_phase_list == phase_list =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1052,6 +1104,13 @@ enum ExpectedCall {
         expected_address: Vec<u8>,
         expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
+        out: Result<()>,
+    },
+    SessionSetHybridConfig {
+        expected_session_id: SessionId,
+        expected_number_of_phases: u8,
+        expected_update_time: UpdateTime,
+        expected_phase_list: Vec<PhaseList>,
         out: Result<()>,
     },
 }
