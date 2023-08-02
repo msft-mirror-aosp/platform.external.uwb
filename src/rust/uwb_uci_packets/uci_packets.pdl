@@ -250,7 +250,8 @@ enum AppConfigTlvType : 8 {
     SESSION_KEY = 0x45,
     SUBSESSION_KEY = 0x46,
     SESSION_DATA_TRANSFER_STATUS_NTF_CONFIG = 0x47,
-    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x48..0x9F,
+    SESSION_TIME_BASE = 0x48,
+    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x49..0x9F,
 
     VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_1 = 0xA0..0xDF {
         // CCC specific
@@ -996,7 +997,7 @@ test DataCreditNtf {
 
 packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    uci_sequence_number: 8,
+    uci_sequence_number: 16,
     status: DataTransferNtfStatusCode,
     tx_count: 8,
 }
