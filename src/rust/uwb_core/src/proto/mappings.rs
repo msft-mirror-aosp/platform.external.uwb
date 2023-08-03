@@ -711,6 +711,7 @@ impl<T> From<Result<T>> for ProtoStatus {
             Err(Error::Timeout) => Self::TIMEOUT,
             Err(Error::CommandRetry) => Self::COMMAND_RETRY,
             Err(Error::DuplicatedSessionId) => Self::DUPLICATED_SESSION_ID,
+            Err(Error::RegulationUwbOff) => Self::REGULATION_UWB_OFF,
             Err(_) => Self::UNKNOWN,
         }
     }
