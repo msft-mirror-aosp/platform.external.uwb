@@ -144,6 +144,7 @@ enum StatusCode : 8 {
         UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
         UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
         UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
+        UCI_STATUS_REGULATION_UWB_OFF = 0x53,
     },
 
     // For internal usage, we will use 0xFF as default.
@@ -249,7 +250,8 @@ enum AppConfigTlvType : 8 {
     SESSION_KEY = 0x45,
     SUBSESSION_KEY = 0x46,
     SESSION_DATA_TRANSFER_STATUS_NTF_CONFIG = 0x47,
-    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x48..0x9F,
+    SESSION_TIME_BASE = 0x48,
+    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x49..0x9F,
 
     VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_1 = 0xA0..0xDF {
         // CCC specific
@@ -419,6 +421,7 @@ enum MulticastUpdateStatusCode : 8 {
     STATUS_ERROR_SUB_SESSION_KEY_NOT_FOUND = 0x05,
     STATUS_ERROR_SUB_SESSION_KEY_NOT_APPLICABLE = 0x06,
     STATUS_ERROR_SESSION_KEY_NOT_FOUND = 0x07,
+    STATUS_ERROR_ADDRESS_ALREADY_PRESENT = 0x08,
 }
 
 enum MacAddressIndicator : 8 {
@@ -428,7 +431,11 @@ enum MacAddressIndicator : 8 {
 
 enum SessionType: 8 {
     FIRA_RANGING_SESSION = 0x00,
-    FIRA_DATA_TRANSFER = 0x01,
+    FIRA_RANGING_AND_IN_BAND_DATA_SESSION = 0x01,
+    FIRA_DATA_TRANSFER_SESSION = 0x02,
+    FIRA_RANGING_ONLY_PHASE = 0x03,
+    FIRA_IN_BAND_DATA_PHASE = 0x04,
+    FIRA_RANGING_WITH_DATA_PHASE = 0x05,
     CCC = 0xA0,
     DEVICE_TEST_MODE = 0xD0,
 }
@@ -922,6 +929,23 @@ packet SessionUpdateControllerMulticastListCmd : SessionConfigCommand (opcode = 
     _payload_,
 }
 
+struct PhaseList {
+    session_token: 32,
+    start_slot_index: 16,
+    end_slot_index: 16,
+}
+
+packet SessionSetHybridConfigCmd : SessionConfigCommand (opcode = 0x0c) { //SESSION_SET_HUS_CONFIG
+    session_token: 32,
+    number_of_phases: 8,
+    update_time: 8[8],
+    phase_list: PhaseList[],
+}
+
+packet SessionSetHybridConfigRsp : SessionConfigResponse (opcode = 0x0c) { //SESSION_SET_HUS_CONFIG
+    status: StatusCode,
+}
+
 struct SessionUpdateControllerMulticastListCmdPayload {
     _count_(controlees): 8,
     controlees: Controlee[],
@@ -973,7 +997,7 @@ test DataCreditNtf {
 
 packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    uci_sequence_number: 8,
+    uci_sequence_number: 16,
     status: DataTransferNtfStatusCode,
     tx_count: 8,
 }
