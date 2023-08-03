@@ -179,6 +179,7 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
                 StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict
             }
+            ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF => StatusCode::UciStatusRegulationUwbOff,
             _ =>  StatusCode::VendorSpecificStatusCode2,
         }
     }
@@ -269,6 +270,9 @@ impl From<StatusCode> for ProtoStatusCode {
             }
             StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict => {
                 ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
+            }
+            StatusCode::UciStatusRegulationUwbOff => {
+                ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF
             }
             _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
         }
@@ -526,7 +530,11 @@ enum_mapping! {
 enum_mapping! {
     ProtoSessionType => SessionType,
     FIRA_RANGING_SESSION => FiraRangingSession,
-    FIRA_DATA_TRANSFER => FiraDataTransfer,
+    FIRA_DATA_TRANSFER => FiraDataTransferSession,
+    FIRA_RANGING_AND_IN_BAND_DATA_SESSION => FiraRangingAndInBandDataSession,
+    FIRA_RANGING_ONLY_PHASE => FiraRangingOnlyPhase,
+    FIRA_IN_BAND_DATA_PHASE => FiraInBandDataPhase,
+    FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
