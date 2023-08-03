@@ -52,6 +52,7 @@ fn main() {
             UwbError::Timeout => {}
             UwbError::CommandRetry => {}
             UwbError::DuplicatedSessionId => {}
+            UwbError::RegulationUwbOff => {}
             UwbError::Unknown => {}
 
             // UwbError is non_exhaustive so we need to add a wild branch here.
