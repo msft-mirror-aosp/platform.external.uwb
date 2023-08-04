@@ -1093,7 +1093,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciDefragPacket::Data(packet) => {
                 self.logger.log_uci_data(&packet);
-                self.handle_data_rcv(packet);
+                self.handle_data_rcv(packet).await;
             }
             UciDefragPacket::Raw(result, raw_uci_control_packet) => {
                 // Handle response to raw UCI cmd. We want to send it back as
@@ -1304,10 +1304,25 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
-    fn handle_data_rcv(&mut self, packet: UciDataPacket) {
+    async fn handle_data_rcv(&mut self, packet: UciDataPacket) {
         match packet.try_into() {
-            Ok(data_rcv) => {
-                let _ = self.data_rcv_notf_sender.send(data_rcv);
+            Ok(DataRcvNotification { session_token, status, uci_sequence_num,
+                source_address, payload }) => {
+                match self.get_session_id(&session_token).await {
+                    Ok(session_id) => {
+                        let data_recv = DataRcvNotification {
+                           session_token: session_id,
+                           status,
+                           uci_sequence_num,
+                           source_address,
+                           payload,
+                        };
+                        let _ = self.data_rcv_notf_sender.send(data_recv);
+                    }
+                    Err(e) => {
+                        error!("Unable to find session Id, error {:?}", e);
+                    }
+                }
             }
             Err(e) => {
                 error!("Unable to parse incoming Data packet, error {:?}", e);
@@ -2703,7 +2718,7 @@ mod tests {
         // Setup the DataPacketRcv (Rx by HAL) and the expected DataRcvNotification.
         let data_packet_rcv = build_uci_packet(mt_data, pbf, dpf, oid, data_rcv_payload);
         let expected_data_rcv_notification = DataRcvNotification {
-            session_token,
+            session_token: session_id,
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
@@ -2774,7 +2789,7 @@ mod tests {
         let data_packet_rcv_fragment_2 =
             build_uci_packet(mt_data, pbf_fragment_2, dpf, oid, data_rcv_payload_fragment_2);
         let expected_data_rcv_notification = DataRcvNotification {
-            session_token,
+            session_token: session_id,
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
@@ -2847,8 +2862,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -2938,8 +2952,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -3002,8 +3015,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },

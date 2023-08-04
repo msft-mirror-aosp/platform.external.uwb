@@ -824,9 +824,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
 ) -> Result<SessionUpdateControllerMulticastListCmd> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
-        Controlees::NoSessionKey(controlee_v1)
-            if action == UpdateMulticastListAction::AddControlee
-                || action == UpdateMulticastListAction::RemoveControlee =>
+        Controlees::NoSessionKey(controlee_v1) =>
         {
             controlees_buf.extend_from_slice(&(controlee_v1.len() as u8).to_le_bytes());
             for controlee in controlee_v1 {

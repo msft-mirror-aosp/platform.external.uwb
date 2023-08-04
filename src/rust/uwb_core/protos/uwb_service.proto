@@ -56,8 +56,11 @@ enum Status {
   // Duplicated SessionId.
   DUPLICATED_SESSION_ID = 8;
 
+  //Regulation UWB off
+  REGULATION_UWB_OFF = 9;
+
   // The unknown error.
-  UNKNOWN = 9;
+  UNKNOWN = 10;
 }
 
 // Represent uwb_uci_packets::StatusCode.
@@ -103,6 +106,7 @@ enum StatusCode {
   UCI_STATUS_ERROR_CCC_SE_BUSY = 80;
   UCI_STATUS_ERROR_CCC_LIFECYCLE = 81;
   UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 82;
+  UCI_STATUS_REGULATION_UWB_OFF = 83;
   // All vendor specific status code will be mapped to UCI_STATUS_VENDOR_SPECIFIC.
   UCI_STATUS_RFU_OR_VENDOR_SPECIFIC = 255;
 }
