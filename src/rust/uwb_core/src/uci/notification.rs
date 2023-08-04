@@ -81,8 +81,8 @@ pub enum SessionNotification {
     DataTransferStatus {
         /// SessionToken : u32
         session_token: SessionToken,
-        /// Sequence Number: u8
-        uci_sequence_number: u8,
+        /// Sequence Number: u16
+        uci_sequence_number: u16,
         /// Data Transfer Status Code
         status: DataTransferNtfStatusCode,
         /// Transmission count
