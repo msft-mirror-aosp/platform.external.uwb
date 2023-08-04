@@ -1,4 +1,4 @@
-// Copyright 2022, The Android Open Source Project
+    // Copyright 2022, The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ use crate::params::{
     AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
     DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
     SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -37,7 +37,7 @@ use crate::uci::notification::{CoreNotification, DataRcvNotification, SessionNot
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
-use uwb_uci_packets::Controlees;
+use uwb_uci_packets::{Controlees, PhaseList};
 
 /// The NotificationManager processes UciNotification relayed from UciManagerSync in a sync fashion.
 /// The UciManagerSync assumes the NotificationManager takes the responsibility to properly handle
@@ -368,9 +368,26 @@ impl<U: UciManager> UciManagerSync<U> {
             app_payload_data,
         ))
     }
+
     /// Get session token for session id.
     pub fn get_session_token(&self, session_id: SessionId) -> Result<u32> {
         self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
+    }
+
+    /// Send UCI command for setting hybrid configuration
+    pub fn session_set_hybrid_config(
+        &self,
+        session_id: SessionId,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    ) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.session_set_hybrid_config(
+            session_id,
+            number_of_phases,
+            update_time,
+            phase_list,
+        ))
     }
 }
 
