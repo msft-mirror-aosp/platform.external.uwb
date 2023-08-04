@@ -56,8 +56,11 @@ enum Status {
   // Duplicated SessionId.
   DUPLICATED_SESSION_ID = 8;
 
+  //Regulation UWB off
+  REGULATION_UWB_OFF = 9;
+
   // The unknown error.
-  UNKNOWN = 9;
+  UNKNOWN = 10;
 }
 
 // Represent uwb_uci_packets::StatusCode.
