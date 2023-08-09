@@ -331,6 +331,9 @@ rust_test {
                 "libcutils",
                 "liblog",
                 "libutils",
+                "libbinder_ndk",
+                "libbinder",
+                "libc++",
             ],
             // See b/268061150
             stem: "libuci_hal_android_tests_host",
