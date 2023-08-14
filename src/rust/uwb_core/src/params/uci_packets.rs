@@ -204,6 +204,8 @@ impl From<UpdateTime> for [u8; 8] {
 /// The response of the UciManager::core_get_device_info() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
+    /// Status
+    pub status: StatusCode,
     /// The UCI version.
     pub uci_version: u16,
     /// The MAC version.
