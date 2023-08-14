@@ -56,8 +56,11 @@ enum Status {
   // Duplicated SessionId.
   DUPLICATED_SESSION_ID = 8;
 
+  //Regulation UWB off
+  REGULATION_UWB_OFF = 9;
+
   // The unknown error.
-  UNKNOWN = 9;
+  UNKNOWN = 10;
 }
 
 // Represent uwb_uci_packets::StatusCode.
@@ -103,6 +106,7 @@ enum StatusCode {
   UCI_STATUS_ERROR_CCC_SE_BUSY = 80;
   UCI_STATUS_ERROR_CCC_LIFECYCLE = 81;
   UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 82;
+  UCI_STATUS_REGULATION_UWB_OFF = 83;
   // All vendor specific status code will be mapped to UCI_STATUS_VENDOR_SPECIFIC.
   UCI_STATUS_RFU_OR_VENDOR_SPECIFIC = 255;
 }
@@ -183,10 +187,14 @@ enum RangingMeasurementType {
 
 // Represent uwb_uci_packets::SessionType.
 enum SessionType {
-  FIRA_RANGING_SESSION = 0;
-  FIRA_DATA_TRANSFER = 1;
-  CCC = 2;
-  DEVICE_TEST_MODE = 3;
+  FIRA_RANGING_SESSION = 0x00;
+  FIRA_RANGING_AND_IN_BAND_DATA_SESSION = 0x01;
+  FIRA_DATA_TRANSFER = 0x02;
+  FIRA_RANGING_ONLY_PHASE = 0x03;
+  FIRA_IN_BAND_DATA_PHASE = 0x04;
+  FIRA_RANGING_WITH_DATA_PHASE = 0x05;
+  CCC = 0xA0;
+  DEVICE_TEST_MODE = 0xD0;
 }
 
 // Represent uwb_uci_packets::UpdateMulticastListAction.
