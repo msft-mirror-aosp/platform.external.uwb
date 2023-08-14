@@ -28,10 +28,9 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse,
-    PhaseList, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction, UpdateTime,
+    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList,
+    PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken, SessionType,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,  UpdateTime,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
@@ -80,11 +79,7 @@ impl MockUciManager {
     /// Prepare Mock to expect for open_hal.
     ///
     /// MockUciManager expects call, returns out as response, followed by notfs sent.
-    pub fn expect_open_hal(
-        &mut self,
-        notfs: Vec<UciNotification>,
-        out: Result<GetDeviceInfoResponse>,
-    ) {
+    pub fn expect_open_hal(&mut self, notfs: Vec<UciNotification>, out: Result<()>) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
@@ -487,7 +482,7 @@ impl UciManager for MockUciManager {
         self.data_rcv_notf_sender = data_rcv_notf_sender;
     }
 
-    async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
+    async fn open_hal(&self) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::OpenHal { notfs, out }) => {
@@ -1004,7 +999,7 @@ impl UciManager for MockUciManager {
 enum ExpectedCall {
     OpenHal {
         notfs: Vec<UciNotification>,
-        out: Result<GetDeviceInfoResponse>,
+        out: Result<()>,
     },
     CloseHal {
         expected_force: bool,
