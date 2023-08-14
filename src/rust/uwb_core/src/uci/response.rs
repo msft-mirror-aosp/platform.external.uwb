@@ -122,6 +122,7 @@ impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
         match evt.specialize() {
             CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(UciResponse::CoreGetDeviceInfo(
                 status_code_to_result(evt.get_status()).map(|_| GetDeviceInfoResponse {
+                    status: evt.get_status(),
                     uci_version: evt.get_uci_version(),
                     mac_version: evt.get_mac_version(),
                     phy_version: evt.get_phy_version(),
@@ -208,9 +209,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
             SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
                 Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
             }
-            SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => Ok(
-                UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())),
-            ),
+            SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())))
+            }
             _ => Err(Error::Unknown),
         }
     }
