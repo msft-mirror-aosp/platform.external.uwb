@@ -443,20 +443,9 @@ pub(crate) mod test_utils {
     use crate::params::uci_packets::{
         RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement, StatusCode,
     };
-    use crate::params::GetDeviceInfoResponse;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
-    use uwb_uci_packets::StatusCode::UciStatusOk;
-
-    const GET_DEVICE_INFO_RSP: GetDeviceInfoResponse = GetDeviceInfoResponse {
-        status: UciStatusOk,
-        uci_version: 0,
-        mac_version: 0,
-        phy_version: 0,
-        uci_test_version: 0,
-        vendor_spec_info: vec![],
-    };
 
     pub(crate) fn generate_params() -> AppConfigParams {
         FiraAppConfigParamsBuilder::new()
@@ -544,7 +533,7 @@ pub(crate) mod test_utils {
         let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
         let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
         let mut uci_manager = MockUciManager::new();
-        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
+        uci_manager.expect_open_hal(vec![], Ok(()));
         setup_uci_manager_fn(&mut uci_manager);
         uci_manager.set_session_notification_sender(uci_notf_sender).await;
         let _ = uci_manager.open_hal().await;

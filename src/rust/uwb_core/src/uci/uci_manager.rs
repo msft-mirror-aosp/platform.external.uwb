@@ -71,7 +71,7 @@ pub trait UciManager: 'static + Send + Sync + Clone {
 
     // Open the UCI HAL.
     // All the UCI commands should be called after the open_hal() completes successfully.
-    async fn open_hal(&self) -> Result<GetDeviceInfoResponse>;
+    async fn open_hal(&self) -> Result<()>;
 
     // Close the UCI HAL.
     async fn close_hal(&self, force: bool) -> Result<()>;
@@ -255,21 +255,16 @@ impl UciManager for UciManagerImpl {
             .await;
     }
 
-    async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
+    async fn open_hal(&self) -> Result<()> {
         match self.send_cmd(UciManagerCmd::OpenHal).await {
             Ok(UciResponse::OpenHal) => {
                 // According to the UCI spec: "The Host shall send CORE_GET_DEVICE_INFO_CMD to
                 // retrieve the device information.", we call get_device_info() after successfully
                 // opening the HAL.
-                let device_info = match self.core_get_device_info().await {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        return Err(e);
-                    }
-                };
+                let device_info = self.core_get_device_info().await;
                 debug!("UCI device info: {:?}", device_info);
 
-                Ok(device_info)
+                Ok(())
             }
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
@@ -1311,27 +1306,24 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
 
     async fn handle_data_rcv(&mut self, packet: UciDataPacket) {
         match packet.try_into() {
-            Ok(DataRcvNotification {
-                session_token,
-                status,
-                uci_sequence_num,
-                source_address,
-                payload,
-            }) => match self.get_session_id(&session_token).await {
-                Ok(session_id) => {
-                    let data_recv = DataRcvNotification {
-                        session_token: session_id,
-                        status,
-                        uci_sequence_num,
-                        source_address,
-                        payload,
-                    };
-                    let _ = self.data_rcv_notf_sender.send(data_recv);
+            Ok(DataRcvNotification { session_token, status, uci_sequence_num,
+                source_address, payload }) => {
+                match self.get_session_id(&session_token).await {
+                    Ok(session_id) => {
+                        let data_recv = DataRcvNotification {
+                           session_token: session_id,
+                           status,
+                           uci_sequence_num,
+                           source_address,
+                           payload,
+                        };
+                        let _ = self.data_rcv_notf_sender.send(data_recv);
+                    }
+                    Err(e) => {
+                        error!("Unable to find session Id, error {:?}", e);
+                    }
                 }
-                Err(e) => {
-                    error!("Unable to find session Id, error {:?}", e);
-                }
-            },
+            }
             Err(e) => {
                 error!("Unable to parse incoming Data packet, error {:?}", e);
             }
@@ -1634,7 +1626,6 @@ mod tests {
         .await;
 
         let expected_result = GetDeviceInfoResponse {
-            status,
             uci_version,
             mac_version,
             phy_version,
