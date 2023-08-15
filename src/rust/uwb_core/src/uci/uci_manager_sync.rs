@@ -1,4 +1,4 @@
-// Copyright 2022, The Android Open Source Project
+    // Copyright 2022, The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -204,7 +204,7 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.set_logger_mode(logger_mode))
     }
     /// Start UCI HAL and blocking until UCI commands can be sent.
-    pub fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
+    pub fn open_hal(&self) -> Result<()> {
         self.runtime_handle.block_on(self.uci_manager.open_hal())
     }
 
@@ -449,7 +449,6 @@ mod tests {
     use crate::params::uci_packets::GetDeviceInfoResponse;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::{CoreNotification, UciNotification};
-    use uwb_uci_packets::StatusCode::UciStatusOk;
 
     /// Mock NotificationManager forwarding notifications received.
     /// The nonsend_counter is deliberately !send to check UciManagerSync::redirect_notification.
@@ -517,20 +516,17 @@ mod tests {
         let test_rt = Builder::new_multi_thread().enable_all().build().unwrap();
         let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel::<UciNotification>();
         let mut uci_manager_impl = MockUciManager::new();
-        let get_device_info_rsp = GetDeviceInfoResponse {
-            status: UciStatusOk,
+        uci_manager_impl.expect_open_hal(
+            vec![UciNotification::Core(CoreNotification::DeviceStatus(DeviceStateReady))],
+            Ok(()),
+        );
+        uci_manager_impl.expect_core_get_device_info(Ok(GetDeviceInfoResponse {
             uci_version: 0,
             mac_version: 0,
             phy_version: 0,
             uci_test_version: 0,
             vendor_spec_info: vec![],
-        };
-
-        uci_manager_impl.expect_open_hal(
-            vec![UciNotification::Core(CoreNotification::DeviceStatus(DeviceStateReady))],
-            Ok(get_device_info_rsp.clone()),
-        );
-        uci_manager_impl.expect_core_get_device_info(Ok(get_device_info_rsp));
+        }));
         let uci_manager_sync = UciManagerSync::new_mock(
             uci_manager_impl,
             test_rt.handle().to_owned(),
