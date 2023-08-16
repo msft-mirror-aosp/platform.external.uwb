@@ -2431,7 +2431,7 @@ mod tests {
         let resp_payload_fragment_1 = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let resp_payload_fragment_2 = vec![0x09, 0x0a, 0x0b];
         let mut resp_payload_expected = resp_payload_fragment_1.clone();
-        resp_payload_expected.extend(resp_payload_fragment_2.clone().into_iter());
+        resp_payload_expected.extend(resp_payload_fragment_2.clone());
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             |mut hal| async move {
