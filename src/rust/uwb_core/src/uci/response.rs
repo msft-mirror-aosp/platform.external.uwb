@@ -16,8 +16,8 @@ use std::convert::{TryFrom, TryInto};
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawUciMessage, SessionHandle, SessionState,
+    AndroidRadarConfigResponse, AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv,
+    GetDeviceInfoResponse, PowerStats, RadarConfigTlv, RawUciMessage, SessionHandle, SessionState,
     SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
@@ -48,8 +48,11 @@ pub(super) enum UciResponse {
     SessionGetRangingCount(Result<usize>),
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
+    AndroidSetRadarConfig(AndroidRadarConfigResponse),
+    AndroidGetRadarConfig(Result<Vec<RadarConfigTlv>>),
     RawUciCmd(Result<RawUciMessage>),
     SendUciData(Result<()>),
+    SessionSetHybridConfig(Result<()>),
 }
 
 impl UciResponse {
@@ -75,7 +78,10 @@ impl UciResponse {
             Self::SessionGetRangingCount(result) => Self::matches_result_retry(result),
             Self::AndroidSetCountryCode(result) => Self::matches_result_retry(result),
             Self::AndroidGetPowerStats(result) => Self::matches_result_retry(result),
+            Self::AndroidGetRadarConfig(result) => Self::matches_result_retry(result),
+            Self::AndroidSetRadarConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::RawUciCmd(result) => Self::matches_result_retry(result),
+            Self::SessionSetHybridConfig(result) => Self::matches_result_retry(result),
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
@@ -120,6 +126,7 @@ impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
         match evt.specialize() {
             CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(UciResponse::CoreGetDeviceInfo(
                 status_code_to_result(evt.get_status()).map(|_| GetDeviceInfoResponse {
+                    status: evt.get_status(),
                     uci_version: evt.get_uci_version(),
                     mac_version: evt.get_mac_version(),
                     phy_version: evt.get_phy_version(),
@@ -206,6 +213,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
             SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
                 Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
             }
+            SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())))
+            }
             _ => Err(Error::Unknown),
         }
     }
@@ -245,6 +255,17 @@ impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
             AndroidResponseChild::AndroidGetPowerStatsRsp(evt) => {
                 Ok(UciResponse::AndroidGetPowerStats(
                     status_code_to_result(evt.get_stats().status).map(|_| evt.get_stats().clone()),
+                ))
+            }
+            AndroidResponseChild::AndroidSetRadarConfigRsp(evt) => {
+                Ok(UciResponse::AndroidSetRadarConfig(AndroidRadarConfigResponse {
+                    status: evt.get_status(),
+                    config_status: evt.get_cfg_status().clone(),
+                }))
+            }
+            AndroidResponseChild::AndroidGetRadarConfigRsp(evt) => {
+                Ok(UciResponse::AndroidGetRadarConfig(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
                 ))
             }
             _ => Err(Error::Unknown),
