@@ -20,13 +20,14 @@ use std::iter::FromIterator;
 
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
-    AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
+    AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, BitsPerSample, CapTlv,
+    CapTlvType, Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
     DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, GroupId, MessageType, MulticastUpdateStatusCode,
-    PhaseList, PowerStats, RangingMeasurementType, ReasonCode, ResetConfig, SessionState,
-    SessionType, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    PhaseList, PowerStats, RadarConfigStatus, RadarConfigTlv, RadarConfigTlvType, RadarDataType,
+    RangingMeasurementType, ReasonCode, ResetConfig, SessionState, SessionType,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
@@ -124,6 +125,19 @@ fn device_config_tlvs_to_map(
     HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
 }
 
+/// Compare if two RadarConfigTlv array are equal. Convert the array to HashMap before comparing
+/// because the order of TLV elements doesn't matter.
+#[allow(dead_code)]
+pub fn radar_config_tlvs_eq(a: &[RadarConfigTlv], b: &[RadarConfigTlv]) -> bool {
+    radar_config_tlvs_to_map(a) == radar_config_tlvs_to_map(b)
+}
+
+fn radar_config_tlvs_to_map(
+    tlvs: &[RadarConfigTlv],
+) -> HashMap<RadarConfigTlvType, &Vec<u8>, RandomState> {
+    HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
+}
+
 /// The response of the UciManager::core_set_config() method.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreSetConfigResponse {
@@ -140,6 +154,15 @@ pub struct SetAppConfigResponse {
     pub status: StatusCode,
     /// The status of each config TLV.
     pub config_status: Vec<AppConfigStatus>,
+}
+
+/// The response of the UciManager::android_set_radar_config() method.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AndroidRadarConfigResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// The status of each config TLV.
+    pub config_status: Vec<RadarConfigStatus>,
 }
 
 /// The response from UciManager::session_update_dt_tag_ranging_rounds() method.
