@@ -1,4 +1,4 @@
-    // Copyright 2022, The Android Open Source Project
+// Copyright 2022, The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,14 +26,17 @@ use tokio::task;
 
 use crate::error::{Error, Result};
 use crate::params::{
-    AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse, CountryCode, DeviceConfigId,
-    DeviceConfigTlv, GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId,
-    SessionState, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse,
+    CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats,
+    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
+    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
     UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
-use crate::uci::notification::{CoreNotification, DataRcvNotification, SessionNotification};
+use crate::uci::notification::{
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
+};
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
@@ -59,6 +62,12 @@ pub trait NotificationManager: 'static {
         &mut self,
         data_rcv_notification: DataRcvNotification,
     ) -> Result<()>;
+
+    /// Callback for RadarDataRcvNotification.
+    fn on_radar_data_rcv_notification(
+        &mut self,
+        radar_data_rcv_notification: RadarDataRcvNotification,
+    ) -> Result<()>;
 }
 
 /// Builder for NotificationManager. Builder is sent between threads.
@@ -74,6 +83,7 @@ struct NotificationDriver<U: NotificationManager> {
     session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
     vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
     data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
+    radar_data_rcv_notification_receiver: mpsc::UnboundedReceiver<RadarDataRcvNotification>,
     notification_manager: U,
 }
 impl<U: NotificationManager> NotificationDriver<U> {
@@ -82,6 +92,7 @@ impl<U: NotificationManager> NotificationDriver<U> {
         session_notification_receiver: mpsc::UnboundedReceiver<SessionNotification>,
         vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
         data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
+        radar_data_rcv_notification_receiver: mpsc::UnboundedReceiver<RadarDataRcvNotification>,
         notification_manager: U,
     ) -> Self {
         Self {
@@ -89,6 +100,7 @@ impl<U: NotificationManager> NotificationDriver<U> {
             session_notification_receiver,
             vendor_notification_receiver,
             data_rcv_notification_receiver,
+            radar_data_rcv_notification_receiver,
             notification_manager,
         }
     }
@@ -113,6 +125,11 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 Some(data) = self.data_rcv_notification_receiver.recv() =>{
                     self.notification_manager.on_data_rcv_notification(data).unwrap_or_else(|e|{
                         error!("NotificationDriver: OnDataRcv callback error: {:?}",e);
+                });
+                }
+                Some(data) = self.radar_data_rcv_notification_receiver.recv() =>{
+                    self.notification_manager.on_radar_data_rcv_notification(data).unwrap_or_else(|e|{
+                        error!("NotificationDriver: OnRadarDataRcv callback error: {:?}",e);
                 });
                 }
                 else =>{
@@ -149,11 +166,16 @@ impl<U: UciManager> UciManagerSync<U> {
             mpsc::unbounded_channel::<RawUciMessage>();
         let (data_rcv_notification_sender, data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<DataRcvNotification>();
+        let (radar_data_rcv_notification_sender, radar_data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<RadarDataRcvNotification>();
         self.runtime_handle.to_owned().block_on(async {
             self.uci_manager.set_core_notification_sender(core_notification_sender).await;
             self.uci_manager.set_session_notification_sender(session_notification_sender).await;
             self.uci_manager.set_vendor_notification_sender(vendor_notification_sender).await;
             self.uci_manager.set_data_rcv_notification_sender(data_rcv_notification_sender).await;
+            self.uci_manager
+                .set_radar_data_rcv_notification_sender(radar_data_rcv_notification_sender)
+                .await;
         });
         // The potentially !Send NotificationManager is created in a separate thread.
         let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
@@ -186,6 +208,7 @@ impl<U: UciManager> UciManagerSync<U> {
                 session_notification_receiver,
                 vendor_notification_receiver,
                 data_rcv_notification_receiver,
+                radar_data_rcv_notification_receiver,
                 notification_manager,
             );
             local.spawn_local(async move {
@@ -204,7 +227,7 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.set_logger_mode(logger_mode))
     }
     /// Start UCI HAL and blocking until UCI commands can be sent.
-    pub fn open_hal(&self) -> Result<()> {
+    pub fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
         self.runtime_handle.block_on(self.uci_manager.open_hal())
     }
 
@@ -342,6 +365,26 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.android_get_power_stats())
     }
 
+    /// Set radar config. Android-specific method.
+    pub fn android_set_radar_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RadarConfigTlv>,
+    ) -> Result<AndroidRadarConfigResponse> {
+        self.runtime_handle
+            .block_on(self.uci_manager.android_set_radar_config(session_id, config_tlvs))
+    }
+
+    /// Get radar config. Android-specific method.
+    pub fn android_get_radar_config(
+        &self,
+        session_id: SessionId,
+        config_ids: Vec<RadarConfigTlvType>,
+    ) -> Result<Vec<RadarConfigTlv>> {
+        self.runtime_handle
+            .block_on(self.uci_manager.android_get_radar_config(session_id, config_ids))
+    }
+
     /// Send a raw UCI command.
     pub fn raw_uci_cmd(
         &self,
@@ -449,6 +492,7 @@ mod tests {
     use crate::params::uci_packets::GetDeviceInfoResponse;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::{CoreNotification, UciNotification};
+    use uwb_uci_packets::StatusCode::UciStatusOk;
 
     /// Mock NotificationManager forwarding notifications received.
     /// The nonsend_counter is deliberately !send to check UciManagerSync::redirect_notification.
@@ -484,6 +528,13 @@ mod tests {
             self.nonsend_counter.replace_with(|&mut prev| prev + 1);
             Ok(())
         }
+        fn on_radar_data_rcv_notification(
+            &mut self,
+            _data_rcv_notf: RadarDataRcvNotification,
+        ) -> Result<()> {
+            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
+            Ok(())
+        }
     }
 
     /// Builder for MockNotificationManager.
@@ -516,17 +567,20 @@ mod tests {
         let test_rt = Builder::new_multi_thread().enable_all().build().unwrap();
         let (notf_sender, mut notf_receiver) = mpsc::unbounded_channel::<UciNotification>();
         let mut uci_manager_impl = MockUciManager::new();
-        uci_manager_impl.expect_open_hal(
-            vec![UciNotification::Core(CoreNotification::DeviceStatus(DeviceStateReady))],
-            Ok(()),
-        );
-        uci_manager_impl.expect_core_get_device_info(Ok(GetDeviceInfoResponse {
+        let get_device_info_rsp = GetDeviceInfoResponse {
+            status: UciStatusOk,
             uci_version: 0,
             mac_version: 0,
             phy_version: 0,
             uci_test_version: 0,
             vendor_spec_info: vec![],
-        }));
+        };
+
+        uci_manager_impl.expect_open_hal(
+            vec![UciNotification::Core(CoreNotification::DeviceStatus(DeviceStateReady))],
+            Ok(get_device_info_rsp.clone()),
+        );
+        uci_manager_impl.expect_core_get_device_info(Ok(get_device_info_rsp));
         let uci_manager_sync = UciManagerSync::new_mock(
             uci_manager_impl,
             test_rt.handle().to_owned(),
