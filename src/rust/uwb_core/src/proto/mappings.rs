@@ -536,6 +536,7 @@ enum_mapping! {
     FIRA_IN_BAND_DATA_PHASE => FiraInBandDataPhase,
     FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
+    RADAR_SESSION => RadarSession,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
 
@@ -711,6 +712,7 @@ impl<T> From<Result<T>> for ProtoStatus {
             Err(Error::Timeout) => Self::TIMEOUT,
             Err(Error::CommandRetry) => Self::COMMAND_RETRY,
             Err(Error::DuplicatedSessionId) => Self::DUPLICATED_SESSION_ID,
+            Err(Error::RegulationUwbOff) => Self::REGULATION_UWB_OFF,
             Err(_) => Self::UNKNOWN,
         }
     }
