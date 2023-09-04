@@ -53,6 +53,11 @@ const UCI_CONTROL_HEADER_GID_MASK: u8 = 0xF;
 const UCI_CONTROL_HEADER_OID_BYTE_POSITION: usize = 1;
 const UCI_CONTROL_HEADER_OID_MASK: u8 = 0x3F;
 
+// Radar field lengths
+pub const UCI_RADAR_SEQUENCE_NUMBER_LEN: usize = 4;
+pub const UCI_RADAR_TIMESTAMP_LEN: usize = 4;
+pub const UCI_RADAR_VENDOR_DATA_LEN_LEN: usize = 1;
+
 #[derive(Debug, Clone, PartialEq, FromPrimitive)]
 pub enum TimeStampLength {
     Timestamp40Bit = 0x0,
@@ -432,16 +437,21 @@ impl RawUciControlPacket {
     }
 }
 
-// UCI Data packet functions.
-fn is_uci_data_rcv_packet(message_type: MessageType, data_packet_format: DataPacketFormat) -> bool {
-    message_type == MessageType::Data && data_packet_format == DataPacketFormat::DataRcv
+fn is_uci_data_packet(message_type: MessageType) -> bool {
+    message_type == MessageType::Data
 }
 
-fn try_into_data_payload(packet: UciPacketHal) -> Result<Bytes> {
-    if is_uci_data_rcv_packet(
-        packet.get_message_type(),
-        packet.get_group_id_or_data_packet_format().try_into()?,
-    ) {
+fn is_data_rcv_or_radar_format(data_packet_format: DataPacketFormat) -> bool {
+    data_packet_format == DataPacketFormat::DataRcv
+        || data_packet_format == DataPacketFormat::RadarDataMessage
+}
+
+fn try_into_data_payload(
+    packet: UciPacketHal,
+    expected_data_packet_format: DataPacketFormat,
+) -> Result<Bytes> {
+    let dpf: DataPacketFormat = packet.get_group_id_or_data_packet_format().try_into()?;
+    if is_uci_data_packet(packet.get_message_type()) && dpf == expected_data_packet_format {
         Ok(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
     } else {
         error!("Received unexpected data packet fragment: {:?}", packet);
@@ -459,12 +469,17 @@ impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
             return Err(Error::InvalidPacketError);
         }
 
+        let dpf: DataPacketFormat = packets[0].get_group_id_or_data_packet_format().try_into()?;
+        if !is_data_rcv_or_radar_format(dpf) {
+            error!("Unexpected data packet format {:?}", dpf);
+        }
+
         // Create the reassembled payload.
         let mut payload_buf = Bytes::new();
         for packet in packets {
             // Ensure that the fragment is a Data Rcv packet.
             // Get payload by stripping the header.
-            payload_buf = [payload_buf, try_into_data_payload(packet)?].concat().into();
+            payload_buf = [payload_buf, try_into_data_payload(packet, dpf)?].concat().into();
         }
 
         // Create assembled |UciDataPacket| and convert to bytes again since we need to
@@ -472,7 +487,7 @@ impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
         UciDataPacket::parse(
             &UciDataPacketBuilder {
                 message_type: MessageType::Data,
-                data_packet_format: DataPacketFormat::DataRcv,
+                data_packet_format: dpf,
                 payload: Some(payload_buf.into()),
             }
             .build()
@@ -824,8 +839,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
 ) -> Result<SessionUpdateControllerMulticastListCmd> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
-        Controlees::NoSessionKey(controlee_v1) =>
-        {
+        Controlees::NoSessionKey(controlee_v1) => {
             controlees_buf.extend_from_slice(&(controlee_v1.len() as u8).to_le_bytes());
             for controlee in controlee_v1 {
                 controlees_buf.extend_from_slice(&write_controlee(&controlee));
@@ -863,6 +877,17 @@ impl Drop for AppConfigTlv {
         {
             self.v.zeroize();
         }
+    }
+}
+
+// Radar data 'bits per sample' field isn't a raw value, instead it's an enum
+// that maps to the raw value. We need this mapping to get the max sample size
+// length.
+pub fn radar_bytes_per_sample_value(bps: BitsPerSample) -> u8 {
+    match bps {
+        BitsPerSample::Value32 => 4,
+        BitsPerSample::Value48 => 6,
+        BitsPerSample::Value64 => 8,
     }
 }
 
