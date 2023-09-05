@@ -24,16 +24,18 @@ use crate::uci::command::UciCommand;
 //use crate::uci::error::{Error, Result};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
-    CreditAvailability, DeviceConfigId, DeviceConfigTlv, DeviceState, GetDeviceInfoResponse,
-    GroupId, MessageType, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UciDataPacket, UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
+    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
+    CoreSetConfigResponse, CountryCode, CreditAvailability, DeviceConfigId, DeviceConfigTlv,
+    DeviceState, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RadarConfigTlv,
+    RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
+    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UciDataPacket,
+    UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
 };
 use crate::params::utils::bytes_to_u64;
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{
-    CoreNotification, DataRcvNotification, SessionNotification, SessionRangeData, UciNotification,
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
+    SessionRangeData, UciNotification,
 };
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
@@ -68,10 +70,14 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &mut self,
         data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
     );
+    async fn set_radar_data_rcv_notification_sender(
+        &mut self,
+        radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    );
 
     // Open the UCI HAL.
     // All the UCI commands should be called after the open_hal() completes successfully.
-    async fn open_hal(&self) -> Result<()>;
+    async fn open_hal(&self) -> Result<GetDeviceInfoResponse>;
 
     // Close the UCI HAL.
     async fn close_hal(&self, force: bool) -> Result<()>;
@@ -126,6 +132,16 @@ pub trait UciManager: 'static + Send + Sync + Clone {
     // Send the Android-specific UCI commands
     async fn android_set_country_code(&self, country_code: CountryCode) -> Result<()>;
     async fn android_get_power_stats(&self) -> Result<PowerStats>;
+    async fn android_set_radar_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RadarConfigTlv>,
+    ) -> Result<AndroidRadarConfigResponse>;
+    async fn android_get_radar_config(
+        &self,
+        session_id: SessionId,
+        config_ids: Vec<RadarConfigTlvType>,
+    ) -> Result<Vec<RadarConfigTlv>>;
 
     // Send a raw uci command.
     async fn raw_uci_cmd(
@@ -254,17 +270,32 @@ impl UciManager for UciManagerImpl {
             .send_cmd(UciManagerCmd::SetDataRcvNotificationSender { data_rcv_notf_sender })
             .await;
     }
+    async fn set_radar_data_rcv_notification_sender(
+        &mut self,
+        radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    ) {
+        let _ = self
+            .send_cmd(UciManagerCmd::SetRadarDataRcvNotificationSender {
+                radar_data_rcv_notf_sender,
+            })
+            .await;
+    }
 
-    async fn open_hal(&self) -> Result<()> {
+    async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
         match self.send_cmd(UciManagerCmd::OpenHal).await {
             Ok(UciResponse::OpenHal) => {
                 // According to the UCI spec: "The Host shall send CORE_GET_DEVICE_INFO_CMD to
                 // retrieve the device information.", we call get_device_info() after successfully
                 // opening the HAL.
-                let device_info = self.core_get_device_info().await;
+                let device_info = match self.core_get_device_info().await {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        return Err(e);
+                    }
+                };
                 debug!("UCI device info: {:?}", device_info);
 
-                Ok(())
+                Ok(device_info)
             }
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
@@ -510,6 +541,38 @@ impl UciManager for UciManagerImpl {
         }
     }
 
+    async fn android_set_radar_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RadarConfigTlv>,
+    ) -> Result<AndroidRadarConfigResponse> {
+        let cmd = UciCommand::AndroidSetRadarConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            config_tlvs,
+        };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::AndroidSetRadarConfig(resp)) => Ok(resp),
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn android_get_radar_config(
+        &self,
+        session_id: SessionId,
+        radar_cfg: Vec<RadarConfigTlvType>,
+    ) -> Result<Vec<RadarConfigTlv>> {
+        let cmd = UciCommand::AndroidGetRadarConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            radar_cfg,
+        };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::AndroidGetRadarConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn raw_uci_cmd(
         &self,
         mt: u32,
@@ -634,6 +697,7 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
 
     // Used to store the last init session id to help map the session handle sent
     // in session int response can be correctly mapped.
@@ -674,6 +738,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             session_notf_sender: mpsc::unbounded_channel().0,
             vendor_notf_sender: mpsc::unbounded_channel().0,
             data_rcv_notf_sender: mpsc::unbounded_channel().0,
+            radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
             last_init_session_id: None,
             session_id_to_token_map,
         }
@@ -805,6 +870,10 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciManagerCmd::SetDataRcvNotificationSender { data_rcv_notf_sender } => {
                 self.data_rcv_notf_sender = data_rcv_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::SetRadarDataRcvNotificationSender { radar_data_rcv_notf_sender } => {
+                self.radar_data_rcv_notf_sender = radar_data_rcv_notf_sender;
                 let _ = result_sender.send(Ok(UciResponse::SetNotification));
             }
             UciManagerCmd::OpenHal => {
@@ -1093,7 +1162,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciDefragPacket::Data(packet) => {
                 self.logger.log_uci_data(&packet);
-                self.handle_data_rcv(packet);
+                self.handle_data_rcv(packet).await;
             }
             UciDefragPacket::Raw(result, raw_uci_control_packet) => {
                 // Handle response to raw UCI cmd. We want to send it back as
@@ -1304,14 +1373,42 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
-    fn handle_data_rcv(&mut self, packet: UciDataPacket) {
-        match packet.try_into() {
-            Ok(data_rcv) => {
-                let _ = self.data_rcv_notf_sender.send(data_rcv);
+    async fn handle_data_rcv(&mut self, packet: UciDataPacket) {
+        if let Ok(data) = DataRcvNotification::try_from(packet.clone()) {
+            match self.get_session_id(&data.session_token).await {
+                Ok(session_id) => {
+                    let _ = self.data_rcv_notf_sender.send(DataRcvNotification {
+                        session_token: session_id,
+                        status: data.status,
+                        uci_sequence_num: data.uci_sequence_num,
+                        source_address: data.source_address,
+                        payload: data.payload,
+                    });
+                }
+                Err(e) => {
+                    error!("Unable to find session Id, error {:?}", e);
+                }
             }
-            Err(e) => {
-                error!("Unable to parse incoming Data packet, error {:?}", e);
+        } else if let Ok(data) = RadarDataRcvNotification::try_from(packet.clone()) {
+            match self.get_session_id(&data.session_token).await {
+                Ok(session_id) => {
+                    let _ = self.radar_data_rcv_notf_sender.send(RadarDataRcvNotification {
+                        session_token: session_id,
+                        status: data.status,
+                        radar_data_type: data.radar_data_type,
+                        number_of_sweeps: data.number_of_sweeps,
+                        samples_per_sweep: data.samples_per_sweep,
+                        bits_per_sample: data.bits_per_sample,
+                        sweep_offset: data.sweep_offset,
+                        sweep_data: data.sweep_data,
+                    });
+                }
+                Err(e) => {
+                    error!("Unable to find session Id, error {:?}", e);
+                }
             }
+        } else {
+            error!("Unable to parse incoming Data packet, packet {:?}", packet);
         }
     }
 
@@ -1400,6 +1497,9 @@ enum UciManagerCmd {
     SetDataRcvNotificationSender {
         data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
     },
+    SetRadarDataRcvNotificationSender {
+        radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    },
     OpenHal,
     CloseHal {
         force: bool,
@@ -1421,12 +1521,13 @@ mod tests {
     use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
 
     use crate::params::uci_packets::{
-        AppConfigStatus, AppConfigTlvType, CapTlvType, Controlee, DataRcvStatusCode,
-        DataTransferNtfStatusCode, StatusCode,
+        AppConfigStatus, AppConfigTlvType, BitsPerSample, CapTlvType, Controlee, DataRcvStatusCode,
+        DataTransferNtfStatusCode, RadarDataType, StatusCode,
     };
     use crate::params::UwbAddress;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
+    use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
 
@@ -1611,6 +1712,7 @@ mod tests {
         .await;
 
         let expected_result = GetDeviceInfoResponse {
+            status,
             uci_version,
             mac_version,
             phy_version,
@@ -2267,6 +2369,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_android_set_radar_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let config_tlv =
+            RadarConfigTlv { cfg_id: RadarConfigTlvType::SamplesPerSweep, v: vec![0x12, 0x34] };
+        let config_tlv_clone = config_tlv.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::AndroidSetRadarConfig {
+                    session_token,
+                    config_tlvs: vec![config_tlv_clone],
+                };
+                let resp = into_uci_hal_packets(uwb_uci_packets::AndroidSetRadarConfigRspBuilder {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    cfg_status: vec![],
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let expected_result =
+            AndroidRadarConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
+        let result =
+            uci_manager.android_set_radar_config(session_id, vec![config_tlv]).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_android_get_radar_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let config_id = RadarConfigTlvType::SamplesPerSweep;
+        let tlv =
+            RadarConfigTlv { cfg_id: RadarConfigTlvType::SamplesPerSweep, v: vec![0x12, 0x34] };
+        let tlv_clone = tlv.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd =
+                    UciCommand::AndroidGetRadarConfig { session_token, radar_cfg: vec![config_id] };
+                let resp = into_uci_hal_packets(uwb_uci_packets::AndroidGetRadarConfigRspBuilder {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    tlvs: vec![tlv_clone],
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let expected_result = vec![tlv];
+        let result =
+            uci_manager.android_get_radar_config(session_id, vec![config_id]).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
     async fn test_raw_uci_cmd_vendor_gid_ok() {
         let mt = 0x1;
         let gid = 0xF; // Vendor reserved GID.
@@ -2416,7 +2588,7 @@ mod tests {
         let resp_payload_fragment_1 = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
         let resp_payload_fragment_2 = vec![0x09, 0x0a, 0x0b];
         let mut resp_payload_expected = resp_payload_fragment_1.clone();
-        resp_payload_expected.extend(resp_payload_fragment_2.clone().into_iter());
+        resp_payload_expected.extend(resp_payload_fragment_2.clone());
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             |mut hal| async move {
@@ -2703,7 +2875,7 @@ mod tests {
         // Setup the DataPacketRcv (Rx by HAL) and the expected DataRcvNotification.
         let data_packet_rcv = build_uci_packet(mt_data, pbf, dpf, oid, data_rcv_payload);
         let expected_data_rcv_notification = DataRcvNotification {
-            session_token,
+            session_token: session_id,
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
@@ -2774,7 +2946,7 @@ mod tests {
         let data_packet_rcv_fragment_2 =
             build_uci_packet(mt_data, pbf_fragment_2, dpf, oid, data_rcv_payload_fragment_2);
         let expected_data_rcv_notification = DataRcvNotification {
-            session_token,
+            session_token: session_id,
             status: DataRcvStatusCode::UciStatusSuccess,
             uci_sequence_num,
             source_address,
@@ -2813,6 +2985,109 @@ mod tests {
     #[tokio::test]
     async fn test_data_packet_recv_bad_payload_len_failure() {}
 
+    // Test Radar Data packet receive for a single packet (on an active UWB session).
+    #[tokio::test]
+    async fn test_radar_data_packet_recv_ok() {
+        let mt_data = 0x0;
+        let pbf = 0x0;
+        let dpf = 0xf;
+        let oid = 0x0;
+        let session_id = 0x3;
+        let session_token = 0x5;
+        let radar_data_type = RadarDataType::RadarSweepSamples;
+        let number_of_sweeps = 0x02;
+        let samples_per_sweep = 0x02;
+        let bits_per_sample = BitsPerSample::Value32;
+        let sweep_offset = 0x0;
+        let sequence_number_1 = 0xa;
+        let sequence_number_2 = 0xb;
+        let timestamp_1 = 0xc;
+        let timestamp_2 = 0xd;
+        let vendor_specific_data_1 = vec![0x0b];
+        let vendor_specific_data_2 = vec![0x0b, 0x0c];
+        let sample_data_1 = vec![0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa];
+        let sample_data_2 = vec![0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8];
+        let radar_data_rcv_payload = vec![
+            0x05, 0x00, 0x00, 0x00, // session_handle
+            0x00, // status
+            0x00, // radar data type
+            0x02, // number of sweeps
+            0x02, // samples per sweep
+            0x00, // bits per sample
+            0x00, 0x00, // sweep offset
+            0x10, 0x11, // sweep data size
+            // sweep data 1
+            0x0a, 0x00, 0x00, 0x00, // sequence number
+            0x0c, 0x00, 0x00, 0x00, // timestamp
+            0x01, // vendor specific data length
+            0x0b, // vendor specific data
+            0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, // sample data
+            // sweep data 2
+            0x0b, 0x00, 0x00, 0x00, // sequence number
+            0x0d, 0x00, 0x00, 0x00, // timestamp
+            0x02, // vendor specific data length
+            0x0b, 0x0c, // vendor specific data
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, // sample data
+        ];
+
+        // Setup the DataPacketRcv (Rx by HAL) and the expected DataRcvNotification.
+        let radar_data_packet_rcv =
+            build_uci_packet(mt_data, pbf, dpf, oid, radar_data_rcv_payload);
+        let expected_radar_data_rcv_notification = RadarDataRcvNotification {
+            session_token: session_id,
+            status: DataRcvStatusCode::UciStatusSuccess,
+            radar_data_type,
+            number_of_sweeps,
+            samples_per_sweep,
+            bits_per_sample,
+            sweep_offset,
+            sweep_data: vec![
+                RadarSweepData {
+                    sequence_number: sequence_number_1,
+                    timestamp: timestamp_1,
+                    vendor_specific_data: vendor_specific_data_1,
+                    sample_data: sample_data_1,
+                },
+                RadarSweepData {
+                    sequence_number: sequence_number_2,
+                    timestamp: timestamp_2,
+                    vendor_specific_data: vendor_specific_data_2,
+                    sample_data: sample_data_2,
+                },
+            ],
+        };
+
+        // Setup an active UWBS session over which the DataPacket will be received by the Host.
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let (radar_data_rcv_notification_sender, mut radar_data_rcv_notification_receiver) =
+            mpsc::unbounded_channel::<RadarDataRcvNotification>();
+        uci_manager
+            .set_radar_data_rcv_notification_sender(radar_data_rcv_notification_sender)
+            .await;
+
+        // Inject the UCI DataPacketRcv into HAL.
+        let result = mock_hal.receive_packet(radar_data_packet_rcv);
+        assert!(result.is_ok());
+
+        // UciManager should send a DataRcvNotification (for the valid Rx packet).
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            radar_data_rcv_notification_receiver.recv(),
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_radar_data_rcv_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
     #[tokio::test]
     async fn test_data_packet_send_ok() {
         // Test Data packet send for a single packet (on a UWB session).
@@ -2847,8 +3122,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -2938,8 +3212,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },
@@ -3002,8 +3275,7 @@ mod tests {
                 ntfs.append(&mut into_uci_hal_packets(
                     uwb_uci_packets::DataTransferStatusNtfBuilder {
                         session_token,
-                        // TODO(b/282230468): Remove the u16-to-u8 conversion once spec is updated.
-                        uci_sequence_number: uci_sequence_number.try_into().unwrap(),
+                        uci_sequence_number,
                         status,
                         tx_count,
                     },

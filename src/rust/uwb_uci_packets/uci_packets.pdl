@@ -22,6 +22,7 @@ enum GroupId : 4 {
 enum DataPacketFormat: 4 {
     DATA_SND = 0x01,
     DATA_RCV = 0x02,
+    RADAR_DATA_MESSAGE = 0x0f,
 }
 
 // Define a merged enum across GroupId & DataPacketFormat as they are at the same bits in
@@ -87,6 +88,8 @@ enum AndroidOpCode : 6 {
     ANDROID_GET_POWER_STATS = 0x0,
     ANDROID_SET_COUNTRY_CODE = 0x1,
     ANDROID_FIRA_RANGE_DIAGNOSTICS = 0x2,
+    ANDROID_RADAR_SET_APP_CONFIG = 0x11,
+    ANDROID_RADAR_GET_APP_CONFIG = 0x12,
 }
 
 enum StatusCode : 8 {
@@ -144,6 +147,7 @@ enum StatusCode : 8 {
         UCI_STATUS_ERROR_CCC_SE_BUSY = 0x50,
         UCI_STATUS_ERROR_CCC_LIFECYCLE = 0x51,
         UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x52,
+        UCI_STATUS_REGULATION_UWB_OFF = 0x53,
     },
 
     // For internal usage, we will use 0xFF as default.
@@ -245,11 +249,14 @@ enum AppConfigTlvType : 8 {
     MIN_FRAMES_PER_RR = 0x3A,
     MTU_SIZE = 0x3B,
     INTER_FRAME_INTERVAL = 0x3C,
-    RFU_APP_CFG_TLV_TYPE_RANGE_1 = 0x3D..0x44,
+    RFU_APP_CFG_TLV_TYPE_RANGE_1 = 0x3D..0x42,
+    DLTDOA_BLOCK_STRIDING = 0x43,
+    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x44,
     SESSION_KEY = 0x45,
     SUBSESSION_KEY = 0x46,
     SESSION_DATA_TRANSFER_STATUS_NTF_CONFIG = 0x47,
-    RFU_APP_CFG_TLV_TYPE_RANGE_2 = 0x48..0x9F,
+    SESSION_TIME_BASE = 0x48,
+    RFU_APP_CFG_TLV_TYPE_RANGE_3 = 0x49..0x9F,
 
     VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_1 = 0xA0..0xDF {
         // CCC specific
@@ -263,7 +270,7 @@ enum AppConfigTlvType : 8 {
     },
 
     // Reserved for extension IDs.
-    RFU_APP_CFG_TLV_TYPE_RANGE_3 = 0xE0..0xE2,
+    RFU_APP_CFG_TLV_TYPE_RANGE_4 = 0xE0..0xE2,
 
     VENDOR_SPECIFIC_APP_CFG_TLV_TYPE_RANGE_2 = 0xE3..0xFF {
         // Interleaving ratio if AOA_RESULT_REQ is set to 0xF0.
@@ -315,6 +322,8 @@ enum CapTlvType : 8 {
         CCC_SUPPORTED_PULSE_SHAPE_COMBOS = 0xA6,
         CCC_SUPPORTED_RAN_MULTIPLIER = 0xA7,
         CCC_SUPPORTED_MAX_RANGING_SESSION_NUMBER = 0xA8,
+        // RADAR specific
+        RADAR_SUPPORT = 0xB0
     },
 
     SUPPORTED_POWER_STATS = 0xC0,
@@ -416,10 +425,12 @@ enum MulticastUpdateStatusCode : 8 {
     STATUS_ERROR_MULTICAST_LIST_FULL = 0x01,
     STATUS_ERROR_KEY_FETCH_FAIL = 0x02,
     STATUS_ERROR_SUB_SESSION_ID_NOT_FOUND = 0x03,
-    STATUS_ERROR_SUB_SESSION_KEY_NOT_FOUND = 0x05,
-    STATUS_ERROR_SUB_SESSION_KEY_NOT_APPLICABLE = 0x06,
-    STATUS_ERROR_SESSION_KEY_NOT_FOUND = 0x07,
+    STATUS_ERROR_SUB_SESSION_KEY_NOT_FOUND = 0x04,
+    STATUS_ERROR_SUB_SESSION_KEY_NOT_APPLICABLE = 0x05,
+    STATUS_ERROR_SESSION_KEY_NOT_FOUND = 0x06,
+    STATUS_ERROR_ADDRESS_NOT_FOUND = 0x07,
     STATUS_ERROR_ADDRESS_ALREADY_PRESENT = 0x08,
+    RFU_STATUS_CODE_RANGE_1 = 0x09..0xFF,
 }
 
 enum MacAddressIndicator : 8 {
@@ -435,6 +446,7 @@ enum SessionType: 8 {
     FIRA_IN_BAND_DATA_PHASE = 0x04,
     FIRA_RANGING_WITH_DATA_PHASE = 0x05,
     CCC = 0xA0,
+    RADAR_SESSION = 0xA1,
     DEVICE_TEST_MODE = 0xD0,
 }
 
@@ -995,7 +1007,7 @@ test DataCreditNtf {
 
 packet DataTransferStatusNtf : SessionControlNotification (opcode = 0x05) { // SESSION_DATA_TRANSFER_STATUS_NTF
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    uci_sequence_number: 8,
+    uci_sequence_number: 16,
     status: DataTransferNtfStatusCode,
     tx_count: 8,
 }
@@ -1370,3 +1382,88 @@ packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F)
 packet TestNotification : UciNotification (group_id = TEST) {
     _payload_,
 }
+
+enum RadarDataType : 8 {
+    RADAR_SWEEP_SAMPLES = 0x00,
+}
+
+enum RadarConfigTlvType : 8 {
+    RADAR_TIMING_PARAMS = 0x00,
+    SAMPLES_PER_SWEEP = 0x01,
+    CHANNEL_NUMBER = 0x02,
+    SWEEP_OFFSET = 0x03,
+    RFRAME_CONFIG = 0x04,
+    PREAMBLE_DURATION = 0x05,
+    PREAMBLE_CODE_INDEX = 0x06,
+    SESSION_PRIORITY = 0x07,
+    BITS_PER_SAMPLE = 0x08,
+    PRF_MODE = 0x09,
+    NUMBER_OF_BURSTS = 0x0A,
+    RADAR_DATA_TYPE = 0x0B,
+
+    RFU_RADAR_APP_CFG_TLV_TYPE_RANGE = 0x0C..0x9F,
+
+    VENDOR_SPECIFIC_RADAR_APP_CFG_TLV_TYPE_RANGE = 0xA0..0xDF,
+}
+
+struct RadarConfigTlv {
+    cfg_id: RadarConfigTlvType,
+    _count_(v): 8,
+    v: 8[],
+}
+
+struct RadarConfigStatus {
+    cfg_id: RadarConfigTlvType,
+    status: StatusCode,
+}
+
+packet AndroidSetRadarConfigCmd: AndroidCommand (opcode = 0x11) {
+    session_token: 32,
+    _count_(tlvs): 8,
+    tlvs: RadarConfigTlv[]
+}
+
+packet AndroidSetRadarConfigRsp : AndroidResponse (opcode = 0x11) {
+    status: StatusCode,
+    _count_(cfg_status): 8,
+    cfg_status: RadarConfigStatus[],
+}
+
+packet AndroidGetRadarConfigCmd: AndroidCommand (opcode = 0x12) {
+    session_token: 32,
+    _count_(tlvs): 8,
+    tlvs: 8[], // RadarConfigTlvType (Infra does not allow array of enums)
+}
+
+packet AndroidGetRadarConfigRsp : AndroidResponse (opcode = 0x12) {
+    status: StatusCode,
+    _count_(tlvs): 8,
+    tlvs: RadarConfigTlv[],
+}
+
+enum BitsPerSample : 8 {
+    VALUE_32 = 0x00,
+    VALUE_48 = 0x01,
+    VALUE_64 = 0x02
+}
+
+struct RadarSweepDataRaw {
+    sequence_number: 32,
+    timestamp: 32,
+    _count_(vendor_specific_data): 8,
+    vendor_specific_data: 8[],
+    sample_data: 8[],
+}
+
+packet RadarDataRcv : UciDataPacket (data_packet_format = RADAR_DATA_MESSAGE, message_type = DATA) {
+    session_handle: 32,
+    status: DataRcvStatusCode,
+    radar_data_type: RadarDataType,
+    number_of_sweeps: 8,
+    samples_per_sweep: 8,
+    bits_per_sample: BitsPerSample,
+    sweep_offset: 16,
+    sweep_data_size: 16,
+    sweep_data: 8[],
+}
+

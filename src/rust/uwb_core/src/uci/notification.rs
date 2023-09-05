@@ -15,15 +15,20 @@
 use std::convert::{TryFrom, TryInto};
 
 use log::{debug, error};
-use uwb_uci_packets::{parse_diagnostics_ntf, Packet, UCI_PACKET_HEADER_LEN};
+use uwb_uci_packets::{
+    parse_diagnostics_ntf, radar_bytes_per_sample_value, Packet, RadarDataRcv, RadarSweepDataRaw,
+    UCI_PACKET_HEADER_LEN, UCI_RADAR_SEQUENCE_NUMBER_LEN, UCI_RADAR_TIMESTAMP_LEN,
+    UCI_RADAR_VENDOR_DATA_LEN_LEN,
+};
 
 use crate::error::{Error, Result};
 use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
-    ControleeStatus, CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode, DeviceState,
-    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, RangingMeasurementType, RawUciMessage, SessionState,
-    SessionToken, ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
+    BitsPerSample, ControleeStatus, CreditAvailability, DataRcvStatusCode,
+    DataTransferNtfStatusCode, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    RadarDataType, RangingMeasurementType, RawUciMessage, SessionState, SessionToken,
+    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
@@ -81,8 +86,8 @@ pub enum SessionNotification {
     DataTransferStatus {
         /// SessionToken : u32
         session_token: SessionToken,
-        /// Sequence Number: u8
-        uci_sequence_number: u8,
+        /// Sequence Number: u16
+        uci_sequence_number: u16,
         /// Data Transfer Status Code
         status: DataTransferNtfStatusCode,
         /// Transmission count
@@ -157,6 +162,142 @@ pub struct DataRcvNotification {
     pub payload: Vec<u8>,
 }
 
+/// The Radar sweep data struct
+#[derive(Debug, Clone, std::cmp::PartialEq)]
+pub struct RadarSweepData {
+    /// Counter of a single radar sweep per receiver. Starting
+    /// with 0 when the radar session is started.
+    pub sequence_number: u32,
+
+    /// Timestamp when this radar sweep is received. Unit is
+    /// based on the PRF.
+    pub timestamp: u32,
+
+    /// The radar vendor specific data.
+    pub vendor_specific_data: Vec<u8>,
+
+    /// The radar sample data.
+    pub sample_data: Vec<u8>,
+}
+
+/// The RADAR_DATA_RCV packet
+#[derive(Debug, Clone, std::cmp::PartialEq)]
+pub struct RadarDataRcvNotification {
+    /// The identifier of the session on which radar data transfer is happening.
+    pub session_token: SessionToken,
+
+    /// The status of the radar data rx.
+    pub status: DataRcvStatusCode,
+
+    /// The radar data type.
+    pub radar_data_type: RadarDataType,
+
+    /// The number of sweeps.
+    pub number_of_sweeps: u8,
+
+    /// Number of samples captured for each radar sweep.
+    pub samples_per_sweep: u8,
+
+    /// Bits per sample in the radar sweep.
+    pub bits_per_sample: BitsPerSample,
+
+    /// Defines the start offset with respect to 0cm distance. Unit in samples.
+    pub sweep_offset: u16,
+
+    /// Radar sweep data.
+    pub sweep_data: Vec<RadarSweepData>,
+}
+
+impl From<&uwb_uci_packets::RadarSweepDataRaw> for RadarSweepData {
+    fn from(evt: &uwb_uci_packets::RadarSweepDataRaw) -> Self {
+        Self {
+            sequence_number: evt.sequence_number,
+            timestamp: evt.timestamp,
+            vendor_specific_data: evt.vendor_specific_data.clone(),
+            sample_data: evt.sample_data.clone(),
+        }
+    }
+}
+
+impl TryFrom<uwb_uci_packets::UciDataPacket> for RadarDataRcvNotification {
+    type Error = Error;
+    fn try_from(evt: uwb_uci_packets::UciDataPacket) -> std::result::Result<Self, Self::Error> {
+        match evt.specialize() {
+            uwb_uci_packets::UciDataPacketChild::RadarDataRcv(evt) => parse_radar_data(evt),
+            _ => Err(Error::Unknown),
+        }
+    }
+}
+
+fn parse_radar_data(data: RadarDataRcv) -> Result<RadarDataRcvNotification> {
+    let session_token = data.get_session_handle();
+    let status = data.get_status();
+    let radar_data_type = data.get_radar_data_type();
+    let number_of_sweeps = data.get_number_of_sweeps();
+    let samples_per_sweep = data.get_samples_per_sweep();
+    let bits_per_sample = data.get_bits_per_sample();
+    let bytes_per_sample_value = radar_bytes_per_sample_value(bits_per_sample);
+    let sweep_offset = data.get_sweep_offset();
+
+    Ok(RadarDataRcvNotification {
+        session_token,
+        status,
+        radar_data_type,
+        number_of_sweeps,
+        samples_per_sweep,
+        bits_per_sample,
+        sweep_offset,
+        sweep_data: parse_radar_sweep_data(
+            number_of_sweeps,
+            samples_per_sweep,
+            bytes_per_sample_value,
+            data.get_sweep_data().clone(),
+        )?,
+    })
+}
+
+fn parse_radar_sweep_data(
+    number_of_sweeps: u8,
+    samples_per_sweep: u8,
+    bytes_per_sample_value: u8,
+    data: Vec<u8>,
+) -> Result<Vec<RadarSweepData>> {
+    let mut radar_sweep_data: Vec<RadarSweepData> = Vec::new();
+    let mut sweep_data_cursor = 0;
+    for _ in 0..number_of_sweeps {
+        let vendor_data_len_index =
+            sweep_data_cursor + UCI_RADAR_SEQUENCE_NUMBER_LEN + UCI_RADAR_TIMESTAMP_LEN;
+        if data.len() <= vendor_data_len_index {
+            error!("Invalid radar sweep data length for vendor, data: {:?}", &data);
+            return Err(Error::BadParameters);
+        }
+        let vendor_specific_data_len = data[vendor_data_len_index] as usize;
+        let sweep_data_len = UCI_RADAR_SEQUENCE_NUMBER_LEN
+            + UCI_RADAR_TIMESTAMP_LEN
+            + UCI_RADAR_VENDOR_DATA_LEN_LEN
+            + vendor_specific_data_len
+            + (samples_per_sweep * bytes_per_sample_value) as usize;
+        if data.len() < sweep_data_cursor + sweep_data_len {
+            error!("Invalid radar sweep data length, data: {:?}", &data);
+            return Err(Error::BadParameters);
+        }
+        radar_sweep_data.push(
+            (&RadarSweepDataRaw::parse(
+                &data[sweep_data_cursor..sweep_data_cursor + sweep_data_len],
+            )
+            .map_err(|e| {
+                error!("Failed to parse raw Radar Sweep Data {:?}, data: {:?}", e, &data);
+                Error::BadParameters
+            })?)
+                .into(),
+        );
+
+        sweep_data_cursor += sweep_data_len;
+    }
+
+    Ok(radar_sweep_data)
+}
+
 impl TryFrom<uwb_uci_packets::UciDataPacket> for DataRcvNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::UciDataPacket) -> std::result::Result<Self, Self::Error> {
@@ -168,10 +309,7 @@ impl TryFrom<uwb_uci_packets::UciDataPacket> for DataRcvNotification {
                 source_address: UwbAddress::Extended(evt.get_source_mac_address().to_le_bytes()),
                 payload: evt.get_data().to_vec(),
             }),
-            _ => {
-                error!("Unknown UciData packet: {:?}", evt);
-                Err(Error::Unknown)
-            }
+            _ => Err(Error::Unknown),
         }
     }
 }
