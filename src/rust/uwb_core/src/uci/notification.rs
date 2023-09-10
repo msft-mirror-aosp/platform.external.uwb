@@ -150,7 +150,7 @@ pub struct DataRcvNotification {
     pub session_token: SessionToken,
 
     /// The status of the data rx.
-    pub status: DataRcvStatusCode,
+    pub status: StatusCode,
 
     /// The sequence number of the data packet.
     pub uci_sequence_num: u16,
