@@ -49,6 +49,9 @@ pub enum Error {
     /// Packet Tx Error
     #[error("The packet send failed with an error")]
     PacketTxError,
+    /// Country code regulation UWB Off
+    #[error("The country code command failed with a UWB regulatory error")]
+    RegulationUwbOff,
     /// The unknown error.
     #[error("The unknown error")]
     Unknown,

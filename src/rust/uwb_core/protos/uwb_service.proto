@@ -56,8 +56,11 @@ enum Status {
   // Duplicated SessionId.
   DUPLICATED_SESSION_ID = 8;
 
+  //Regulation UWB off
+  REGULATION_UWB_OFF = 9;
+
   // The unknown error.
-  UNKNOWN = 9;
+  UNKNOWN = 10;
 }
 
 // Represent uwb_uci_packets::StatusCode.
@@ -73,6 +76,7 @@ enum StatusCode {
   UCI_STATUS_UNKNOWN_OID = 8;
   UCI_STATUS_READ_ONLY = 9;
   UCI_STATUS_COMMAND_RETRY = 10;
+  UCI_STATUS_UNKNOWN = 11;
 
   UCI_STATUS_SESSION_NOT_EXIST = 17;
   UCI_STATUS_SESSION_DUPLICATE = 18;
@@ -191,6 +195,7 @@ enum SessionType {
   FIRA_IN_BAND_DATA_PHASE = 0x04;
   FIRA_RANGING_WITH_DATA_PHASE = 0x05;
   CCC = 0xA0;
+  RADAR_SESSION = 0xA1;
   DEVICE_TEST_MODE = 0xD0;
 }
 
