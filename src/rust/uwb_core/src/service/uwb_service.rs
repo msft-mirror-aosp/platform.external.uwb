@@ -576,6 +576,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use crate::params::uci_packets::{SessionState, SetAppConfigResponse, StatusCode};
+    use crate::params::GetDeviceInfoResponse;
     use crate::service::mock_uwb_service_callback::MockUwbServiceCallback;
     use crate::service::uwb_service_builder::default_runtime;
     use crate::service::uwb_service_callback_builder::UwbServiceCallbackSendBuilder;
@@ -584,6 +585,16 @@ mod tests {
     };
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::UciNotification;
+    use uwb_uci_packets::StatusCode::UciStatusOk;
+
+    const GET_DEVICE_INFO_RSP: GetDeviceInfoResponse = GetDeviceInfoResponse {
+        status: UciStatusOk,
+        uci_version: 0,
+        mac_version: 0,
+        phy_version: 0,
+        uci_test_version: 0,
+        vendor_spec_info: vec![],
+    };
 
     fn setup_uwb_service(
         uci_manager: MockUciManager,
@@ -599,7 +610,7 @@ mod tests {
     #[test]
     fn test_open_close_uci() {
         let mut uci_manager = MockUciManager::new();
-        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
         uci_manager.expect_close_hal(false, Ok(()));
         let (service, _, _runtime) = setup_uwb_service(uci_manager);
 
@@ -618,7 +629,7 @@ mod tests {
         let range_data = session_range_data(session_id);
 
         let mut uci_manager = MockUciManager::new();
-        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
         uci_manager.expect_session_init(
             session_id,
             session_type,
@@ -788,7 +799,7 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(
             vec![UciNotification::Vendor(RawUciMessage { gid, oid, payload: payload.clone() })],
-            Ok(()),
+            Ok(GET_DEVICE_INFO_RSP),
         );
         let (service, mut callback, _runtime) = setup_uwb_service(uci_manager);
 
@@ -804,7 +815,7 @@ mod tests {
         let mut uci_manager = MockUciManager::new();
         uci_manager.expect_open_hal(
             vec![UciNotification::Core(CoreNotification::DeviceStatus(state))],
-            Ok(()),
+            Ok(GET_DEVICE_INFO_RSP),
         );
         let (service, mut callback, _runtime) = setup_uwb_service(uci_manager);
         callback.expect_on_uci_device_status_changed(state);
@@ -819,7 +830,7 @@ mod tests {
         uci_manager.expect_open_hal(vec![], Err(Error::Timeout));
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
-        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
         let (service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
@@ -838,11 +849,11 @@ mod tests {
             vec![UciNotification::Core(CoreNotification::DeviceStatus(
                 DeviceState::DeviceStateError,
             ))],
-            Ok(()),
+            Ok(GET_DEVICE_INFO_RSP),
         );
         // Then UwbService should close_hal() and open_hal() to reset the HAL.
         uci_manager.expect_close_hal(true, Ok(()));
-        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
         let (service, mut callback, _runtime) = setup_uwb_service(uci_manager.clone());
 
         callback.expect_on_service_reset(true);
