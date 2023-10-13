@@ -5,9 +5,7 @@
     },
     {
       "name": "libuwb_core_tests"
-    }
-  ],
-  "postsubmit": [
+    },
     {
       "name": "CtsUwbTestCases"
     }
