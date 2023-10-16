@@ -707,6 +707,10 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // session related commands. This map stores the app provided session id to UWBS generated
     // session handle mapping if provided, else reuses session id.
     session_id_to_token_map: Arc<Mutex<HashMap<SessionId, SessionToken>>>,
+
+    // Used to store the UWBS response for the UCI CMD CORE_GET_DEVICE_INFO. This will help us
+    // identify the UWBS supported UCI version and change our behavior accordingly.
+    get_device_info_rsp: Option<GetDeviceInfoResponse>,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -742,6 +746,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
             last_init_session_id: None,
             session_id_to_token_map,
+            get_device_info_rsp: None,
         }
     }
 
@@ -843,6 +848,13 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
         }
         Ok(())
+    }
+
+    // Store the GET_DEVICE_INFO RSP from UWBS.
+    fn store_if_uwbs_device_info(&mut self, resp: &UciResponse) {
+        if let UciResponse::CoreGetDeviceInfo(Ok(get_device_info_rsp)) = resp {
+            self.get_device_info_rsp = Some(get_device_info_rsp.clone());
+        }
     }
 
     async fn handle_cmd(
@@ -1196,6 +1208,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             error!("Session init response received without a sesson id stored! Something has gone badly wrong: {:?}", resp);
             return;
         }
+        self.store_if_uwbs_device_info(&resp);
 
         if let Some(uci_cmd_retryer) = self.uci_cmd_retryer.take() {
             uci_cmd_retryer.send_result(Ok(resp));
