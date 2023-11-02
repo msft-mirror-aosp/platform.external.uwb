@@ -2865,7 +2865,7 @@ mod tests {
         let app_data = vec![0x01, 0x02, 0x03];
         let data_rcv_payload = vec![
             0x05, 0x00, 0x00, 0x00, // SessionToken
-            0x00, // DataRcvStatusCode
+            0x00, // StatusCode
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
             0x0a, 0x00, // UciSequenceNumber
             0x03, 0x00, // AppDataLen
@@ -2876,7 +2876,7 @@ mod tests {
         let data_packet_rcv = build_uci_packet(mt_data, pbf, dpf, oid, data_rcv_payload);
         let expected_data_rcv_notification = DataRcvNotification {
             session_token: session_id,
-            status: DataRcvStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             uci_sequence_num,
             source_address,
             payload: app_data,
@@ -2925,7 +2925,7 @@ mod tests {
         let app_data_fragment_1_len = 200;
         let mut data_rcv_payload_fragment_1: Vec<u8> = vec![
             0x05, 0x00, 0x00, 0x00, // SessionToken
-            0x00, // DataRcvStatusCode
+            0x00, // StatusCode
             0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
             0x0a, 0x00, // UciSequenceNumber
             0x2c, 0x01, // AppData Length (300)
@@ -2947,7 +2947,7 @@ mod tests {
             build_uci_packet(mt_data, pbf_fragment_2, dpf, oid, data_rcv_payload_fragment_2);
         let expected_data_rcv_notification = DataRcvNotification {
             session_token: session_id,
-            status: DataRcvStatusCode::UciStatusSuccess,
+            status: StatusCode::UciStatusOk,
             uci_sequence_num,
             source_address,
             payload: app_data,
