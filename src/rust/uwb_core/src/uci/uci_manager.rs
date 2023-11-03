@@ -42,8 +42,9 @@ use crate::uci::timeout_uci_hal::TimeoutUciHal;
 use crate::uci::uci_hal::{UciHal, UciHalPacket};
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
+use pdl_runtime::Packet;
 use std::collections::{HashMap, VecDeque};
-use uwb_uci_packets::{Packet, PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket};
+use uwb_uci_packets::{PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket};
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
