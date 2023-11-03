@@ -211,7 +211,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
                 ))
             }
             SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
-                Ok(UciResponse::SessionQueryMaxDataSize(Ok(evt.get_max_data_size())))
+                Ok(UciResponse::SessionQueryMaxDataSize(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_max_data_size()),
+                ))
             }
             SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => {
                 Ok(UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())))
