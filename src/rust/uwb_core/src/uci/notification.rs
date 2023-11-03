@@ -15,8 +15,9 @@
 use std::convert::{TryFrom, TryInto};
 
 use log::{debug, error};
+use pdl_runtime::Packet;
 use uwb_uci_packets::{
-    parse_diagnostics_ntf, radar_bytes_per_sample_value, Packet, RadarDataRcv, RadarSweepDataRaw,
+    parse_diagnostics_ntf, radar_bytes_per_sample_value, RadarDataRcv, RadarSweepDataRaw,
     UCI_PACKET_HEADER_LEN, UCI_RADAR_SEQUENCE_NUMBER_LEN, UCI_RADAR_TIMESTAMP_LEN,
     UCI_RADAR_VENDOR_DATA_LEN_LEN,
 };
