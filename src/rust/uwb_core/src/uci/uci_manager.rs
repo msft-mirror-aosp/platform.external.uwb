@@ -787,7 +787,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         if self.is_hal_opened {
             debug!("The HAL is still opened when exit, close the HAL");
             let _ = self.hal.close().await;
-            self.on_hal_closed();
+            self.on_hal_closed().await;
         }
     }
 
@@ -906,7 +906,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     debug!("Force closing the UCI HAL");
                     let close_result = self.hal.close().await;
                     self.logger.log_hal_close(&close_result);
-                    self.on_hal_closed();
+                    self.on_hal_closed().await;
                     let _ = result_sender.send(Ok(UciResponse::CloseHal));
                 } else {
                     if !self.is_hal_opened {
@@ -918,7 +918,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     let result = self.hal.close().await;
                     self.logger.log_hal_close(&result);
                     if result.is_ok() {
-                        self.on_hal_closed();
+                        self.on_hal_closed().await;
                     }
                     let _ = result_sender.send(result.map(|_| UciResponse::CloseHal));
                 }
@@ -1136,7 +1136,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             None => {
                 warn!("UciHal dropped the packet_sender unexpectedly.");
-                self.on_hal_closed();
+                self.on_hal_closed().await;
                 return;
             }
         };
@@ -1418,7 +1418,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         self.packet_receiver = packet_receiver;
     }
 
-    fn on_hal_closed(&mut self) {
+    async fn on_hal_closed(&mut self) {
+        self.session_id_to_token_map.lock().await.clear();
         self.is_hal_opened = false;
         self.packet_receiver = mpsc::unbounded_channel().1;
         self.last_raw_cmd = None;
