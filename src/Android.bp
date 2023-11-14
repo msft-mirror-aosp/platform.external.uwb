@@ -210,7 +210,6 @@ genrule {
     tools: ["aprotoc", "protoc-gen-rust"],
     cmd: "$(location aprotoc)" +
          " --proto_path=`dirname $(in)`" +
-         " --dependency_out=$(depfile)" +
          " --plugin=protoc-gen-rust=$(location protoc-gen-rust)" +
          " --rust_out=$(genDir) $(in)",
     srcs: [
@@ -219,7 +218,6 @@ genrule {
     out: [
         "uwb_service.rs",
     ],
-    depfile: true,
 }
 
 genrule {
@@ -363,23 +361,28 @@ genrule {
         "pdlc",
         "soong_zip",
     ],
+    srcs: [
+        "rust/uwb_core/**/*",
+        "rust/uwb_uci_packets/**/*",
+        "rust/Cargo.toml",
+    ],
     cmd:
         // Create a artifacts directory and copy the source code into it.
-        "mkdir $(genDir)/artifacts;" +
+        "mkdir $(genDir)/artifacts && " +
         "cp -r external/uwb/src/rust/uwb_core " +
         "      external/uwb/src/rust/uwb_uci_packets " +
         "      external/uwb/src/rust/Cargo.toml " +
-        "      $(genDir)/artifacts;" +
+        "      $(genDir)/artifacts && " +
 
         // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
         "$(location pdlc) --output-format rust " +
         "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl " +
-        "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs;" +
+        "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs && " +
 
         // Pack the artifacts directory and clean up the directory.
         "$(location soong_zip) -o $(out) " +
         "                      -C $(genDir)/artifacts " +
-        "                      -D $(genDir)/artifacts;" +
+        "                      -D $(genDir)/artifacts && " +
         "rm -rf $(genDir)/artifacts",
     out: [
         "uwb_core_artifacts.zip",
