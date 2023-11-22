@@ -93,6 +93,7 @@ rust_defaults {
         "libtokio",
         "libuwb_uci_packets",
         "libzeroize",
+        "libuwb_aconfig_flags_rust",
     ],
     proc_macros: [
         "libasync_trait",
