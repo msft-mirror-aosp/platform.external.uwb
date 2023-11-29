@@ -1727,8 +1727,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_core_get_caps_info_ok() {
-        let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
+    async fn test_core_get_caps_info_fira_v1_0_ok() {
+        let tlv = CapTlv {
+            t: CapTlvType::SupportedV1FiraPhyVersionRangeV2MaxMessageSize,
+            v: vec![0x12, 0x34, 0x56],
+        };
         let tlv_clone = tlv.clone();
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
