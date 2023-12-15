@@ -557,43 +557,41 @@ impl From<UciControlPacket> for Vec<UciControlPacketHal> {
 
 // Helper to convert From<UciDataSnd> into Vec<UciDataPacketHal>. An
 // example usage is for fragmentation in the Data Packet Tx flow.
-impl From<UciDataSnd> for Vec<UciDataPacketHal> {
-    fn from(packet: UciDataSnd) -> Self {
-        let mut fragments = Vec::new();
-        let dpf = packet.get_data_packet_format().into();
+pub fn fragment_data_msg_send(packet: UciDataSnd, max_payload_len: usize) -> Vec<UciDataPacketHal> {
+    let mut fragments = Vec::new();
+    let dpf = packet.get_data_packet_format().into();
 
-        // get payload by stripping the header.
-        let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
-        if payload.is_empty() {
+    // get payload by stripping the header.
+    let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
+    if payload.is_empty() {
+        fragments.push(
+            UciDataPacketHalBuilder {
+                group_id_or_data_packet_format: dpf,
+                packet_boundary_flag: PacketBoundaryFlag::Complete,
+                payload: None,
+            }
+            .build(),
+        );
+    } else {
+        let mut fragments_iter = payload.chunks(max_payload_len).peekable();
+        while let Some(fragment) = fragments_iter.next() {
+            // Set the last fragment complete if this is last fragment.
+            let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
+                PacketBoundaryFlag::NotComplete
+            } else {
+                PacketBoundaryFlag::Complete
+            };
             fragments.push(
                 UciDataPacketHalBuilder {
                     group_id_or_data_packet_format: dpf,
-                    packet_boundary_flag: PacketBoundaryFlag::Complete,
-                    payload: None,
+                    packet_boundary_flag: pbf,
+                    payload: Some(Bytes::from(fragment.to_owned())),
                 }
                 .build(),
             );
-        } else {
-            let mut fragments_iter = payload.chunks(MAX_PAYLOAD_LEN).peekable();
-            while let Some(fragment) = fragments_iter.next() {
-                // Set the last fragment complete if this is last fragment.
-                let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
-                    PacketBoundaryFlag::NotComplete
-                } else {
-                    PacketBoundaryFlag::Complete
-                };
-                fragments.push(
-                    UciDataPacketHalBuilder {
-                        group_id_or_data_packet_format: dpf,
-                        packet_boundary_flag: pbf,
-                        payload: Some(Bytes::from(fragment.to_owned())),
-                    }
-                    .build(),
-                );
-            }
         }
-        fragments
     }
+    fragments
 }
 
 #[derive(Default, Debug)]
