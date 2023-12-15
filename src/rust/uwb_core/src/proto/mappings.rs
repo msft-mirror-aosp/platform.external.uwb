@@ -116,6 +116,7 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_UNKNOWN_OID => StatusCode::UciStatusUnknownOid,
             ProtoStatusCode::UCI_STATUS_READ_ONLY => StatusCode::UciStatusReadOnly,
             ProtoStatusCode::UCI_STATUS_COMMAND_RETRY => StatusCode::UciStatusCommandRetry,
+            ProtoStatusCode::UCI_STATUS_UNKNOWN => StatusCode::UciStatusUnknown,
             ProtoStatusCode::UCI_STATUS_SESSION_NOT_EXIST => StatusCode::UciStatusSessionNotExist,
             ProtoStatusCode::UCI_STATUS_SESSION_DUPLICATE => StatusCode::UciStatusSessionDuplicate,
             ProtoStatusCode::UCI_STATUS_SESSION_ACTIVE => StatusCode::UciStatusSessionActive,
@@ -179,6 +180,7 @@ impl From<ProtoStatusCode> for StatusCode {
             ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
                 StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict
             }
+            ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF => StatusCode::UciStatusRegulationUwbOff,
             _ =>  StatusCode::VendorSpecificStatusCode2,
         }
     }
@@ -198,6 +200,7 @@ impl From<StatusCode> for ProtoStatusCode {
             StatusCode::UciStatusUnknownOid => ProtoStatusCode::UCI_STATUS_UNKNOWN_OID,
             StatusCode::UciStatusReadOnly => ProtoStatusCode::UCI_STATUS_READ_ONLY,
             StatusCode::UciStatusCommandRetry => ProtoStatusCode::UCI_STATUS_COMMAND_RETRY,
+            StatusCode::UciStatusUnknown => ProtoStatusCode::UCI_STATUS_UNKNOWN,
             StatusCode::UciStatusSessionNotExist => ProtoStatusCode::UCI_STATUS_SESSION_NOT_EXIST,
             StatusCode::UciStatusSessionDuplicate => ProtoStatusCode::UCI_STATUS_SESSION_DUPLICATE,
             StatusCode::UciStatusSessionActive => ProtoStatusCode::UCI_STATUS_SESSION_ACTIVE,
@@ -269,6 +272,9 @@ impl From<StatusCode> for ProtoStatusCode {
             }
             StatusCode::UciStatusErrorStoppedDueToOtherSessionConflict => {
                 ProtoStatusCode::UCI_STATUS_ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT
+            }
+            StatusCode::UciStatusRegulationUwbOff => {
+                ProtoStatusCode::UCI_STATUS_REGULATION_UWB_OFF
             }
             _ => ProtoStatusCode::UCI_STATUS_RFU_OR_VENDOR_SPECIFIC,
         }
@@ -526,8 +532,13 @@ enum_mapping! {
 enum_mapping! {
     ProtoSessionType => SessionType,
     FIRA_RANGING_SESSION => FiraRangingSession,
-    FIRA_DATA_TRANSFER => FiraDataTransfer,
+    FIRA_DATA_TRANSFER => FiraDataTransferSession,
+    FIRA_RANGING_AND_IN_BAND_DATA_SESSION => FiraRangingAndInBandDataSession,
+    FIRA_RANGING_ONLY_PHASE => FiraRangingOnlyPhase,
+    FIRA_IN_BAND_DATA_PHASE => FiraInBandDataPhase,
+    FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
+    RADAR_SESSION => RadarSession,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
 
@@ -703,6 +714,7 @@ impl<T> From<Result<T>> for ProtoStatus {
             Err(Error::Timeout) => Self::TIMEOUT,
             Err(Error::CommandRetry) => Self::COMMAND_RETRY,
             Err(Error::DuplicatedSessionId) => Self::DUPLICATED_SESSION_ID,
+            Err(Error::RegulationUwbOff) => Self::REGULATION_UWB_OFF,
             Err(_) => Self::UNKNOWN,
         }
     }
