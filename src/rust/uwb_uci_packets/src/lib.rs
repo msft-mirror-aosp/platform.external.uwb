@@ -367,6 +367,13 @@ fn is_same_control_packet(header: &UciControlPacketHeader, packet: &UciPacketHal
         && header.opcode == get_opcode_from_uci_control_packet(packet)
 }
 
+fn is_device_state_err_control_packet(packet: &UciPacketHal) -> bool {
+    packet.get_message_type() ==  MessageType::Notification.into()
+    && packet.get_group_id_or_data_packet_format() == GroupIdOrDataPacketFormat::Core.into()
+    && get_opcode_from_uci_control_packet(packet) == CoreOpCode::CoreDeviceStatusNtf.into()
+    && packet.clone().to_vec()[UCI_PACKET_HAL_HEADER_LEN] == DeviceState::DeviceStateError.into()
+}
+
 impl UciControlPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
@@ -396,6 +403,21 @@ impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
         for packet in packets {
             // Ensure that the new fragment is part of the same packet.
             if !is_same_control_packet(&header, &packet) {
+                // if DEVICE_STATE_ERROR notification is received while waiting for remaining fragments,
+                // process it and send to upper layer for device recovery
+                if is_device_state_err_control_packet(&packet) {
+                   error!("Received device reset error: {:?}", packet);
+                   return UciControlPacket::parse(
+                        &UciControlPacketBuilder {
+                            message_type: packet.get_message_type(),
+                            group_id: packet.get_group_id_or_data_packet_format().into(),
+                            opcode: get_opcode_from_uci_control_packet(&packet),
+                            payload: Some(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..)),
+                        }
+                        .build()
+                        .to_bytes(),
+                   );
+                }
                 error!("Received unexpected fragment: {:?}", packet);
                 return Err(Error::InvalidPacketError);
             }
