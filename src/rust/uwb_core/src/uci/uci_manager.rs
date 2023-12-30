@@ -1590,6 +1590,7 @@ mod tests {
         DataTransferNtfStatusCode, RadarDataType, StatusCode,
     };
     use crate::params::UwbAddress;
+    use crate::uci::notification::CoreNotification;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
     use crate::uci::notification::RadarSweepData;
@@ -1746,6 +1747,62 @@ mod tests {
         let result = uci_manager.device_reset(ResetConfig::UwbsReset).await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_priority_device_status_error_ntf() {
+        // Send DEVICE_STATE_ERROR notification while waiting for remaining fragments,
+        // verify that notification is processed on priority without waiting for the
+        // further fragmen
+        let mt: u8 = 0x3;
+        let pbf_not_set: u8 = 0x00;
+        let gid_core: u8 = 0x0;
+        let oid_device_status: u8 = 0x1;
+        let payload_1 = vec![0xFF];
+        let pbf_set: u8 = 0x1;
+        let gid_session: u8 = 0x02;
+        let oid_session_ntf: u8 =  0x03;
+        let payload_range_dat = vec![0, 251];
+        let dev_state_err_packet = build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
+        let range_data_ntf_packet = build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let (session_notification_sender, mut session_notification_receiver)  =
+            mpsc::unbounded_channel::<SessionNotification>();
+        uci_manager.set_session_notification_sender(session_notification_sender).await;
+        let result = mock_hal.receive_packet(range_data_ntf_packet);
+        assert!(result.is_ok());
+
+        let device_status_ntf_packet = uwb_uci_packets::DeviceStatusNtfBuilder {
+            device_state: uwb_uci_packets::DeviceState::DeviceStateError,
+        }
+        .build();
+        let core_notification =
+            uwb_uci_packets::CoreNotification::try_from(device_status_ntf_packet).unwrap();
+        let expected_uci_notification = CoreNotification::try_from(core_notification).unwrap();
+
+        let (core_notification_sender, mut core_notification_receiver)  =
+            mpsc::unbounded_channel::<CoreNotification>();
+        uci_manager.set_core_notification_sender(core_notification_sender).await;
+
+        let result = mock_hal.receive_packet(dev_state_err_packet);
+        assert!(result.is_ok());
+
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), core_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_uci_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+
+        // DEVICE_STATE_ERROR is received in middle while waiting for the fragmented packet,
+        // no fragmented packet will be processed
+        assert!(session_notification_receiver.try_recv().is_err());
     }
 
     #[tokio::test]
