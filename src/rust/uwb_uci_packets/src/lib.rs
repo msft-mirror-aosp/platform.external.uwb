@@ -128,8 +128,8 @@ impl DlTdoaRangingMeasurement {
         let initiator_responder_tof = extract_u16(bytes, &mut ptr, 2)?;
         let dt_location_type = (message_control >> 5) & 0x3;
         let dt_anchor_location = match DTAnchorLocationType::from_u16(dt_location_type)? {
-            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 10)?,
-            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 10)?,
             _ => vec![],
         };
         let active_ranging_rounds = ((message_control >> 7) & 0xf) as u8;
@@ -1035,7 +1035,7 @@ mod tests {
             // All Fields in Little Endian (LE)
             // First measurement
             0x0a, 0x01, 0x33, 0x05, // 2(Mac address), Status, Message Type
-            0x33, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
+            0x53, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
             0x07, 0x09, 0x0a, 0x01, // Round Index, NLoS, 2(AoA Azimuth)
             0x02, 0x05, 0x07, 0x09, // AoA Azimuth FOM, 2(AoA Elevation), AoA Elevation FOM
             0x0a, 0x01, 0x02, 0x05, // RSSI, 3(Tx Timestamp..)
@@ -1064,9 +1064,10 @@ mod tests {
             0x0a, 0x01, 0x02, 0x05, // 2(Responder Reply Time), 2(Initiator-Responder ToF)
             0x07, 0x09, 0x07, 0x09, // 4(Anchor Location..)
             0x05, 0x07, 0x09, 0x0a, // 4(Anchor Location..)
-            0x01, 0x02, 0x05, 0x07, // 2(Anchor Location..), 2(Active Ranging Rounds..)
-            0x09, 0x0a, 0x01, 0x02, // 4(Active Ranging Rounds..)
-            0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
+            0x01, 0x02, 0x01, 0x02, // 4(Anchor Location)
+            0x05, 0x07, 0x09, 0x0a, // 4(Active Ranging Rounds..)
+            0x01, 0x02, 0x05, 0x07, // 4(Active Ranging Rounds..)
+            0x09, 0x05, // 2(Active Ranging Rounds)
         ];
 
         let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes, 2).unwrap();
@@ -1076,7 +1077,7 @@ mod tests {
         assert_eq!(*mac_address_1, 0x010a);
         assert_eq!(measurement_1.status, 0x33);
         assert_eq!(measurement_1.message_type, 0x05);
-        assert_eq!(measurement_1.message_control, 0x0533);
+        assert_eq!(measurement_1.message_control, 0x0553);
         assert_eq!(measurement_1.block_index, 0x0502);
         assert_eq!(measurement_1.round_index, 0x07);
         assert_eq!(measurement_1.nlos, 0x09);
@@ -1123,11 +1124,11 @@ mod tests {
         assert_eq!(measurement_2.responder_reply_time, 0x010a0907);
         assert_eq!(measurement_2.initiator_responder_tof, 0x0502);
         assert_eq!(
-            measurement_1.dt_anchor_location,
-            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02]
+            measurement_2.dt_anchor_location,
+            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x01, 0x02]
         );
         assert_eq!(
-            measurement_1.ranging_rounds,
+            measurement_2.ranging_rounds,
             vec![0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x05, 0x07, 0x09, 0x05,]
         );
     }
