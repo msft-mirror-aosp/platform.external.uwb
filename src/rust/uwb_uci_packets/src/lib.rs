@@ -53,6 +53,11 @@ const UCI_CONTROL_HEADER_GID_MASK: u8 = 0xF;
 const UCI_CONTROL_HEADER_OID_BYTE_POSITION: usize = 1;
 const UCI_CONTROL_HEADER_OID_MASK: u8 = 0x3F;
 
+// Radar field lengths
+pub const UCI_RADAR_SEQUENCE_NUMBER_LEN: usize = 4;
+pub const UCI_RADAR_TIMESTAMP_LEN: usize = 4;
+pub const UCI_RADAR_VENDOR_DATA_LEN_LEN: usize = 1;
+
 #[derive(Debug, Clone, PartialEq, FromPrimitive)]
 pub enum TimeStampLength {
     Timestamp40Bit = 0x0,
@@ -123,8 +128,8 @@ impl DlTdoaRangingMeasurement {
         let initiator_responder_tof = extract_u16(bytes, &mut ptr, 2)?;
         let dt_location_type = (message_control >> 5) & 0x3;
         let dt_anchor_location = match DTAnchorLocationType::from_u16(dt_location_type)? {
-            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 10)?,
-            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 10)?,
             _ => vec![],
         };
         let active_ranging_rounds = ((message_control >> 7) & 0xf) as u8;
@@ -432,16 +437,21 @@ impl RawUciControlPacket {
     }
 }
 
-// UCI Data packet functions.
-fn is_uci_data_rcv_packet(message_type: MessageType, data_packet_format: DataPacketFormat) -> bool {
-    message_type == MessageType::Data && data_packet_format == DataPacketFormat::DataRcv
+fn is_uci_data_packet(message_type: MessageType) -> bool {
+    message_type == MessageType::Data
 }
 
-fn try_into_data_payload(packet: UciPacketHal) -> Result<Bytes> {
-    if is_uci_data_rcv_packet(
-        packet.get_message_type(),
-        packet.get_group_id_or_data_packet_format().try_into()?,
-    ) {
+fn is_data_rcv_or_radar_format(data_packet_format: DataPacketFormat) -> bool {
+    data_packet_format == DataPacketFormat::DataRcv
+        || data_packet_format == DataPacketFormat::RadarDataMessage
+}
+
+fn try_into_data_payload(
+    packet: UciPacketHal,
+    expected_data_packet_format: DataPacketFormat,
+) -> Result<Bytes> {
+    let dpf: DataPacketFormat = packet.get_group_id_or_data_packet_format().try_into()?;
+    if is_uci_data_packet(packet.get_message_type()) && dpf == expected_data_packet_format {
         Ok(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
     } else {
         error!("Received unexpected data packet fragment: {:?}", packet);
@@ -459,12 +469,17 @@ impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
             return Err(Error::InvalidPacketError);
         }
 
+        let dpf: DataPacketFormat = packets[0].get_group_id_or_data_packet_format().try_into()?;
+        if !is_data_rcv_or_radar_format(dpf) {
+            error!("Unexpected data packet format {:?}", dpf);
+        }
+
         // Create the reassembled payload.
         let mut payload_buf = Bytes::new();
         for packet in packets {
             // Ensure that the fragment is a Data Rcv packet.
             // Get payload by stripping the header.
-            payload_buf = [payload_buf, try_into_data_payload(packet)?].concat().into();
+            payload_buf = [payload_buf, try_into_data_payload(packet, dpf)?].concat().into();
         }
 
         // Create assembled |UciDataPacket| and convert to bytes again since we need to
@@ -472,7 +487,7 @@ impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
         UciDataPacket::parse(
             &UciDataPacketBuilder {
                 message_type: MessageType::Data,
-                data_packet_format: DataPacketFormat::DataRcv,
+                data_packet_format: dpf,
                 payload: Some(payload_buf.into()),
             }
             .build()
@@ -824,10 +839,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
 ) -> Result<SessionUpdateControllerMulticastListCmd> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
-        Controlees::NoSessionKey(controlee_v1)
-            if action == UpdateMulticastListAction::AddControlee
-                || action == UpdateMulticastListAction::RemoveControlee =>
-        {
+        Controlees::NoSessionKey(controlee_v1) => {
             controlees_buf.extend_from_slice(&(controlee_v1.len() as u8).to_le_bytes());
             for controlee in controlee_v1 {
                 controlees_buf.extend_from_slice(&write_controlee(&controlee));
@@ -865,6 +877,17 @@ impl Drop for AppConfigTlv {
         {
             self.v.zeroize();
         }
+    }
+}
+
+// Radar data 'bits per sample' field isn't a raw value, instead it's an enum
+// that maps to the raw value. We need this mapping to get the max sample size
+// length.
+pub fn radar_bytes_per_sample_value(bps: BitsPerSample) -> u8 {
+    match bps {
+        BitsPerSample::Value32 => 4,
+        BitsPerSample::Value48 => 6,
+        BitsPerSample::Value64 => 8,
     }
 }
 
@@ -1012,7 +1035,7 @@ mod tests {
             // All Fields in Little Endian (LE)
             // First measurement
             0x0a, 0x01, 0x33, 0x05, // 2(Mac address), Status, Message Type
-            0x33, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
+            0x53, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
             0x07, 0x09, 0x0a, 0x01, // Round Index, NLoS, 2(AoA Azimuth)
             0x02, 0x05, 0x07, 0x09, // AoA Azimuth FOM, 2(AoA Elevation), AoA Elevation FOM
             0x0a, 0x01, 0x02, 0x05, // RSSI, 3(Tx Timestamp..)
@@ -1041,9 +1064,10 @@ mod tests {
             0x0a, 0x01, 0x02, 0x05, // 2(Responder Reply Time), 2(Initiator-Responder ToF)
             0x07, 0x09, 0x07, 0x09, // 4(Anchor Location..)
             0x05, 0x07, 0x09, 0x0a, // 4(Anchor Location..)
-            0x01, 0x02, 0x05, 0x07, // 2(Anchor Location..), 2(Active Ranging Rounds..)
-            0x09, 0x0a, 0x01, 0x02, // 4(Active Ranging Rounds..)
-            0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
+            0x01, 0x02, 0x01, 0x02, // 4(Anchor Location)
+            0x05, 0x07, 0x09, 0x0a, // 4(Active Ranging Rounds..)
+            0x01, 0x02, 0x05, 0x07, // 4(Active Ranging Rounds..)
+            0x09, 0x05, // 2(Active Ranging Rounds)
         ];
 
         let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes, 2).unwrap();
@@ -1053,7 +1077,7 @@ mod tests {
         assert_eq!(*mac_address_1, 0x010a);
         assert_eq!(measurement_1.status, 0x33);
         assert_eq!(measurement_1.message_type, 0x05);
-        assert_eq!(measurement_1.message_control, 0x0533);
+        assert_eq!(measurement_1.message_control, 0x0553);
         assert_eq!(measurement_1.block_index, 0x0502);
         assert_eq!(measurement_1.round_index, 0x07);
         assert_eq!(measurement_1.nlos, 0x09);
@@ -1100,11 +1124,11 @@ mod tests {
         assert_eq!(measurement_2.responder_reply_time, 0x010a0907);
         assert_eq!(measurement_2.initiator_responder_tof, 0x0502);
         assert_eq!(
-            measurement_1.dt_anchor_location,
-            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02]
+            measurement_2.dt_anchor_location,
+            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x01, 0x02]
         );
         assert_eq!(
-            measurement_1.ranging_rounds,
+            measurement_2.ranging_rounds,
             vec![0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x05, 0x07, 0x09, 0x05,]
         );
     }
