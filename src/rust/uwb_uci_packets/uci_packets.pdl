@@ -67,6 +67,7 @@ enum SessionConfigOpCode : 6 {
     SESSION_SET_INITIATOR_DT_ANCHOR_RR_RDM_LIST = 0x0a,
     SESSION_QUERY_DATA_SIZE_IN_RANGING = 0x0b,
     SESSION_SET_HUS_CONFIG = 0x0c,
+    SESSION_DATA_TRANSFER_PHASE_CONFIGURATION = 0x0e,
 }
 
 enum SessionControlOpCode : 6 {
@@ -177,6 +178,12 @@ enum DataTransferNtfStatusCode : 8 {
     UCI_DATA_TRANSFER_STATUS_SESSION_TYPE_NOT_SUPPORTED = 0x05,
     UCI_DATA_TRANSFER_STATUS_ERROR_DATA_TRANSFER_IS_ONGOING = 0x06,
     UCI_DATA_TRANSFER_STATUS_INVALID_FORMAT = 0x07,
+}
+
+// The UCI spec defines these status codes for a SESSION_DATA_TRANSFER_PHASE_CONFIG_NTF packet.
+enum DataTransferPhaseConfigUpdateStatusCode : 8 {
+    UCI_DTPCM_CONFIG_SUCCESS_STATUS_OK = 0x00,
+    UCI_DTPCM_STATUS_ERROR_DUPLICATE_SLOT_ASSIGMENT = 0x01,
 }
 
 enum ResetConfig : 8 {
@@ -1046,6 +1053,27 @@ packet SessionQueryMaxDataSizeRsp : SessionConfigResponse (opcode = 0xB) { //QUE
 
 test SessionQueryMaxDataSizeRsp {
   "\x41\x0B\x00\x06\x00\x00\x00\x00\x00\x0E7\0x07",
+}
+
+packet SessionDataTransferPhaseConfigCmd : SessionConfigCommand (opcode = 0x0e) { //SESSION_DATA_TRANSFER_PHASE_CONFIGURATION
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
+    dtpcm_repetition: 8,
+    data_transfer_control: 8,
+    dtpml_size: 8,
+    _payload_,
+}
+
+packet SessionDataTransferPhaseConfigRsp : SessionConfigResponse (opcode = 0x0e) { //SESSION_DATA_TRANSFER_PHASE_CONFIGURATION
+    status: StatusCode,
+}
+
+packet SessionDataTransferPhaseConfigNtf : SessionConfigNotification (opcode = 0x0e) { //SESSION_DATA_TRANSFER_PHASE_CONFIGURATION
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
+    status: DataTransferPhaseConfigUpdateStatusCode,
+}
+
+test SessionDataTransferPhaseConfigNtf {
+    "\x61\x0E\x00\x05\x00\x00\x00\x00\x00"
 }
 
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START

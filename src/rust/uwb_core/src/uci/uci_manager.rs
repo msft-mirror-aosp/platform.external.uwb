@@ -174,6 +174,17 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
 
+    // set Data transfer phase config
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()>;
+
     // Get Session token from session id
     async fn get_session_token_from_session_id(
         &self,
@@ -624,6 +635,32 @@ impl UciManager for UciManagerImpl {
 
         match self.send_cmd(UciManagerCmd::SendUciData { data_snd_packet }).await {
             Ok(UciResponse::SendUciData(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    // set Data transfer phase config
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        let cmd = UciCommand::SessionDataTransferPhaseConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            dtpcm_repetition,
+            data_transfer_control,
+            dtpml_size,
+            mac_address,
+            slot_bitmap,
+        };
+
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionDataTransferPhaseConfig(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -1409,6 +1446,12 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     credit_availability,
                 })
             }
+            SessionNotification::DataTransferPhaseConfig { session_token, status } => {
+                Ok(SessionNotification::DataTransferPhaseConfig {
+                    session_token: self.get_session_id(&session_token).await?,
+                    status,
+                })
+            }
         }
     }
 
@@ -2189,6 +2232,57 @@ mod tests {
 
         let result = uci_manager
             .session_set_hybrid_config(session_token, number_of_phases, update_time, phase_list)
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_data_transfer_phase_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let dtpcm_repetition = 0x00;
+        let data_transfer_control = 0x00;
+        let dtpml_size = 0x02;
+        let mac_address = vec![0x22, 0x11, 0x44, 0x33];
+        let slot_bitmap = vec![0xF0, 0x0F];
+        let mac_address_clone = mac_address.clone();
+        let slot_bitmap_clone = slot_bitmap.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionDataTransferPhaseConfig {
+                    session_token,
+                    dtpcm_repetition,
+                    data_transfer_control,
+                    dtpml_size,
+                    mac_address,
+                    slot_bitmap,
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionDataTransferPhaseConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_data_transfer_phase_config(
+                session_token,
+                dtpcm_repetition,
+                data_transfer_control,
+                dtpml_size,
+                mac_address_clone,
+                slot_bitmap_clone,
+            )
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
