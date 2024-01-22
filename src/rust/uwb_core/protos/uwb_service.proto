@@ -196,6 +196,7 @@ enum SessionType {
   FIRA_RANGING_WITH_DATA_PHASE = 0x05;
   CCC = 0xA0;
   RADAR_SESSION = 0xA1;
+  ALIRO = 0xA2;
   DEVICE_TEST_MODE = 0xD0;
 }
 
