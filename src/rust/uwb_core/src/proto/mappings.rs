@@ -539,6 +539,7 @@ enum_mapping! {
     FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
     RADAR_SESSION => RadarSession,
+    ALIRO => Aliro,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
 
