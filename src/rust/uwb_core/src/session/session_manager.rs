@@ -490,6 +490,8 @@ pub(crate) mod test_utils {
             .unwrap()
     }
 
+    // TODO(b/321757248): Add a unit test generate_aliro_params().
+
     pub(crate) fn session_range_data(session_id: SessionId) -> SessionRangeData {
         SessionRangeData {
             sequence_number: 1,
