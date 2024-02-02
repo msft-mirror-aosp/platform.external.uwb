@@ -20,18 +20,17 @@ use async_trait::async_trait;
 use log::{debug, error, info, warn};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use crate::uci::command::UciCommand;
-//use crate::uci::error::{Error, Result};
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
+    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlees,
     CoreSetConfigResponse, CountryCode, CreditAvailability, DeviceConfigId, DeviceConfigTlv,
     DeviceState, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RadarConfigTlv,
     RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
     SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UciDataPacket,
     UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
 };
-use crate::params::utils::bytes_to_u64;
+use crate::params::utils::{bytes_to_u16, bytes_to_u64};
+use crate::uci::command::UciCommand;
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
@@ -44,10 +43,23 @@ use crate::uci::uci_logger::{UciLogger, UciLoggerMode, UciLoggerWrapper};
 use crate::utils::{clean_mpsc_receiver, PinSleep};
 use pdl_runtime::Packet;
 use std::collections::{HashMap, VecDeque};
-use uwb_uci_packets::{PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket};
+use uwb_uci_packets::{
+    fragment_data_msg_send, PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket,
+};
+
+// Conditional compilation: In production code, use the "prod" variant of the Aconfig flags
+// library (this only allows reading the flags). When the same uci_manager.rs code is built
+// for unit tests, use the "test" variant of the Aconfig flags library, so that the unit tests
+// have the ability to set the flag value (and the changed value is visible in the code).
+#[cfg(not(test))]
+use uwb_aconfig_flags_rust::parse_cap_tlv_rust_uses_uwbs_uci_version;
+#[cfg(test)]
+use uwb_aconfig_flags_rust_test::parse_cap_tlv_rust_uses_uwbs_uci_version;
 
 const UCI_TIMEOUT_MS: u64 = 800;
 const MAX_RETRY_COUNT: usize = 3;
+// Initialize to a safe (minimum) value for a Data packet fragment's payload size.
+const MAX_DATA_PACKET_PAYLOAD_SIZE: usize = 255;
 
 /// The UciManager organizes the state machine of the UWB HAL, and provides the interface which
 /// abstracts the UCI commands, responses, and notifications.
@@ -707,6 +719,15 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // session related commands. This map stores the app provided session id to UWBS generated
     // session handle mapping if provided, else reuses session id.
     session_id_to_token_map: Arc<Mutex<HashMap<SessionId, SessionToken>>>,
+
+    // Used to store the UWBS response for the UCI CMD CORE_GET_DEVICE_INFO. This will help us
+    // identify the UWBS supported UCI version and change our behavior accordingly.
+    get_device_info_rsp: Option<GetDeviceInfoResponse>,
+
+    // The maximum payload size that can be sent in one Data packet fragment to the UWBS. The UCI
+    // DATA_MSG_SEND packets (from Host to UWBS), larger than this should be fragmented into
+    // multiple packets with this as the payload size.
+    max_data_packet_payload_size: usize,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -742,6 +763,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
             last_init_session_id: None,
             session_id_to_token_map,
+            get_device_info_rsp: None,
+            max_data_packet_payload_size: MAX_DATA_PACKET_PAYLOAD_SIZE,
         }
     }
 
@@ -843,6 +866,42 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
         }
         Ok(())
+    }
+
+    // Store the GET_DEVICE_INFO RSP from UWBS.
+    fn store_if_uwbs_device_info(&mut self, resp: &UciResponse) {
+        if let UciResponse::CoreGetDeviceInfo(Ok(get_device_info_rsp)) = resp {
+            self.get_device_info_rsp = Some(get_device_info_rsp.clone());
+        }
+    }
+
+    fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
+        if !parse_cap_tlv_rust_uses_uwbs_uci_version() {
+            return;
+        }
+
+        if let UciResponse::CoreGetCapsInfo(Ok(tlvs)) = resp {
+            if let Some(core_get_device_info_rsp) = &self.get_device_info_rsp {
+                let major_uci_version = core_get_device_info_rsp.uci_version & 0xFF; // Byte 0
+                let tlvtag = if major_uci_version >= 2 {
+                    CapTlvType::SupportedV1FiraMacVersionRangeV2MaxDataPayloadSize
+                } else {
+                    CapTlvType::SupportedV1MaxDataPacketPayloadSizeV2AoaSupport
+                };
+                for tlv in tlvs {
+                    if tlv.t == tlvtag {
+                        // Convert the 2-byte UWBS capability value (stored as Vec<u8>) into usize.
+                        self.max_data_packet_payload_size = match bytes_to_u16(tlv.v.clone()) {
+                            Some(u16size) => match u16size.try_into() {
+                                Ok(size) => size,
+                                Err(_) => MAX_DATA_PACKET_PAYLOAD_SIZE,
+                            },
+                            None => MAX_DATA_PACKET_PAYLOAD_SIZE,
+                        };
+                    }
+                }
+            }
+        }
     }
 
     async fn handle_cmd(
@@ -1043,7 +1102,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
 
         // Enqueue the data packet fragments, from the data packet to be sent to UWBS.
-        let mut packet_fragments: Vec<UciDataPacketHal> = data_snd_packet.into();
+        let mut packet_fragments: Vec<UciDataPacketHal> =
+            fragment_data_msg_send(data_snd_packet, self.max_data_packet_payload_size);
         if packet_fragments.is_empty() {
             error!(
                 "DataSnd packet session_token:{}, sequence number:{} could not be split into fragments",
@@ -1192,10 +1252,13 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             self.retry_uci_cmd().await;
             return;
         }
+
         if let Err(_e) = self.store_session_token_if_init_resp(&resp).await {
             error!("Session init response received without a sesson id stored! Something has gone badly wrong: {:?}", resp);
             return;
         }
+        self.store_if_uwbs_device_info(&resp);
+        self.store_if_uwbs_caps_info(&resp);
 
         if let Some(uci_cmd_retryer) = self.uci_cmd_retryer.take() {
             uci_cmd_retryer.send_result(Ok(resp));
@@ -1527,11 +1590,13 @@ mod tests {
         DataTransferNtfStatusCode, RadarDataType, StatusCode,
     };
     use crate::params::UwbAddress;
+    use crate::uci::notification::CoreNotification;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
     use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
+    use uwb_aconfig_flags_rust_test::set_parse_cap_tlv_rust_uses_uwbs_uci_version;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacket>>(
         builder: T,
@@ -1685,6 +1750,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_priority_device_status_error_ntf() {
+        // Send DEVICE_STATE_ERROR notification while waiting for remaining fragments,
+        // verify that notification is processed on priority without waiting for the
+        // further fragmen
+        let mt: u8 = 0x3;
+        let pbf_not_set: u8 = 0x00;
+        let gid_core: u8 = 0x0;
+        let oid_device_status: u8 = 0x1;
+        let payload_1 = vec![0xFF];
+        let pbf_set: u8 = 0x1;
+        let gid_session: u8 = 0x02;
+        let oid_session_ntf: u8 =  0x03;
+        let payload_range_dat = vec![0, 251];
+        let dev_state_err_packet = build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
+        let range_data_ntf_packet = build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+            |_| async move {},
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+        )
+        .await;
+
+        let (session_notification_sender, mut session_notification_receiver)  =
+            mpsc::unbounded_channel::<SessionNotification>();
+        uci_manager.set_session_notification_sender(session_notification_sender).await;
+        let result = mock_hal.receive_packet(range_data_ntf_packet);
+        assert!(result.is_ok());
+
+        let device_status_ntf_packet = uwb_uci_packets::DeviceStatusNtfBuilder {
+            device_state: uwb_uci_packets::DeviceState::DeviceStateError,
+        }
+        .build();
+        let core_notification =
+            uwb_uci_packets::CoreNotification::try_from(device_status_ntf_packet).unwrap();
+        let expected_uci_notification = CoreNotification::try_from(core_notification).unwrap();
+
+        let (core_notification_sender, mut core_notification_receiver)  =
+            mpsc::unbounded_channel::<CoreNotification>();
+        uci_manager.set_core_notification_sender(core_notification_sender).await;
+
+        let result = mock_hal.receive_packet(dev_state_err_packet);
+        assert!(result.is_ok());
+
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), core_notification_receiver.recv())
+                .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Some(expected_uci_notification));
+        assert!(mock_hal.wait_expected_calls_done().await);
+
+        // DEVICE_STATE_ERROR is received in middle while waiting for the fragmented packet,
+        // no fragmented packet will be processed
+        assert!(session_notification_receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
     async fn test_core_get_device_info_ok() {
         let status = StatusCode::UciStatusOk;
         let uci_version = 0x1234;
@@ -1727,8 +1848,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_core_get_caps_info_ok() {
-        let tlv = CapTlv { t: CapTlvType::SupportedFiraPhyVersionRange, v: vec![0x12, 0x34, 0x56] };
+    async fn test_core_get_caps_info_fira_v1_0_ok() {
+        let tlv = CapTlv {
+            t: CapTlvType::SupportedV1FiraPhyVersionRangeV2MaxMessageSize,
+            v: vec![0x12, 0x34, 0x56],
+        };
         let tlv_clone = tlv.clone();
 
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
@@ -3148,8 +3272,13 @@ mod tests {
         // DataTransferStatusNtf is received in this test scenario.
     }
 
+    // Test the Host sending a DATA packet to UWBS that needs to be fragmented, where the
+    // fragment size is based on a default value (MAX_PAYLOAD_LEN).
     #[tokio::test]
-    async fn test_data_packet_send_fragmented_packet_ok() {
+    async fn test_data_packet_send_fragmented_packet_ok_uses_default_fragment_size() {
+        // Set flag to "false" for this unit test (it checks behavior of using a default value).
+        set_parse_cap_tlv_rust_uses_uwbs_uci_version(false);
+
         // Test Data packet send for a set of data packet fragments (on a UWB session).
         let mt_data = 0x0;
         let pbf_fragment_1 = 0x1;
@@ -3233,6 +3362,178 @@ mod tests {
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    async fn run_test_data_packet_send_fragmented_packet_uwbs_max_data_payload_size(
+        uci_version: u16,
+        uwbs_caps_info_tlv: CapTlv,
+    ) {
+        // Set the flag to true for this unit test.
+        set_parse_cap_tlv_rust_uses_uwbs_uci_version(true);
+
+        let status = StatusCode::UciStatusOk;
+        let mac_version = 0;
+        let phy_version = 0;
+        let uci_test_version = 0;
+        let vendor_spec_info = vec![0x1, 0x2];
+        let uwbs_device_info_rsp = GetDeviceInfoResponse {
+            status,
+            uci_version,
+            mac_version,
+            phy_version,
+            uci_test_version,
+            vendor_spec_info: vendor_spec_info.clone(),
+        };
+
+        let uwbs_caps_info_tlv_clone = uwbs_caps_info_tlv.clone();
+
+        // Test Data packet send for a set of data packet fragments (on a UWB session).
+        let mt_data = 0x0;
+        let pbf_fragment_1 = 0x1;
+        let pbf_fragment_2 = 0x0;
+        let dpf = 0x1;
+        let oid = 0x0;
+        let session_id = 0x5;
+        let session_token = 0x5;
+        let dest_mac_address = vec![0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1];
+        let uci_sequence_number: u16 = 0xa;
+        let max_data_packet_payload_size = 275;
+        let app_data_len = 300; // > max_data_packet_payload_size, so fragmentation occurs.
+        let mut app_data = Vec::new();
+        let mut expected_data_snd_payload_fragment_1 = vec![
+            0x05, 0x00, 0x00, 0x00, // SessionID
+            0xa0, 0xb0, 0xc0, 0xd0, 0xa1, 0xb1, 0xc1, 0xd1, // MacAddress
+            0x0a, 0x00, // UciSequenceNumber
+            0x2c, 0x01, // AppDataLen = 300
+        ];
+        let mut expected_data_snd_payload_fragment_2 = Vec::new();
+        let data_status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
+        let tx_count = 0x00;
+
+        // Setup the app data for both the Tx data packet and expected packet fragments.
+        let app_data_len_fragment_1 =
+            max_data_packet_payload_size - expected_data_snd_payload_fragment_1.len();
+        for i in 0..app_data_len {
+            app_data.push((i & 0xff).try_into().unwrap());
+            if i < app_data_len_fragment_1 {
+                expected_data_snd_payload_fragment_1.push((i & 0xff).try_into().unwrap());
+            } else {
+                expected_data_snd_payload_fragment_2.push((i & 0xff).try_into().unwrap());
+            }
+        }
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                // Expected UCI CMD CORE_GET_DEVICE_INFO
+                let cmd = UciCommand::CoreGetDeviceInfo;
+                let resp = into_uci_hal_packets(uwb_uci_packets::GetDeviceInfoRspBuilder {
+                    status,
+                    uci_version,
+                    mac_version,
+                    phy_version,
+                    uci_test_version,
+                    vendor_spec_info,
+                });
+                hal.expected_send_command(cmd, resp, Ok(()));
+
+                // Expected UCI CMD CORE_GET_CAPS_INFO
+                let cmd = UciCommand::CoreGetCapsInfo;
+                let resp = into_uci_hal_packets(uwb_uci_packets::GetCapsInfoRspBuilder {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    tlvs: vec![uwbs_caps_info_tlv_clone],
+                });
+                hal.expected_send_command(cmd, resp, Ok(()));
+
+                // Expected data packet fragment #1 (UCI Header + Initial App data bytes).
+                let data_packet_snd_fragment_1 = build_uci_packet(
+                    mt_data,
+                    pbf_fragment_1,
+                    dpf,
+                    oid,
+                    expected_data_snd_payload_fragment_1,
+                );
+                let ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
+                    session_token,
+                    credit_availability: CreditAvailability::CreditAvailable,
+                });
+                hal.expected_send_packet(data_packet_snd_fragment_1, ntfs, Ok(()));
+
+                // Expected data packet fragment #2 (UCI Header + Remaining App data bytes).
+                let data_packet_snd_fragment_2 = build_uci_packet(
+                    mt_data,
+                    pbf_fragment_2,
+                    dpf,
+                    oid,
+                    expected_data_snd_payload_fragment_2,
+                );
+                let mut ntfs = into_uci_hal_packets(uwb_uci_packets::DataCreditNtfBuilder {
+                    session_token,
+                    credit_availability: CreditAvailability::CreditAvailable,
+                });
+                ntfs.append(&mut into_uci_hal_packets(
+                    uwb_uci_packets::DataTransferStatusNtfBuilder {
+                        session_token,
+                        uci_sequence_number,
+                        status: data_status,
+                        tx_count,
+                    },
+                ));
+                hal.expected_send_packet(data_packet_snd_fragment_2, ntfs, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        // First send the UCI CMD CORE_GET_DEVICE_INFO, so the UWBS returns it's UCI version.
+        let result = uci_manager.core_get_device_info().await.unwrap();
+        assert_eq!(result, uwbs_device_info_rsp);
+
+        // Next send the UCI CMD CORE_GET_CAPS_INFO, so the UWBS returns it's capabilities.
+        let result = uci_manager.core_get_caps_info().await.unwrap();
+        assert_eq!(result[0], uwbs_caps_info_tlv);
+
+        let result = uci_manager
+            .send_data_packet(session_id, dest_mac_address, uci_sequence_number, app_data)
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    // Test the Host sending a DATA packet to UWBS that needs to be fragmented, where the
+    // fragment size is based on the UWBS MAX_DATA_PACKET_PAYLOAD_SIZE capability value.
+    #[tokio::test]
+    async fn test_data_packet_send_fragmented_packet_ok_fira_v1_uwbs_max_data_payload_size() {
+        let uci_version = 0x1001;
+        let uwbs_caps_info_tlv = CapTlv {
+            t: CapTlvType::SupportedV1MaxDataPacketPayloadSizeV2AoaSupport,
+            v: vec![0x13, 0x01],
+        };
+
+        run_test_data_packet_send_fragmented_packet_uwbs_max_data_payload_size(
+            uci_version,
+            uwbs_caps_info_tlv,
+        )
+        .await;
+    }
+
+    // Test the Host sending a DATA packet to UWBS that needs to be fragmented, where the
+    // fragment size is based on the UWBS MAX_DATA_PACKET_PAYLOAD_SIZE capability value.
+    #[tokio::test]
+    async fn test_data_packet_send_fragmented_packet_ok_fira_v2_uwbs_max_data_payload_size() {
+        let uci_version = 0x2002; // UCI version: Fira 2.x
+        let uwbs_caps_info_tlv = CapTlv {
+            t: CapTlvType::SupportedV1FiraMacVersionRangeV2MaxDataPayloadSize,
+            v: vec![0x13, 0x01],
+        };
+
+        run_test_data_packet_send_fragmented_packet_uwbs_max_data_payload_size(
+            uci_version,
+            uwbs_caps_info_tlv,
+        )
+        .await;
     }
 
     #[tokio::test]

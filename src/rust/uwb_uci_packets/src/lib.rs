@@ -128,8 +128,8 @@ impl DlTdoaRangingMeasurement {
         let initiator_responder_tof = extract_u16(bytes, &mut ptr, 2)?;
         let dt_location_type = (message_control >> 5) & 0x3;
         let dt_anchor_location = match DTAnchorLocationType::from_u16(dt_location_type)? {
-            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 10)?,
-            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Wgs84 => extract_vec(bytes, &mut ptr, 12)?,
+            DTAnchorLocationType::Relative => extract_vec(bytes, &mut ptr, 10)?,
             _ => vec![],
         };
         let active_ranging_rounds = ((message_control >> 7) & 0xf) as u8;
@@ -367,6 +367,13 @@ fn is_same_control_packet(header: &UciControlPacketHeader, packet: &UciPacketHal
         && header.opcode == get_opcode_from_uci_control_packet(packet)
 }
 
+fn is_device_state_err_control_packet(packet: &UciPacketHal) -> bool {
+    packet.get_message_type() ==  MessageType::Notification.into()
+    && packet.get_group_id_or_data_packet_format() == GroupIdOrDataPacketFormat::Core.into()
+    && get_opcode_from_uci_control_packet(packet) == CoreOpCode::CoreDeviceStatusNtf.into()
+    && packet.clone().to_vec()[UCI_PACKET_HAL_HEADER_LEN] == DeviceState::DeviceStateError.into()
+}
+
 impl UciControlPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
@@ -396,6 +403,21 @@ impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
         for packet in packets {
             // Ensure that the new fragment is part of the same packet.
             if !is_same_control_packet(&header, &packet) {
+                // if DEVICE_STATE_ERROR notification is received while waiting for remaining fragments,
+                // process it and send to upper layer for device recovery
+                if is_device_state_err_control_packet(&packet) {
+                   error!("Received device reset error: {:?}", packet);
+                   return UciControlPacket::parse(
+                        &UciControlPacketBuilder {
+                            message_type: packet.get_message_type(),
+                            group_id: packet.get_group_id_or_data_packet_format().into(),
+                            opcode: get_opcode_from_uci_control_packet(&packet),
+                            payload: Some(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..)),
+                        }
+                        .build()
+                        .to_bytes(),
+                   );
+                }
                 error!("Received unexpected fragment: {:?}", packet);
                 return Err(Error::InvalidPacketError);
             }
@@ -557,43 +579,41 @@ impl From<UciControlPacket> for Vec<UciControlPacketHal> {
 
 // Helper to convert From<UciDataSnd> into Vec<UciDataPacketHal>. An
 // example usage is for fragmentation in the Data Packet Tx flow.
-impl From<UciDataSnd> for Vec<UciDataPacketHal> {
-    fn from(packet: UciDataSnd) -> Self {
-        let mut fragments = Vec::new();
-        let dpf = packet.get_data_packet_format().into();
+pub fn fragment_data_msg_send(packet: UciDataSnd, max_payload_len: usize) -> Vec<UciDataPacketHal> {
+    let mut fragments = Vec::new();
+    let dpf = packet.get_data_packet_format().into();
 
-        // get payload by stripping the header.
-        let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
-        if payload.is_empty() {
+    // get payload by stripping the header.
+    let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
+    if payload.is_empty() {
+        fragments.push(
+            UciDataPacketHalBuilder {
+                group_id_or_data_packet_format: dpf,
+                packet_boundary_flag: PacketBoundaryFlag::Complete,
+                payload: None,
+            }
+            .build(),
+        );
+    } else {
+        let mut fragments_iter = payload.chunks(max_payload_len).peekable();
+        while let Some(fragment) = fragments_iter.next() {
+            // Set the last fragment complete if this is last fragment.
+            let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
+                PacketBoundaryFlag::NotComplete
+            } else {
+                PacketBoundaryFlag::Complete
+            };
             fragments.push(
                 UciDataPacketHalBuilder {
                     group_id_or_data_packet_format: dpf,
-                    packet_boundary_flag: PacketBoundaryFlag::Complete,
-                    payload: None,
+                    packet_boundary_flag: pbf,
+                    payload: Some(Bytes::from(fragment.to_owned())),
                 }
                 .build(),
             );
-        } else {
-            let mut fragments_iter = payload.chunks(MAX_PAYLOAD_LEN).peekable();
-            while let Some(fragment) = fragments_iter.next() {
-                // Set the last fragment complete if this is last fragment.
-                let pbf = if let Some(nxt_fragment) = fragments_iter.peek() {
-                    PacketBoundaryFlag::NotComplete
-                } else {
-                    PacketBoundaryFlag::Complete
-                };
-                fragments.push(
-                    UciDataPacketHalBuilder {
-                        group_id_or_data_packet_format: dpf,
-                        packet_boundary_flag: pbf,
-                        payload: Some(Bytes::from(fragment.to_owned())),
-                    }
-                    .build(),
-                );
-            }
         }
-        fragments
     }
+    fragments
 }
 
 #[derive(Default, Debug)]
@@ -1035,7 +1055,7 @@ mod tests {
             // All Fields in Little Endian (LE)
             // First measurement
             0x0a, 0x01, 0x33, 0x05, // 2(Mac address), Status, Message Type
-            0x33, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
+            0x53, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
             0x07, 0x09, 0x0a, 0x01, // Round Index, NLoS, 2(AoA Azimuth)
             0x02, 0x05, 0x07, 0x09, // AoA Azimuth FOM, 2(AoA Elevation), AoA Elevation FOM
             0x0a, 0x01, 0x02, 0x05, // RSSI, 3(Tx Timestamp..)
@@ -1064,9 +1084,10 @@ mod tests {
             0x0a, 0x01, 0x02, 0x05, // 2(Responder Reply Time), 2(Initiator-Responder ToF)
             0x07, 0x09, 0x07, 0x09, // 4(Anchor Location..)
             0x05, 0x07, 0x09, 0x0a, // 4(Anchor Location..)
-            0x01, 0x02, 0x05, 0x07, // 2(Anchor Location..), 2(Active Ranging Rounds..)
-            0x09, 0x0a, 0x01, 0x02, // 4(Active Ranging Rounds..)
-            0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
+            0x01, 0x02, 0x01, 0x02, // 4(Anchor Location)
+            0x05, 0x07, 0x09, 0x0a, // 4(Active Ranging Rounds..)
+            0x01, 0x02, 0x05, 0x07, // 4(Active Ranging Rounds..)
+            0x09, 0x05, // 2(Active Ranging Rounds)
         ];
 
         let measurements = ShortAddressDlTdoaRangingMeasurement::parse(&bytes, 2).unwrap();
@@ -1076,7 +1097,7 @@ mod tests {
         assert_eq!(*mac_address_1, 0x010a);
         assert_eq!(measurement_1.status, 0x33);
         assert_eq!(measurement_1.message_type, 0x05);
-        assert_eq!(measurement_1.message_control, 0x0533);
+        assert_eq!(measurement_1.message_control, 0x0553);
         assert_eq!(measurement_1.block_index, 0x0502);
         assert_eq!(measurement_1.round_index, 0x07);
         assert_eq!(measurement_1.nlos, 0x09);
@@ -1123,11 +1144,11 @@ mod tests {
         assert_eq!(measurement_2.responder_reply_time, 0x010a0907);
         assert_eq!(measurement_2.initiator_responder_tof, 0x0502);
         assert_eq!(
-            measurement_1.dt_anchor_location,
-            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02]
+            measurement_2.dt_anchor_location,
+            vec![0x07, 0x09, 0x07, 0x09, 0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x01, 0x02]
         );
         assert_eq!(
-            measurement_1.ranging_rounds,
+            measurement_2.ranging_rounds,
             vec![0x05, 0x07, 0x09, 0x0a, 0x01, 0x02, 0x05, 0x07, 0x09, 0x05,]
         );
     }
