@@ -875,6 +875,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
+    #[allow(unknown_lints)]
+    #[allow(clippy::unnecessary_fallible_conversions)]
     fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
         if !parse_cap_tlv_rust_uses_uwbs_uci_version() {
             return;
@@ -1590,9 +1592,9 @@ mod tests {
         DataTransferNtfStatusCode, RadarDataType, StatusCode,
     };
     use crate::params::UwbAddress;
-    use crate::uci::notification::CoreNotification;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
+    use crate::uci::notification::CoreNotification;
     use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
@@ -1761,10 +1763,12 @@ mod tests {
         let payload_1 = vec![0xFF];
         let pbf_set: u8 = 0x1;
         let gid_session: u8 = 0x02;
-        let oid_session_ntf: u8 =  0x03;
+        let oid_session_ntf: u8 = 0x03;
         let payload_range_dat = vec![0, 251];
-        let dev_state_err_packet = build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
-        let range_data_ntf_packet = build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
+        let dev_state_err_packet =
+            build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
+        let range_data_ntf_packet =
+            build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             |_| async move {},
             UciLoggerMode::Disabled,
@@ -1772,7 +1776,7 @@ mod tests {
         )
         .await;
 
-        let (session_notification_sender, mut session_notification_receiver)  =
+        let (session_notification_sender, mut session_notification_receiver) =
             mpsc::unbounded_channel::<SessionNotification>();
         uci_manager.set_session_notification_sender(session_notification_sender).await;
         let result = mock_hal.receive_packet(range_data_ntf_packet);
@@ -1786,7 +1790,7 @@ mod tests {
             uwb_uci_packets::CoreNotification::try_from(device_status_ntf_packet).unwrap();
         let expected_uci_notification = CoreNotification::try_from(core_notification).unwrap();
 
-        let (core_notification_sender, mut core_notification_receiver)  =
+        let (core_notification_sender, mut core_notification_receiver) =
             mpsc::unbounded_channel::<CoreNotification>();
         uci_manager.set_core_notification_sender(core_notification_sender).await;
 
