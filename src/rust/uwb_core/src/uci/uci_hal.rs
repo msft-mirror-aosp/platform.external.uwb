@@ -17,8 +17,9 @@
 use std::convert::TryInto;
 
 use async_trait::async_trait;
+use pdl_runtime::Packet;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{Packet, UciControlPacket, UciControlPacketHal};
+use uwb_uci_packets::{UciControlPacket, UciControlPacketHal};
 
 use crate::error::Result;
 use crate::params::uci_packets::SessionId;

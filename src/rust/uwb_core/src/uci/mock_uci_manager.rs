@@ -27,14 +27,16 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    app_config_tlvs_eq, device_config_tlvs_eq, AppConfigTlv, AppConfigTlvType, CapTlv, Controlees,
-    CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv, FiraComponent,
-    GetDeviceInfoResponse, PowerStats, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction,
+    app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, AndroidRadarConfigResponse,
+    AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
+    DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats, RadarConfigTlv,
+    RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
+    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
+    UpdateMulticastListAction, UpdateTime,
 };
 use crate::uci::notification::{
-    CoreNotification, DataRcvNotification, SessionNotification, UciNotification,
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
+    UciNotification,
 };
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
@@ -48,6 +50,7 @@ pub struct MockUciManager {
     session_notf_sender: mpsc::UnboundedSender<SessionNotification>,
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
+    radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
 }
 
 #[allow(dead_code)]
@@ -61,6 +64,7 @@ impl MockUciManager {
             session_notf_sender: mpsc::unbounded_channel().0,
             vendor_notf_sender: mpsc::unbounded_channel().0,
             data_rcv_notf_sender: mpsc::unbounded_channel().0,
+            radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
         }
     }
 
@@ -80,7 +84,11 @@ impl MockUciManager {
     /// Prepare Mock to expect for open_hal.
     ///
     /// MockUciManager expects call, returns out as response, followed by notfs sent.
-    pub fn expect_open_hal(&mut self, notfs: Vec<UciNotification>, out: Result<()>) {
+    pub fn expect_open_hal(
+        &mut self,
+        notfs: Vec<UciNotification>,
+        out: Result<GetDeviceInfoResponse>,
+    ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::OpenHal { notfs, out });
     }
 
@@ -144,6 +152,13 @@ impl MockUciManager {
             .lock()
             .unwrap()
             .push_back(ExpectedCall::CoreGetConfig { expected_config_ids, out });
+    }
+
+    /// Prepare Mock to expect core_query_uwb_timestamp.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_core_query_uwb_timestamp(&mut self, out: Result<u64>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::CoreQueryTimeStamp { out });
     }
 
     /// Prepare Mock to expect session_init.
@@ -362,6 +377,41 @@ impl MockUciManager {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::AndroidGetPowerStats { out });
     }
 
+    /// Prepare Mock to expect android_set_radar_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
+    /// sent.
+    pub fn expect_android_set_radar_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RadarConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<AndroidRadarConfigResponse>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::AndroidSetRadarConfig {
+            expected_session_id,
+            expected_config_tlvs,
+            notfs,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect android_get_app_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response.
+    pub fn expect_android_get_radar_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_config_ids: Vec<RadarConfigTlvType>,
+        out: Result<Vec<RadarConfigTlv>>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::AndroidGetRadarConfig {
+            expected_session_id,
+            expected_config_ids,
+            out,
+        });
+    }
+
     /// Prepare Mock to expect raw_uci_cmd.
     ///
     /// MockUciManager expects call with parameters, returns out as response.
@@ -389,17 +439,35 @@ impl MockUciManager {
         &mut self,
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     ) {
         self.expected_calls.lock().unwrap().push_back(ExpectedCall::SendDataPacket {
             expected_session_id,
             expected_address,
-            expected_dest_end_point,
             expected_uci_sequence_num,
             expected_app_payload_data,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect session_set_hybrid_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response
+    pub fn expect_session_set_hybrid_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_number_of_phases: u8,
+        expected_update_time: UpdateTime,
+        expected_phase_list: Vec<PhaseList>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetHybridConfig {
+            expected_session_id,
+            expected_number_of_phases,
+            expected_update_time,
+            expected_phase_list,
             out,
         });
     }
@@ -457,8 +525,14 @@ impl UciManager for MockUciManager {
     ) {
         self.data_rcv_notf_sender = data_rcv_notf_sender;
     }
+    async fn set_radar_data_rcv_notification_sender(
+        &mut self,
+        radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    ) {
+        self.radar_data_rcv_notf_sender = radar_data_rcv_notf_sender;
+    }
 
-    async fn open_hal(&self) -> Result<()> {
+    async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::OpenHal { notfs, out }) => {
@@ -565,6 +639,21 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::CoreGetConfig { expected_config_ids, out })
                 if expected_config_ids == config_ids =>
             {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn core_query_uwb_timestamp(&self) -> Result<u64> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::CoreQueryTimeStamp { out }) => {
                 self.expect_call_consumed.notify_one();
                 out
             }
@@ -854,6 +943,56 @@ impl UciManager for MockUciManager {
         }
     }
 
+    async fn android_set_radar_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RadarConfigTlv>,
+    ) -> Result<AndroidRadarConfigResponse> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::AndroidSetRadarConfig {
+                expected_session_id,
+                expected_config_tlvs,
+                notfs,
+                out,
+            }) if expected_session_id == session_id
+                && radar_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn android_get_radar_config(
+        &self,
+        session_id: SessionId,
+        config_ids: Vec<RadarConfigTlvType>,
+    ) -> Result<Vec<RadarConfigTlv>> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::AndroidGetRadarConfig {
+                expected_session_id,
+                expected_config_ids,
+                out,
+            }) if expected_session_id == session_id && expected_config_ids == config_ids => {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
     async fn raw_uci_cmd(
         &self,
         mt: u32,
@@ -889,8 +1028,7 @@ impl UciManager for MockUciManager {
         &self,
         session_id: SessionId,
         address: Vec<u8>,
-        dest_end_point: FiraComponent,
-        uci_sequence_num: u8,
+        uci_sequence_num: u16,
         app_payload_data: Vec<u8>,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
@@ -898,13 +1036,11 @@ impl UciManager for MockUciManager {
             Some(ExpectedCall::SendDataPacket {
                 expected_session_id,
                 expected_address,
-                expected_dest_end_point,
                 expected_uci_sequence_num,
                 expected_app_payload_data,
                 out,
             }) if expected_session_id == session_id
                 && expected_address == address
-                && expected_dest_end_point == dest_end_point
                 && expected_uci_sequence_num == uci_sequence_num
                 && expected_app_payload_data == app_payload_data =>
             {
@@ -925,13 +1061,45 @@ impl UciManager for MockUciManager {
     ) -> Result<SessionToken> {
         Ok(1) // No uci call here, no mock required.
     }
+
+    async fn session_set_hybrid_config(
+        &self,
+        session_id: SessionId,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionSetHybridConfig {
+                expected_session_id,
+                expected_number_of_phases,
+                expected_update_time,
+                expected_phase_list,
+                out,
+            }) if expected_session_id == session_id
+                && expected_number_of_phases == number_of_phases
+                && expected_update_time == update_time
+                && expected_phase_list.len() == phase_list.len()
+                && expected_phase_list == phase_list =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
 }
 
 #[derive(Clone)]
 enum ExpectedCall {
     OpenHal {
         notfs: Vec<UciNotification>,
-        out: Result<()>,
+        out: Result<GetDeviceInfoResponse>,
     },
     CloseHal {
         expected_force: bool,
@@ -954,6 +1122,9 @@ enum ExpectedCall {
     CoreGetConfig {
         expected_config_ids: Vec<DeviceConfigId>,
         out: Result<Vec<DeviceConfigTlv>>,
+    },
+    CoreQueryTimeStamp {
+        out: Result<u64>,
     },
     SessionInit {
         expected_session_id: SessionId,
@@ -1021,6 +1192,17 @@ enum ExpectedCall {
     AndroidGetPowerStats {
         out: Result<PowerStats>,
     },
+    AndroidSetRadarConfig {
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RadarConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<AndroidRadarConfigResponse>,
+    },
+    AndroidGetRadarConfig {
+        expected_session_id: SessionId,
+        expected_config_ids: Vec<RadarConfigTlvType>,
+        out: Result<Vec<RadarConfigTlv>>,
+    },
     RawUciCmd {
         expected_mt: u32,
         expected_gid: u32,
@@ -1031,9 +1213,15 @@ enum ExpectedCall {
     SendDataPacket {
         expected_session_id: SessionId,
         expected_address: Vec<u8>,
-        expected_dest_end_point: FiraComponent,
-        expected_uci_sequence_num: u8,
+        expected_uci_sequence_num: u16,
         expected_app_payload_data: Vec<u8>,
+        out: Result<()>,
+    },
+    SessionSetHybridConfig {
+        expected_session_id: SessionId,
+        expected_number_of_phases: u8,
+        expected_update_time: UpdateTime,
+        expected_phase_list: Vec<PhaseList>,
         out: Result<()>,
     },
 }

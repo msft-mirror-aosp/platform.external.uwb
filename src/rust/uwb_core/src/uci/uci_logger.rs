@@ -15,8 +15,9 @@
 //! Trait definition for UciLogger.
 use std::convert::TryFrom;
 
+use pdl_runtime::Packet;
 use uwb_uci_packets::{
-    AppConfigTlv, AppConfigTlvType, Packet, SessionConfigCommandChild, SessionConfigResponseChild,
+    AppConfigTlv, AppConfigTlvType, SessionConfigCommandChild, SessionConfigResponseChild,
     SessionGetAppConfigRspBuilder, SessionSetAppConfigCmdBuilder, UciCommandChild,
     UciControlPacket, UciControlPacketChild, UciDataPacket, UciResponse, UciResponseChild,
     UCI_PACKET_HAL_HEADER_LEN,
@@ -107,7 +108,7 @@ fn filter_uci_response(rsp: UciResponse) -> UciResponse {
 // Log only the Data Packet header bytes, so that we don't log any PII (payload bytes).
 fn filter_uci_data(
     packet: &UciDataPacket,
-) -> std::result::Result<UciDataPacket, uwb_uci_packets::Error> {
+) -> std::result::Result<UciDataPacket, pdl_runtime::Error> {
     // Initialize a (zeroed out) Vec to the same length as the data packet, and then copy over
     // only the Data Packet header bytes into it. This masks out all the payload bytes to 0.
     let data_packet_bytes: Vec<u8> = packet.clone().to_vec();

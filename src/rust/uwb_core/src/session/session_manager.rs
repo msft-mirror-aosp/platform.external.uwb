@@ -376,6 +376,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 session_token,
                 uci_sequence_number: _,
                 status: _,
+                tx_count: _,
             } => {
                 match self.active_sessions.get(&session_token) {
                     Some(_) => {
@@ -442,9 +443,20 @@ pub(crate) mod test_utils {
     use crate::params::uci_packets::{
         RangingMeasurementType, ReasonCode, ShortAddressTwoWayRangingMeasurement, StatusCode,
     };
+    use crate::params::GetDeviceInfoResponse;
     use crate::uci::mock_uci_manager::MockUciManager;
     use crate::uci::notification::{RangingMeasurements, UciNotification};
     use crate::utils::init_test_logging;
+    use uwb_uci_packets::StatusCode::UciStatusOk;
+
+    const GET_DEVICE_INFO_RSP: GetDeviceInfoResponse = GetDeviceInfoResponse {
+        status: UciStatusOk,
+        uci_version: 0,
+        mac_version: 0,
+        phy_version: 0,
+        uci_test_version: 0,
+        vendor_spec_info: vec![],
+    };
 
     pub(crate) fn generate_params() -> AppConfigParams {
         FiraAppConfigParamsBuilder::new()
@@ -477,6 +489,8 @@ pub(crate) mod test_utils {
             .build()
             .unwrap()
     }
+
+    // TODO(b/321757248): Add a unit test generate_aliro_params().
 
     pub(crate) fn session_range_data(session_id: SessionId) -> SessionRangeData {
         SessionRangeData {
@@ -532,7 +546,7 @@ pub(crate) mod test_utils {
         let (uci_notf_sender, uci_notf_receiver) = mpsc::unbounded_channel();
         let (session_notf_sender, session_notf_receiver) = mpsc::unbounded_channel();
         let mut uci_manager = MockUciManager::new();
-        uci_manager.expect_open_hal(vec![], Ok(()));
+        uci_manager.expect_open_hal(vec![], Ok(GET_DEVICE_INFO_RSP));
         setup_uci_manager_fn(&mut uci_manager);
         uci_manager.set_session_notification_sender(uci_notf_sender).await;
         let _ = uci_manager.open_hal().await;
@@ -722,7 +736,7 @@ mod tests {
             (AppConfigTlvType::StsIndex, u32_to_bytes(3)),
             (AppConfigTlvType::CccHopModeKey, u32_to_bytes(5)),
             (AppConfigTlvType::CccUwbTime0, u64_to_bytes(7)),
-            (AppConfigTlvType::RangingInterval, u32_to_bytes(96)),
+            (AppConfigTlvType::RangingDuration, u32_to_bytes(96)),
             (AppConfigTlvType::PreambleCodeIndex, u8_to_bytes(9)),
         ]);
         let received_tlvs = received_config_map

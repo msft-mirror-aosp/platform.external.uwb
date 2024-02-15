@@ -20,9 +20,12 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
-    ResetConfig, SessionId, SessionToken, SessionType, UpdateMulticastListAction,
+    RadarConfigTlv, RadarConfigTlvType, ResetConfig, SessionId, SessionToken, SessionType,
+    UpdateMulticastListAction, UpdateTime,
 };
-use uwb_uci_packets::{build_session_update_controller_multicast_list_cmd, GroupId, MessageType};
+use uwb_uci_packets::{
+    build_session_update_controller_multicast_list_cmd, GroupId, MessageType, PhaseList,
+};
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
 #[allow(missing_docs)]
@@ -39,6 +42,7 @@ pub enum UciCommand {
     CoreGetConfig {
         cfg_id: Vec<DeviceConfigId>,
     },
+    CoreQueryTimeStamp,
     SessionInit {
         session_id: SessionId,
         session_type: SessionType,
@@ -79,10 +83,24 @@ pub enum UciCommand {
     SessionGetRangingCount {
         session_token: SessionToken,
     },
+    SessionSetHybridConfig {
+        session_token: SessionToken,
+        number_of_phases: u8,
+        update_time: UpdateTime,
+        phase_list: Vec<PhaseList>,
+    },
     AndroidSetCountryCode {
         country_code: CountryCode,
     },
     AndroidGetPowerStats,
+    AndroidSetRadarConfig {
+        session_token: SessionToken,
+        config_tlvs: Vec<RadarConfigTlv>,
+    },
+    AndroidGetRadarConfig {
+        session_token: SessionToken,
+        radar_cfg: Vec<RadarConfigTlvType>,
+    },
     RawUciCmd {
         mt: u32,
         gid: u32,
@@ -128,6 +146,9 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             }
             .build()
             .into(),
+            UciCommand::CoreQueryTimeStamp {} => {
+                uwb_uci_packets::CoreQueryTimeStampCmdBuilder {}.build().into()
+            }
             UciCommand::SessionSetAppConfig { session_token, config_tlvs } => {
                 uwb_uci_packets::SessionSetAppConfigCmdBuilder {
                     session_token,
@@ -140,6 +161,22 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 uwb_uci_packets::SessionGetAppConfigCmdBuilder {
                     session_token,
                     app_cfg: app_cfg.into_iter().map(u8::from).collect(),
+                }
+                .build()
+                .into()
+            }
+            UciCommand::AndroidSetRadarConfig { session_token, config_tlvs } => {
+                uwb_uci_packets::AndroidSetRadarConfigCmdBuilder {
+                    session_token,
+                    tlvs: config_tlvs,
+                }
+                .build()
+                .into()
+            }
+            UciCommand::AndroidGetRadarConfig { session_token, radar_cfg } => {
+                uwb_uci_packets::AndroidGetRadarConfigCmdBuilder {
+                    session_token,
+                    tlvs: radar_cfg.into_iter().map(u8::from).collect(),
                 }
                 .build()
                 .into()
@@ -185,6 +222,19 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             UciCommand::SessionQueryMaxDataSize { session_token } => {
                 uwb_uci_packets::SessionQueryMaxDataSizeCmdBuilder { session_token }.build().into()
             }
+            UciCommand::SessionSetHybridConfig {
+                session_token,
+                number_of_phases,
+                update_time,
+                phase_list,
+            } => uwb_uci_packets::SessionSetHybridConfigCmdBuilder {
+                session_token,
+                number_of_phases,
+                update_time: update_time.into(),
+                phase_list,
+            }
+            .build()
+            .into(),
         };
         Ok(packet)
     }
@@ -383,5 +433,23 @@ mod tests {
         cmd = UciCommand::AndroidGetPowerStats {};
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
         assert_eq!(packet, uwb_uci_packets::AndroidGetPowerStatsCmdBuilder {}.build().into());
+
+        cmd = UciCommand::AndroidSetRadarConfig { session_token: 1, config_tlvs: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::AndroidSetRadarConfigCmdBuilder { session_token: 1, tlvs: vec![] }
+                .build()
+                .into()
+        );
+
+        cmd = UciCommand::AndroidGetRadarConfig { session_token: 1, radar_cfg: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::AndroidGetRadarConfigCmdBuilder { session_token: 1, tlvs: vec![] }
+                .build()
+                .into()
+        );
     }
 }
