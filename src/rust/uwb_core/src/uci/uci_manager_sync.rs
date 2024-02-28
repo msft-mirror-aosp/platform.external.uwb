@@ -432,6 +432,26 @@ impl<U: UciManager> UciManagerSync<U> {
             phase_list,
         ))
     }
+
+    /// Send UCI command for session data transfer phase config
+    pub fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.session_data_transfer_phase_config(
+            session_id,
+            dtpcm_repetition,
+            data_transfer_control,
+            dtpml_size,
+            mac_address,
+            slot_bitmap,
+        ))
+    }
 }
 
 impl UciManagerSync<UciManagerImpl> {
