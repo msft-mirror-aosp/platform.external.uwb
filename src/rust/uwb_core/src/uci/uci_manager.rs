@@ -174,6 +174,17 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         app_payload_data: Vec<u8>,
     ) -> Result<()>;
 
+    // set Data transfer phase config
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()>;
+
     // Get Session token from session id
     async fn get_session_token_from_session_id(
         &self,
@@ -629,6 +640,32 @@ impl UciManager for UciManagerImpl {
         }
     }
 
+    // set Data transfer phase config
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        let cmd = UciCommand::SessionDataTransferPhaseConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            dtpcm_repetition,
+            data_transfer_control,
+            dtpml_size,
+            mac_address,
+            slot_bitmap,
+        };
+
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionDataTransferPhaseConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
     // Get session token from session id (no uci call).
     async fn get_session_token_from_session_id(
         &self,
@@ -875,6 +912,8 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
+    #[allow(unknown_lints)]
+    #[allow(clippy::unnecessary_fallible_conversions)]
     fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
         if !parse_cap_tlv_rust_uses_uwbs_uci_version() {
             return;
@@ -1409,6 +1448,12 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     credit_availability,
                 })
             }
+            SessionNotification::DataTransferPhaseConfig { session_token, status } => {
+                Ok(SessionNotification::DataTransferPhaseConfig {
+                    session_token: self.get_session_id(&session_token).await?,
+                    status,
+                })
+            }
         }
     }
 
@@ -1590,9 +1635,9 @@ mod tests {
         DataTransferNtfStatusCode, RadarDataType, StatusCode,
     };
     use crate::params::UwbAddress;
-    use crate::uci::notification::CoreNotification;
     use crate::uci::mock_uci_hal::MockUciHal;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
+    use crate::uci::notification::CoreNotification;
     use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
@@ -1761,10 +1806,12 @@ mod tests {
         let payload_1 = vec![0xFF];
         let pbf_set: u8 = 0x1;
         let gid_session: u8 = 0x02;
-        let oid_session_ntf: u8 =  0x03;
+        let oid_session_ntf: u8 = 0x03;
         let payload_range_dat = vec![0, 251];
-        let dev_state_err_packet = build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
-        let range_data_ntf_packet = build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
+        let dev_state_err_packet =
+            build_uci_packet(mt, pbf_not_set, gid_core, oid_device_status, payload_1);
+        let range_data_ntf_packet =
+            build_uci_packet(mt, pbf_set, gid_session, oid_session_ntf, payload_range_dat);
         let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
             |_| async move {},
             UciLoggerMode::Disabled,
@@ -1772,7 +1819,7 @@ mod tests {
         )
         .await;
 
-        let (session_notification_sender, mut session_notification_receiver)  =
+        let (session_notification_sender, mut session_notification_receiver) =
             mpsc::unbounded_channel::<SessionNotification>();
         uci_manager.set_session_notification_sender(session_notification_sender).await;
         let result = mock_hal.receive_packet(range_data_ntf_packet);
@@ -1786,7 +1833,7 @@ mod tests {
             uwb_uci_packets::CoreNotification::try_from(device_status_ntf_packet).unwrap();
         let expected_uci_notification = CoreNotification::try_from(core_notification).unwrap();
 
-        let (core_notification_sender, mut core_notification_receiver)  =
+        let (core_notification_sender, mut core_notification_receiver) =
             mpsc::unbounded_channel::<CoreNotification>();
         uci_manager.set_core_notification_sender(core_notification_sender).await;
 
@@ -2189,6 +2236,57 @@ mod tests {
 
         let result = uci_manager
             .session_set_hybrid_config(session_token, number_of_phases, update_time, phase_list)
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_data_transfer_phase_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let dtpcm_repetition = 0x00;
+        let data_transfer_control = 0x00;
+        let dtpml_size = 0x02;
+        let mac_address = vec![0x22, 0x11, 0x44, 0x33];
+        let slot_bitmap = vec![0xF0, 0x0F];
+        let mac_address_clone = mac_address.clone();
+        let slot_bitmap_clone = slot_bitmap.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionDataTransferPhaseConfig {
+                    session_token,
+                    dtpcm_repetition,
+                    data_transfer_control,
+                    dtpml_size,
+                    mac_address,
+                    slot_bitmap,
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionDataTransferPhaseConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_data_transfer_phase_config(
+                session_token,
+                dtpcm_repetition,
+                data_transfer_control,
+                dtpml_size,
+                mac_address_clone,
+                slot_bitmap_clone,
+            )
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
