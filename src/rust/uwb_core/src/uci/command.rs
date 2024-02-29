@@ -24,7 +24,8 @@ use crate::params::uci_packets::{
     UpdateMulticastListAction, UpdateTime,
 };
 use uwb_uci_packets::{
-    build_session_update_controller_multicast_list_cmd, GroupId, MessageType, PhaseList,
+    build_data_transfer_phase_config_cmd, build_session_update_controller_multicast_list_cmd,
+    GroupId, MessageType, PhaseList,
 };
 
 /// The enum to represent the UCI commands. The definition of each field should follow UCI spec.
@@ -88,6 +89,14 @@ pub enum UciCommand {
         number_of_phases: u8,
         update_time: UpdateTime,
         phase_list: Vec<PhaseList>,
+    },
+    SessionDataTransferPhaseConfig {
+        session_token: SessionToken,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
     },
     AndroidSetCountryCode {
         country_code: CountryCode,
@@ -234,6 +243,23 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 phase_list,
             }
             .build()
+            .into(),
+            UciCommand::SessionDataTransferPhaseConfig {
+                session_token,
+                dtpcm_repetition,
+                data_transfer_control,
+                dtpml_size,
+                mac_address,
+                slot_bitmap,
+            } => build_data_transfer_phase_config_cmd(
+                session_token,
+                dtpcm_repetition,
+                data_transfer_control,
+                dtpml_size,
+                mac_address,
+                slot_bitmap,
+            )
+            .map_err(|_| Error::BadParameters)?
             .into(),
         };
         Ok(packet)
