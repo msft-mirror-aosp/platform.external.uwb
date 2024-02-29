@@ -891,6 +891,59 @@ pub fn build_session_update_controller_multicast_list_cmd(
     .build())
 }
 
+/// building Data transfer phase config command
+pub fn build_data_transfer_phase_config_cmd(
+    session_token: u32,
+    dtpcm_repetition: u8,
+    data_transfer_control: u8,
+    dtpml_size: u8,
+    mac_address: Vec<u8>,
+    slot_bitmap: Vec<u8>,
+) -> Result<SessionDataTransferPhaseConfigCmd> {
+    let mut dtpml_buffer = BytesMut::new();
+
+    //calculate mac address mode from data transfer control
+    let mac_address_mode = data_transfer_control & 0x01;
+
+    // Calculate mac address size based on address mode
+    let mac_address_size = match mac_address_mode {
+        SHORT_ADDRESS => 2,
+        EXTENDED_ADDRESS => 8,
+        _ => return Err(Error::InvalidPacketError),
+    };
+
+    // Calculate slot bitmap size from data transfer control
+    let slot_bitmap_size = 1 << ((data_transfer_control & 0x0F) >> 1);
+
+    // Prepare segmented vectors for mac_address
+    let mac_address_vec: Vec<_> =
+        mac_address.chunks(mac_address_size).map(|chunk| chunk.to_owned()).collect();
+
+    // Prepare segmented vectors for slot_bitmap
+    let slot_bitmap_vec: Vec<_> =
+        slot_bitmap.chunks(slot_bitmap_size).map(|chunk| chunk.to_owned()).collect();
+
+    // Validate sizes of mac_address and slot_bitmap
+    if slot_bitmap_vec.len() != dtpml_size.into() || mac_address_vec.len() != dtpml_size.into() {
+        return Err(Error::InvalidPacketError);
+    }
+
+    // Combine segmented vectors into dtpml_buffer
+    for (elem1, elem2) in mac_address_vec.into_iter().zip(slot_bitmap_vec.into_iter()) {
+        dtpml_buffer.extend_from_slice(&elem1);
+        dtpml_buffer.extend_from_slice(&elem2);
+    }
+
+    Ok(SessionDataTransferPhaseConfigCmdBuilder {
+        session_token,
+        dtpcm_repetition,
+        data_transfer_control,
+        dtpml_size,
+        payload: Some(dtpml_buffer.freeze()),
+    }
+    .build())
+}
+
 impl Drop for AppConfigTlv {
     fn drop(&mut self) {
         if self.cfg_id == AppConfigTlvType::VendorId || self.cfg_id == AppConfigTlvType::StaticStsIv
