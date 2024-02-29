@@ -472,6 +472,32 @@ impl MockUciManager {
         });
     }
 
+    /// Prepare Mock to expect session_data_transfer_phase_config
+    /// MockUciManager expects call with parameters, returns out as response
+    #[allow(clippy::too_many_arguments)]
+    pub fn expect_session_data_transfer_phase_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_dtpcm_repetition: u8,
+        expected_data_transfer_control: u8,
+        expected_dtpml_size: u8,
+        expected_mac_address: Vec<u8>,
+        expected_slot_bitmap: Vec<u8>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionDataTransferPhaseConfig {
+                expected_session_id,
+                expected_dtpcm_repetition,
+                expected_data_transfer_control,
+                expected_dtpml_size,
+                expected_mac_address,
+                expected_slot_bitmap,
+                out,
+            },
+        );
+    }
+
     /// Call Mock to send notifications.
     fn send_notifications(&self, notfs: Vec<UciNotification>) {
         for notf in notfs.into_iter() {
@@ -806,6 +832,43 @@ impl UciManager for MockUciManager {
             {
                 self.expect_call_consumed.notify_one();
                 self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionDataTransferPhaseConfig {
+                expected_session_id,
+                expected_dtpcm_repetition,
+                expected_data_transfer_control,
+                expected_dtpml_size,
+                expected_mac_address,
+                expected_slot_bitmap,
+                out,
+            }) if expected_session_id == session_id
+                && expected_dtpcm_repetition == dtpcm_repetition
+                && expected_data_transfer_control == data_transfer_control
+                && expected_dtpml_size == dtpml_size
+                && expected_mac_address == mac_address
+                && expected_slot_bitmap == slot_bitmap =>
+            {
+                self.expect_call_consumed.notify_one();
                 out
             }
             Some(call) => {
@@ -1222,6 +1285,15 @@ enum ExpectedCall {
         expected_number_of_phases: u8,
         expected_update_time: UpdateTime,
         expected_phase_list: Vec<PhaseList>,
+        out: Result<()>,
+    },
+    SessionDataTransferPhaseConfig {
+        expected_session_id: SessionId,
+        expected_dtpcm_repetition: u8,
+        expected_data_transfer_control: u8,
+        expected_dtpml_size: u8,
+        expected_mac_address: Vec<u8>,
+        expected_slot_bitmap: Vec<u8>,
         out: Result<()>,
     },
 }

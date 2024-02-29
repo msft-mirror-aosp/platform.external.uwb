@@ -53,6 +53,7 @@ pub(super) enum UciResponse {
     RawUciCmd(Result<RawUciMessage>),
     SendUciData(Result<()>),
     SessionSetHybridConfig(Result<()>),
+    SessionDataTransferPhaseConfig(Result<()>),
 }
 
 impl UciResponse {
@@ -82,6 +83,7 @@ impl UciResponse {
             Self::AndroidSetRadarConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::RawUciCmd(result) => Self::matches_result_retry(result),
             Self::SessionSetHybridConfig(result) => Self::matches_result_retry(result),
+            Self::SessionDataTransferPhaseConfig(result) => Self::matches_result_retry(result),
 
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
@@ -217,6 +219,11 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
             }
             SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => {
                 Ok(UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())))
+            }
+            SessionConfigResponseChild::SessionDataTransferPhaseConfigRsp(evt) => {
+                Ok(UciResponse::SessionDataTransferPhaseConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
             }
             _ => Err(Error::Unknown),
         }

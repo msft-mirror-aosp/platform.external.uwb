@@ -393,6 +393,22 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
+            UciSessionNotification::DataTransferPhaseConfig { session_token, status } => {
+                match self.active_sessions.get_mut(&session_token) {
+                    Some(_) => {
+                        /*
+                         *TODO
+                         */
+                    }
+                    None => {
+                        warn!(
+                            "Received data transfer phase configuration notification of the unknown
+                            Session {:?}",
+                            status
+                        );
+                    }
+                }
+            }
         }
     }
 }

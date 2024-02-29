@@ -26,11 +26,11 @@ use crate::error::{Error, Result};
 use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
     BitsPerSample, ControleeStatus, CreditAvailability, DataRcvStatusCode,
-    DataTransferNtfStatusCode, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
-    RadarDataType, RangingMeasurementType, RawUciMessage, SessionState, SessionToken,
-    ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
-    ShortAddressTwoWayRangingMeasurement, StatusCode,
+    DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode, DeviceState,
+    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, RadarDataType, RangingMeasurementType, RawUciMessage,
+    SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -93,6 +93,13 @@ pub enum SessionNotification {
         status: DataTransferNtfStatusCode,
         /// Transmission count
         tx_count: u8,
+    },
+    /// SessionDataTransferPhaseConfigNtf equivalent.
+    DataTransferPhaseConfig {
+        /// SessionToken : u32
+        session_token: SessionToken,
+        /// status
+        status: DataTransferPhaseConfigUpdateStatusCode,
     },
 }
 
@@ -385,6 +392,12 @@ impl TryFrom<uwb_uci_packets::SessionConfigNotification> for SessionNotification
                     session_token: evt.get_session_token(),
                     remaining_multicast_list_size: evt.get_remaining_multicast_list_size() as usize,
                     status_list: evt.get_controlee_status().clone(),
+                })
+            }
+            SessionConfigNotificationChild::SessionDataTransferPhaseConfigNtf(evt) => {
+                Ok(Self::DataTransferPhaseConfig {
+                    session_token: evt.get_session_token(),
+                    status: evt.get_status(),
                 })
             }
             _ => {
