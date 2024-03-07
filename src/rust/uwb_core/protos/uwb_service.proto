@@ -208,6 +208,12 @@ enum UpdateMulticastListAction {
   ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 3;
 }
 
+// Represent uwb_uci_packets::MacAddressIndicator.
+enum MacAddressIndicator {
+  SHORT_ADDRESS = 0x00;
+  EXTENDED_ADDRESS = 0x01;
+}
+
 // Represent uwb_core::params::fira_app_config_params::DeviceType.
 enum DeviceType {
   CONTROLEE = 0;
