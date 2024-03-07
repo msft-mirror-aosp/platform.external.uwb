@@ -52,7 +52,8 @@ pub(super) enum UciResponse {
     AndroidGetRadarConfig(Result<Vec<RadarConfigTlv>>),
     RawUciCmd(Result<RawUciMessage>),
     SendUciData(Result<()>),
-    SessionSetHybridConfig(Result<()>),
+    SessionSetHybridControllerConfig(Result<()>),
+    SessionSetHybridControleeConfig(Result<()>),
     SessionDataTransferPhaseConfig(Result<()>),
 }
 
@@ -82,9 +83,9 @@ impl UciResponse {
             Self::AndroidGetRadarConfig(result) => Self::matches_result_retry(result),
             Self::AndroidSetRadarConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::RawUciCmd(result) => Self::matches_result_retry(result),
-            Self::SessionSetHybridConfig(result) => Self::matches_result_retry(result),
+            Self::SessionSetHybridControllerConfig(result) => Self::matches_result_retry(result),
+            Self::SessionSetHybridControleeConfig(result) => Self::matches_result_retry(result),
             Self::SessionDataTransferPhaseConfig(result) => Self::matches_result_retry(result),
-
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
 
@@ -217,8 +218,15 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
                     status_code_to_result(evt.get_status()).map(|_| evt.get_max_data_size()),
                 ))
             }
-            SessionConfigResponseChild::SessionSetHybridConfigRsp(evt) => {
-                Ok(UciResponse::SessionSetHybridConfig(status_code_to_result(evt.get_status())))
+            SessionConfigResponseChild::SessionSetHybridControllerConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridControllerConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
+            }
+            SessionConfigResponseChild::SessionSetHybridControleeConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridControleeConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
             }
             SessionConfigResponseChild::SessionDataTransferPhaseConfigRsp(evt) => {
                 Ok(UciResponse::SessionDataTransferPhaseConfig(status_code_to_result(
