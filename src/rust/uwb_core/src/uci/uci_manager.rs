@@ -44,7 +44,8 @@ use crate::utils::{clean_mpsc_receiver, PinSleep};
 use pdl_runtime::Packet;
 use std::collections::{HashMap, VecDeque};
 use uwb_uci_packets::{
-    fragment_data_msg_send, PhaseList, RawUciControlPacket, UciDataSnd, UciDefragPacket,
+    fragment_data_msg_send, ControleePhaseList, PhaseList, RawUciControlPacket, UciDataSnd,
+    UciDefragPacket,
 };
 
 // Conditional compilation: In production code, use the "prod" variant of the Aconfig flags
@@ -190,13 +191,22 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         &self,
         session_id: SessionId,
     ) -> Result<SessionToken>;
-    /// Send UCI command for setting hybrid config
-    async fn session_set_hybrid_config(
+
+    /// Send UCI command for setting hybrid controller config
+    async fn session_set_hybrid_controller_config(
         &self,
         session_id: SessionId,
+        message_control: u8,
         number_of_phases: u8,
         update_time: UpdateTime,
-        phase_list: Vec<PhaseList>,
+        phase_list: PhaseList,
+    ) -> Result<()>;
+
+    /// Send UCI command for setting hybrid controlee config
+    async fn session_set_hybrid_controlee_config(
+        &self,
+        session_id: SessionId,
+        controlee_phase_list: Vec<ControleePhaseList>,
     ) -> Result<()>;
 }
 
@@ -674,22 +684,41 @@ impl UciManager for UciManagerImpl {
         Ok(self.get_session_token(&session_id).await?)
     }
 
-    /// Send UCI command for setting hybrid config
-    async fn session_set_hybrid_config(
+    /// Send UCI command for setting hybrid controller config
+    async fn session_set_hybrid_controller_config(
         &self,
         session_id: SessionId,
+        message_control: u8,
         number_of_phases: u8,
         update_time: UpdateTime,
-        phase_list: Vec<PhaseList>,
+        phase_list: PhaseList,
     ) -> Result<()> {
-        let cmd = UciCommand::SessionSetHybridConfig {
+        let cmd = UciCommand::SessionSetHybridControllerConfig {
             session_token: self.get_session_token(&session_id).await?,
+            message_control,
             number_of_phases,
             update_time,
             phase_list,
         };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
-            Ok(UciResponse::SessionSetHybridConfig(resp)) => resp,
+            Ok(UciResponse::SessionSetHybridControllerConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Send UCI command for setting hybrid controlee config
+    async fn session_set_hybrid_controlee_config(
+        &self,
+        session_id: SessionId,
+        controlee_phase_list: Vec<ControleePhaseList>,
+    ) -> Result<()> {
+        let cmd = UciCommand::SessionSetHybridControleeConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            controlee_phase_list,
+        };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionSetHybridControleeConfig(resp)) => resp,
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -2201,29 +2230,94 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_set_hybrid_config_ok() {
+    async fn test_session_get_app_config_ok() {
         let session_id = 0x123;
+        let session_token = 0x123;
+        let config_id = AppConfigTlvType::DeviceType;
+        let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
+        let tlv_clone = tlv.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd =
+                    UciCommand::SessionGetAppConfig { session_token, app_cfg: vec![config_id] };
+                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
+                    status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    tlvs: vec![tlv_clone.into_inner()],
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let expected_result = vec![tlv];
+        let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
+        assert_eq!(result, expected_result);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+   #[tokio::test]
+    async fn test_session_set_hybrid_controller_config_ok() {
+        let session_id = 0x123;
+        let message_control = 0x00;
+        let message_control_extended = 0x01;
         let session_token = 0x123;
         let number_of_phases = 0x02;
         let update_time = UpdateTime::new(&[0x0; 8]).unwrap();
-        let phase_list = vec![
-            PhaseList { session_token: 0x12, start_slot_index: 0x13, end_slot_index: 0x01 },
-            PhaseList { session_token: 0x14, start_slot_index: 0x13, end_slot_index: 0x01 },
-        ];
-        let phase_list_clone = phase_list.clone();
+        let phase_list_short_mac_address = PhaseList::ShortMacAddress(vec![
+            uwb_uci_packets::PhaseListShortMacAddress {
+                session_token: 0x11,
+                start_slot_index: 0x12,
+                end_slot_index: 0x13,
+                phase_participation: 0x01,
+                mac_address: [0x11, 0x22],
+            },
+            uwb_uci_packets::PhaseListShortMacAddress {
+                session_token: 0x21,
+                start_slot_index: 0x22,
+                end_slot_index: 0x23,
+                phase_participation: 0x01,
+                mac_address: [0x11, 0x33],
+            },
+        ]);
+        let phase_list_extended_mac_address = PhaseList::ExtendedMacAddress(vec![
+            uwb_uci_packets::PhaseListExtendedMacAddress {
+                session_token: 0x11,
+                start_slot_index: 0x12,
+                end_slot_index: 0x13,
+                phase_participation: 0x01,
+                mac_address: [0x11, 0x22, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38],
+            },
+            uwb_uci_packets::PhaseListExtendedMacAddress {
+                session_token: 0x21,
+                start_slot_index: 0x22,
+                end_slot_index: 0x23,
+                phase_participation: 0x01,
+                mac_address: [0x11, 0x22, 0x33, 0x34, 0x35, 0x36, 0x37, 0x39],
+            },
+        ]);
+        let mut phase_list_clone = phase_list_short_mac_address.clone();
 
+        // short mac address
         let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
             |mut hal| async move {
-                let cmd = UciCommand::SessionSetHybridConfig {
+                let cmd = UciCommand::SessionSetHybridControllerConfig {
                     session_token,
+                    message_control,
                     number_of_phases,
                     update_time,
                     phase_list: phase_list_clone,
                 };
-                let resp =
-                    into_uci_hal_packets(uwb_uci_packets::SessionSetHybridConfigRspBuilder {
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionSetHybridControllerConfigRspBuilder {
                         status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    });
+                    },
+                );
 
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
@@ -2235,12 +2329,93 @@ mod tests {
         .await;
 
         let result = uci_manager
-            .session_set_hybrid_config(session_token, number_of_phases, update_time, phase_list)
+            .session_set_hybrid_controller_config(
+                session_token,
+                message_control,
+                number_of_phases,
+                update_time,
+                phase_list_short_mac_address,
+            )
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+
+        // extended mac address
+        phase_list_clone = phase_list_extended_mac_address.clone();
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionSetHybridControllerConfig {
+                    session_token,
+                    message_control: message_control_extended,
+                    number_of_phases,
+                    update_time,
+                    phase_list: phase_list_clone,
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionSetHybridControllerConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_set_hybrid_controller_config(
+                session_token,
+                message_control_extended,
+                number_of_phases,
+                update_time,
+                phase_list_extended_mac_address,
+            )
             .await;
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
+   #[tokio::test]
+    async fn test_session_set_hybrid_controlee_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let phase_list = vec![
+            ControleePhaseList { session_token: 0x12, phase_participation: 0x01 },
+            ControleePhaseList { session_token: 0x14, phase_participation: 0x01 },
+        ];
+        let phase_list_clone = phase_list.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionSetHybridControleeConfig {
+                    session_token,
+                    controlee_phase_list: phase_list_clone,
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionSetHybridControleeConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result =
+            uci_manager.session_set_hybrid_controlee_config(session_token, phase_list).await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+    
     #[tokio::test]
     async fn test_session_data_transfer_phase_config_ok() {
         let session_id = 0x123;
@@ -2289,38 +2464,6 @@ mod tests {
             )
             .await;
         assert!(result.is_ok());
-        assert!(mock_hal.wait_expected_calls_done().await);
-    }
-
-    #[tokio::test]
-    async fn test_session_get_app_config_ok() {
-        let session_id = 0x123;
-        let session_token = 0x123;
-        let config_id = AppConfigTlvType::DeviceType;
-        let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
-        let tlv_clone = tlv.clone();
-
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
-            |mut hal| async move {
-                let cmd =
-                    UciCommand::SessionGetAppConfig { session_token, app_cfg: vec![config_id] };
-                let resp = into_uci_hal_packets(uwb_uci_packets::SessionGetAppConfigRspBuilder {
-                    status: uwb_uci_packets::StatusCode::UciStatusOk,
-                    tlvs: vec![tlv_clone.into_inner()],
-                });
-
-                hal.expected_send_command(cmd, resp, Ok(()));
-            },
-            UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
-            session_id,
-            session_token,
-        )
-        .await;
-
-        let expected_result = vec![tlv];
-        let result = uci_manager.session_get_app_config(session_id, vec![config_id]).await.unwrap();
-        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
