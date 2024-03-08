@@ -21,15 +21,16 @@ use std::iter::FromIterator;
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, BitsPerSample, CapTlv,
-    CapTlvType, Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
-    DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode, DeviceConfigId,
-    DeviceConfigStatus, DeviceConfigTlv, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement, GroupId,
+    CapTlvType, Controlee, ControleePhaseList, ControleeStatus, Controlees, CreditAvailability,
+    DataRcvStatusCode, DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode,
+    DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
+    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MacAddressIndicator,
     MessageType, MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus,
     RadarConfigTlv, RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode,
     ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
-    UpdateMulticastListAction,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement,
+    StatusCode, UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
