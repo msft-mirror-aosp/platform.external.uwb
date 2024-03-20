@@ -57,7 +57,7 @@ use uwb_aconfig_flags_rust::parse_cap_tlv_rust_uses_uwbs_uci_version;
 #[cfg(test)]
 use uwb_aconfig_flags_rust_test::parse_cap_tlv_rust_uses_uwbs_uci_version;
 
-const UCI_TIMEOUT_MS: u64 = 800;
+const UCI_TIMEOUT_MS: u64 = 2000;
 const MAX_RETRY_COUNT: usize = 3;
 // Initialize to a safe (minimum) value for a Data packet fragment's payload size.
 const MAX_DATA_PACKET_PAYLOAD_SIZE: usize = 255;
