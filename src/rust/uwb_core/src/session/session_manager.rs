@@ -336,13 +336,16 @@ impl<T: UciManager> SessionManagerActor<T> {
             UciSessionNotification::UpdateControllerMulticastList {
                 session_token,
                 remaining_multicast_list_size: _,
-                status_list,
+                status_list_v1,
+                status_list_v2: _,
             } => match self.active_sessions.get_mut(&session_token) {
-                Some(session) => session.on_controller_multicast_list_udpated(status_list),
+                // TODO: Use status_list_v2 when it's not empty (can convert it into
+                // status_list_v1, since that is a super-set).
+                Some(session) => session.on_controller_multicast_list_udpated(status_list_v1),
                 None => {
                     warn!(
                         "Received the notification of the unknown Session {}: {:?}",
-                        session_token, status_list
+                        session_token, status_list_v1,
                     );
                 }
             },
@@ -584,7 +587,7 @@ mod tests {
 
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
-        AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
+        AppConfigTlv, AppConfigTlvType, ControleeStatusV1, Controlees, MulticastUpdateStatusCode,
         ReasonCode, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
@@ -813,11 +816,12 @@ mod tests {
                     UciSessionNotification::UpdateControllerMulticastList {
                         session_token: session_id,
                         remaining_multicast_list_size: 1,
-                        status_list: vec![ControleeStatus {
+                        status_list_v1: vec![ControleeStatusV1 {
                             mac_address: [0x34, 0x12],
                             subsession_id: 0x24,
                             status: MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
                         }],
+                        status_list_v2: vec![],
                     },
                 )];
                 uci_manager.expect_session_init(
