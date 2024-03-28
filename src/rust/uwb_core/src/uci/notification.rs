@@ -25,7 +25,7 @@ use uwb_uci_packets::{
 use crate::error::{Error, Result};
 use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
-    BitsPerSample, ControleeStatusV1, ControleeStatusV2, CreditAvailability, DataRcvStatusCode,
+    BitsPerSample, ControleeStatus, CreditAvailability, DataRcvStatusCode,
     DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, RadarDataType, RangingMeasurementType, RawUciMessage,
@@ -71,10 +71,8 @@ pub enum SessionNotification {
         session_token: SessionToken,
         /// count of controlees: u8
         remaining_multicast_list_size: usize,
-        /// Controlee status List (Fira 1.x)
-        status_list_v1: Vec<ControleeStatusV1>,
-        /// Controlee status List (Fira 2.0)
-        status_list_v2: Vec<ControleeStatusV2>,
+        /// list of controlees.
+        status_list: Vec<ControleeStatus>,
     },
     /// (Short/Extended)Mac()SessionInfoNtf equivalent
     SessionInfo(SessionRangeData),
@@ -333,19 +331,14 @@ impl UciNotification {
     }
 }
 
-impl TryFrom<(uwb_uci_packets::UciNotification, u8)> for UciNotification {
+impl TryFrom<uwb_uci_packets::UciNotification> for UciNotification {
     type Error = Error;
-    fn try_from(
-        pair: (uwb_uci_packets::UciNotification, u8),
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::UciNotification) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
-        let evt = pair.0;
-        let uci_fira_major_ver = pair.1;
-
         match evt.specialize() {
             UciNotificationChild::CoreNotification(evt) => Ok(Self::Core(evt.try_into()?)),
             UciNotificationChild::SessionConfigNotification(evt) => {
-                Ok(Self::Session((evt, uci_fira_major_ver).try_into()?))
+                Ok(Self::Session(evt.try_into()?))
             }
             UciNotificationChild::SessionControlNotification(evt) => {
                 Ok(Self::Session(evt.try_into()?))
@@ -382,38 +375,23 @@ impl TryFrom<uwb_uci_packets::CoreNotification> for CoreNotification {
     }
 }
 
-impl TryFrom<(uwb_uci_packets::SessionConfigNotification, u8)> for SessionNotification {
+impl TryFrom<uwb_uci_packets::SessionConfigNotification> for SessionNotification {
     type Error = Error;
     fn try_from(
-        pair: (uwb_uci_packets::SessionConfigNotification, u8),
+        evt: uwb_uci_packets::SessionConfigNotification,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigNotificationChild;
-        let evt = pair.0;
-        let uci_fira_major_ver = pair.1;
         match evt.specialize() {
             SessionConfigNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
                 session_token: evt.get_session_token(),
                 session_state: evt.get_session_state(),
                 reason_code: evt.get_reason_code(),
             }),
-            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtfV1(evt)
-                if uci_fira_major_ver == 1 =>
-            {
+            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt) => {
                 Ok(Self::UpdateControllerMulticastList {
                     session_token: evt.get_session_token(),
                     remaining_multicast_list_size: evt.get_remaining_multicast_list_size() as usize,
-                    status_list_v1: evt.get_controlee_status().clone(),
-                    status_list_v2: vec![],
-                })
-            }
-            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtfV2(evt)
-                if uci_fira_major_ver >= 2 =>
-            {
-                Ok(Self::UpdateControllerMulticastList {
-                    session_token: evt.get_session_token(),
-                    remaining_multicast_list_size: 0_usize, // undefined field in FiEa 2.0 NTF.
-                    status_list_v1: vec![],
-                    status_list_v2: evt.get_controlee_status().clone(),
+                    status_list: evt.get_controlee_status().clone(),
                 })
             }
             SessionConfigNotificationChild::SessionDataTransferPhaseConfigNtf(evt) => {
@@ -907,10 +885,8 @@ mod tests {
         .build();
         let session_notification_packet =
             uwb_uci_packets::SessionConfigNotification::try_from(session_status_ntf).unwrap();
-        let uci_fira_major_version = 1;
         let session_notification =
-            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
-                .unwrap();
+            SessionNotification::try_from(session_notification_packet).unwrap();
         let uci_notification_from_session_status_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -925,36 +901,31 @@ mod tests {
     }
 
     #[test]
-    fn test_session_notification_cast_from_session_update_controller_multicast_list_ntf_v1_packet()
+    fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_packet()
     {
-        let controlee_status_v1 = uwb_uci_packets::ControleeStatusV1 {
+        let controlee_status = uwb_uci_packets::ControleeStatus {
             mac_address: [0x0c, 0xa8],
             subsession_id: 0x30,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
         };
-        let another_controlee_status_v1 = uwb_uci_packets::ControleeStatusV1 {
+        let another_controlee_status = uwb_uci_packets::ControleeStatus {
             mac_address: [0x0c, 0xa9],
             subsession_id: 0x31,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
         };
-        let session_update_controller_multicast_list_ntf_v1 =
-            uwb_uci_packets::SessionUpdateControllerMulticastListNtfV1Builder {
+        let session_update_controller_multicast_list_ntf =
+            uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
                 session_token: 0x32,
                 remaining_multicast_list_size: 0x2,
-                controlee_status: vec![
-                    controlee_status_v1.clone(),
-                    another_controlee_status_v1.clone(),
-                ],
+                controlee_status: vec![controlee_status.clone(), another_controlee_status.clone()],
             }
             .build();
         let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
-            session_update_controller_multicast_list_ntf_v1,
+            session_update_controller_multicast_list_ntf,
         )
         .unwrap();
-        let uci_fira_major_version = 1;
         let session_notification =
-            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
-                .unwrap();
+            SessionNotification::try_from(session_notification_packet).unwrap();
         let uci_notification_from_session_update_controller_multicast_list_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -962,51 +933,7 @@ mod tests {
             UciNotification::Session(SessionNotification::UpdateControllerMulticastList {
                 session_token: 0x32,
                 remaining_multicast_list_size: 0x2,
-                status_list_v1: vec![controlee_status_v1, another_controlee_status_v1],
-                status_list_v2: vec![],
-            })
-        );
-    }
-
-    #[test]
-    fn test_session_notification_cast_from_session_update_controller_multicast_list_ntf_v2_packet()
-    {
-        let controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
-            mac_address: [0x0c, 0xa8],
-            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
-        };
-        let another_controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
-            mac_address: [0x0c, 0xa9],
-            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
-        };
-        let session_update_controller_multicast_list_ntf_v2 =
-            uwb_uci_packets::SessionUpdateControllerMulticastListNtfV2Builder {
-                session_token: 0x32,
-                controlee_status: vec![
-                    controlee_status_v2.clone(),
-                    another_controlee_status_v2.clone(),
-                ],
-            }
-            .build();
-        let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
-            session_update_controller_multicast_list_ntf_v2,
-        )
-        .unwrap();
-        let uci_fira_major_version = 2;
-        let session_notification =
-            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
-                .unwrap();
-        //let session_notification =
-        //    parse_uci_session_ntf(session_notification_packet, Some(2)).unwrap();
-        let uci_notification_from_session_update_controller_multicast_list_ntf =
-            UciNotification::Session(session_notification);
-        assert_eq!(
-            uci_notification_from_session_update_controller_multicast_list_ntf,
-            UciNotification::Session(SessionNotification::UpdateControllerMulticastList {
-                session_token: 0x32,
-                remaining_multicast_list_size: 0x0,
-                status_list_v1: vec![],
-                status_list_v2: vec![controlee_status_v2, another_controlee_status_v2],
+                status_list: vec![controlee_status, another_controlee_status],
             })
         );
     }
@@ -1025,13 +952,10 @@ mod tests {
             }
             .build()
             .into();
-        let uci_fira_major_version = 1;
         let uci_notification_from_vendor_9 =
-            UciNotification::try_from((vendor_9_empty_notification, uci_fira_major_version))
-                .unwrap();
+            UciNotification::try_from(vendor_9_empty_notification).unwrap();
         let uci_notification_from_vendor_A =
-            UciNotification::try_from((vendor_A_nonempty_notification, uci_fira_major_version))
-                .unwrap();
+            UciNotification::try_from(vendor_A_nonempty_notification).unwrap();
         assert_eq!(
             uci_notification_from_vendor_9,
             UciNotification::Vendor(RawUciMessage {
@@ -1054,9 +978,7 @@ mod tests {
     fn test_test_to_vendor_notification_casting() {
         let test_notification: uwb_uci_packets::UciNotification =
             uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
-        let uci_fira_major_version = 1;
-        let test_uci_notification =
-            UciNotification::try_from((test_notification, uci_fira_major_version)).unwrap();
+        let test_uci_notification = UciNotification::try_from(test_notification).unwrap();
         assert_eq!(
             test_uci_notification,
             UciNotification::Vendor(RawUciMessage {

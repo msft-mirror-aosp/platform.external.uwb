@@ -24,7 +24,7 @@ use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, ControleeStatusV1, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
+    Controlee, ControleeStatus, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
     SessionType, UpdateMulticastListAction,
 };
 use crate::uci::error::status_code_to_result;
@@ -42,7 +42,7 @@ pub(super) type ResponseSender = oneshot::Sender<Result<Response>>;
 pub(super) struct UwbSession {
     cmd_sender: mpsc::UnboundedSender<(Command, ResponseSender)>,
     state_sender: watch::Sender<SessionState>,
-    controlee_status_notf_sender: Option<oneshot::Sender<Vec<ControleeStatusV1>>>,
+    controlee_status_notf_sender: Option<oneshot::Sender<Vec<ControleeStatus>>>,
 }
 
 impl UwbSession {
@@ -110,7 +110,7 @@ impl UwbSession {
         let _ = self.state_sender.send(state);
     }
 
-    pub fn on_controller_multicast_list_udpated(&mut self, status_list: Vec<ControleeStatusV1>) {
+    pub fn on_controller_multicast_list_udpated(&mut self, status_list: Vec<ControleeStatus>) {
         if let Some(sender) = self.controlee_status_notf_sender.take() {
             let _ = sender.send(status_list);
         }
@@ -294,7 +294,7 @@ impl<T: UciManager> UwbSessionActor<T> {
         &mut self,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
-        notf_receiver: oneshot::Receiver<Vec<ControleeStatusV1>>,
+        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
     ) -> Result<Response> {
         if self.session_type == SessionType::Ccc {
             error!("Cannot update multicast list for CCC session");
@@ -387,7 +387,7 @@ enum Command {
     UpdateControllerMulticastList {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
-        notf_receiver: oneshot::Receiver<Vec<ControleeStatusV1>>,
+        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
     },
     GetParams,
 }
