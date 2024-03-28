@@ -941,6 +941,15 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
+    fn get_uwbs_uci_major_version(&mut self) -> Option<u8> {
+        if let Some(core_get_device_info_rsp) = &self.get_device_info_rsp {
+            // Byte 0 : Major UCI version
+            // Calling unwrap() will be safe here as with the bitmask, the value will be within u8.
+            return Some((core_get_device_info_rsp.uci_version & 0xFF).try_into().unwrap());
+        }
+        None
+    }
+
     #[allow(unknown_lints)]
     #[allow(clippy::unnecessary_fallible_conversions)]
     fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
@@ -1277,7 +1286,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciDefragPacket::Control(packet) => {
                 self.logger.log_uci_response_or_notification(&packet);
 
-                match packet.try_into() {
+                // Use a safe value of Fira 1.x as the UWBS UCI version.
+                let uci_fira_major_version = self.get_uwbs_uci_major_version().unwrap_or(1);
+                match (packet, uci_fira_major_version).try_into() {
                     Ok(UciMessage::Response(resp)) => {
                         self.handle_response(resp).await;
                     }
@@ -1443,11 +1454,13 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             SessionNotification::UpdateControllerMulticastList {
                 session_token,
                 remaining_multicast_list_size,
-                status_list,
+                status_list_v1,
+                status_list_v2,
             } => Ok(SessionNotification::UpdateControllerMulticastList {
                 session_token: self.get_session_id(&session_token).await?,
                 remaining_multicast_list_size,
-                status_list,
+                status_list_v1,
+                status_list_v2,
             }),
             SessionNotification::SessionInfo(session_range_data) => {
                 Ok(SessionNotification::SessionInfo(SessionRangeData {
@@ -2261,7 +2274,7 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-   #[tokio::test]
+    #[tokio::test]
     async fn test_session_set_hybrid_controller_config_ok() {
         let session_id = 0x123;
         let message_control = 0x00;
@@ -2379,7 +2392,7 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-   #[tokio::test]
+    #[tokio::test]
     async fn test_session_set_hybrid_controlee_config_ok() {
         let session_id = 0x123;
         let session_token = 0x123;
@@ -2415,7 +2428,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
-    
+
     #[tokio::test]
     async fn test_session_data_transfer_phase_config_ok() {
         let session_id = 0x123;
