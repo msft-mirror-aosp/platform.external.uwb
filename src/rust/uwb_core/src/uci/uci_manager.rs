@@ -48,15 +48,6 @@ use uwb_uci_packets::{
     UciDefragPacket,
 };
 
-// Conditional compilation: In production code, use the "prod" variant of the Aconfig flags
-// library (this only allows reading the flags). When the same uci_manager.rs code is built
-// for unit tests, use the "test" variant of the Aconfig flags library, so that the unit tests
-// have the ability to set the flag value (and the changed value is visible in the code).
-#[cfg(not(test))]
-use uwb_aconfig_flags_rust::parse_cap_tlv_rust_uses_uwbs_uci_version;
-#[cfg(test)]
-use uwb_aconfig_flags_rust_test::parse_cap_tlv_rust_uses_uwbs_uci_version;
-
 const UCI_TIMEOUT_MS: u64 = 2000;
 const MAX_RETRY_COUNT: usize = 3;
 // Initialize to a safe (minimum) value for a Data packet fragment's payload size.
@@ -944,10 +935,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     #[allow(unknown_lints)]
     #[allow(clippy::unnecessary_fallible_conversions)]
     fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
-        if !parse_cap_tlv_rust_uses_uwbs_uci_version() {
-            return;
-        }
-
         if let UciResponse::CoreGetCapsInfo(Ok(tlvs)) = resp {
             if let Some(core_get_device_info_rsp) = &self.get_device_info_rsp {
                 let major_uci_version = core_get_device_info_rsp.uci_version & 0xFF; // Byte 0
@@ -1670,7 +1657,6 @@ mod tests {
     use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
-    use uwb_aconfig_flags_rust_test::set_parse_cap_tlv_rust_uses_uwbs_uci_version;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacket>>(
         builder: T,
@@ -2261,7 +2247,7 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-   #[tokio::test]
+    #[tokio::test]
     async fn test_session_set_hybrid_controller_config_ok() {
         let session_id = 0x123;
         let message_control = 0x00;
@@ -2379,7 +2365,7 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
-   #[tokio::test]
+    #[tokio::test]
     async fn test_session_set_hybrid_controlee_config_ok() {
         let session_id = 0x123;
         let session_token = 0x123;
@@ -2415,7 +2401,7 @@ mod tests {
         assert!(result.is_ok());
         assert!(mock_hal.wait_expected_calls_done().await);
     }
-    
+
     #[tokio::test]
     async fn test_session_data_transfer_phase_config_ok() {
         let session_id = 0x123;
@@ -3517,8 +3503,8 @@ mod tests {
     // fragment size is based on a default value (MAX_PAYLOAD_LEN).
     #[tokio::test]
     async fn test_data_packet_send_fragmented_packet_ok_uses_default_fragment_size() {
-        // Set flag to "false" for this unit test (it checks behavior of using a default value).
-        set_parse_cap_tlv_rust_uses_uwbs_uci_version(false);
+        // Don't setup UWBS returning a response to CORE_GET_DEVICE_INFO and CORE_GET_CAPS_INFO;
+        // this simulates the scenario of the default UCI data packet fragment size being used.
 
         // Test Data packet send for a set of data packet fragments (on a UWB session).
         let mt_data = 0x0;
@@ -3609,9 +3595,6 @@ mod tests {
         uci_version: u16,
         uwbs_caps_info_tlv: CapTlv,
     ) {
-        // Set the flag to true for this unit test.
-        set_parse_cap_tlv_rust_uses_uwbs_uci_version(true);
-
         let status = StatusCode::UciStatusOk;
         let mac_version = 0;
         let phy_version = 0;
