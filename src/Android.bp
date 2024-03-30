@@ -107,9 +107,6 @@ rust_library {
     name: "libuwb_core",
     defaults: ["libuwb_core_defaults"],
     crate_name: "uwb_core",
-    rustlibs: [
-        "libuwb_aconfig_flags_rust",
-    ],
     apex_available: [
         "com.android.uwb",
     ],
@@ -121,9 +118,6 @@ rust_library {
     name: "libuwb_core_with_mock",
     defaults: ["libuwb_core_defaults"],
     crate_name: "uwb_core",
-    rustlibs: [
-        "libuwb_aconfig_flags_rust",
-    ],
     features: ["mock-utils"],
     host_supported: true,
 }
@@ -136,7 +130,6 @@ rust_test {
     rustlibs: [
         "libenv_logger",
         "libtempfile",
-        "libuwb_aconfig_flags_rust_test",
     ],
     target: {
         android: {
@@ -212,7 +205,6 @@ rust_library {
     ],
     rustlibs: [
         "libprotobuf",
-        "libuwb_aconfig_flags_rust",
     ],
     features: ["proto"],
     host_supported: true,
