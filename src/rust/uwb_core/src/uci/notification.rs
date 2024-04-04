@@ -29,7 +29,7 @@ use crate::params::uci_packets::{
     DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, RadarDataType, RangingMeasurementType, RawUciMessage,
-    SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
+    SessionId, SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
 };
 
@@ -58,6 +58,8 @@ pub enum CoreNotification {
 pub enum SessionNotification {
     /// SessionStatusNtf equivalent.
     Status {
+        /// SessionId : u32
+        session_id: SessionId,
         /// SessionToken : u32
         session_token: SessionToken,
         /// uwb_uci_packets::SessionState.
@@ -383,6 +385,8 @@ impl TryFrom<uwb_uci_packets::SessionConfigNotification> for SessionNotification
         use uwb_uci_packets::SessionConfigNotificationChild;
         match evt.specialize() {
             SessionConfigNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
+                //no sessionId recieved, assign from sessionIdToToken map in uci_manager
+                session_id: 0,
                 session_token: evt.get_session_token(),
                 session_state: evt.get_session_state(),
                 reason_code: evt.get_reason_code(),
@@ -892,6 +896,7 @@ mod tests {
         assert_eq!(
             uci_notification_from_session_status_ntf,
             UciNotification::Session(SessionNotification::Status {
+                session_id: 0x0,
                 session_token: 0x20,
                 session_state: uwb_uci_packets::SessionState::SessionStateActive,
                 reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
