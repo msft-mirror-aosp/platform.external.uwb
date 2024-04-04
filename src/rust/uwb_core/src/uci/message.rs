@@ -20,21 +20,27 @@ use crate::error::Error;
 use crate::uci::notification::UciNotification;
 use crate::uci::response::UciResponse;
 
+use crate::params::UCIMajorVersion;
+
 #[derive(Debug)]
 pub(super) enum UciMessage {
     Response(UciResponse),
     Notification(UciNotification),
 }
 
-impl TryFrom<uwb_uci_packets::UciControlPacket> for UciMessage {
+impl TryFrom<(uwb_uci_packets::UciControlPacket, UCIMajorVersion)> for UciMessage {
     type Error = Error;
-    fn try_from(packet: uwb_uci_packets::UciControlPacket) -> Result<Self, Self::Error> {
+    fn try_from(
+        pair: (uwb_uci_packets::UciControlPacket, UCIMajorVersion),
+    ) -> Result<Self, Self::Error> {
+        let packet = pair.0;
+        let uci_fira_major_ver = pair.1;
         match packet.specialize() {
             uwb_uci_packets::UciControlPacketChild::UciResponse(evt) => {
                 Ok(UciMessage::Response(evt.try_into()?))
             }
             uwb_uci_packets::UciControlPacketChild::UciNotification(evt) => {
-                Ok(UciMessage::Notification(evt.try_into()?))
+                Ok(UciMessage::Notification((evt, uci_fira_major_ver).try_into()?))
             }
             _ => {
                 error!("Unknown packet for converting to UciMessage: {:?}", packet);
