@@ -284,7 +284,7 @@ fn parse_radar_sweep_data(
             + UCI_RADAR_TIMESTAMP_LEN
             + UCI_RADAR_VENDOR_DATA_LEN_LEN
             + vendor_specific_data_len
-            + (samples_per_sweep * bytes_per_sample_value) as usize;
+            + samples_per_sweep as usize * bytes_per_sample_value as usize;
         if data.len() < sweep_data_cursor + sweep_data_len {
             error!("Invalid radar sweep data length, data: {:?}", &data);
             return Err(Error::BadParameters);
