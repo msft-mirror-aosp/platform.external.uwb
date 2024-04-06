@@ -294,7 +294,8 @@ impl<T: UciManager> SessionManagerActor<T> {
 
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
-            UciSessionNotification::Status { session_token, session_state, reason_code } => {
+            UciSessionNotification::Status {
+                    session_id:_, session_token, session_state, reason_code } => {
                 let reason_code = match ReasonCode::try_from(reason_code) {
                     Ok(r) => r,
                     Err(_) => {
@@ -542,6 +543,7 @@ pub(crate) mod test_utils {
         session_state: SessionState,
     ) -> UciNotification {
         UciNotification::Session(UciSessionNotification::Status {
+            session_id: 0x0,
             session_token: session_id,
             session_state,
             reason_code: ReasonCode::StateChangeWithSessionManagementCommands.into(),

@@ -1349,7 +1349,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciNotification::Session(orig_session_notf) => {
                 let mod_session_notf = {
                     match self
-                        .replace_session_token_with_session_id(orig_session_notf.clone())
+                        .add_session_id_to_session_status_ntf(orig_session_notf.clone())
                         .await
                     {
                         Ok(session_notf) => session_notf,
@@ -1361,6 +1361,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 };
                 match orig_session_notf {
                     SessionNotification::Status {
+                        session_id:_,
                         session_token,
                         session_state,
                         reason_code: _,
@@ -1415,14 +1416,16 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     // TODO: Sharing of structs across UCI (PDL) & JNI layer like this makes this ugly. Ideally
     // the struct sent to JNI layer should only contain |session_id| and at uci layer
     // it could be |session_id| or |session_handle|.
-    async fn replace_session_token_with_session_id(
+    async fn add_session_id_to_session_status_ntf(
         &self,
         session_notification: SessionNotification,
     ) -> Result<SessionNotification> {
         match session_notification {
-            SessionNotification::Status { session_token, session_state, reason_code } => {
+            SessionNotification::Status {
+                    session_id:_, session_token, session_state, reason_code } => {
                 Ok(SessionNotification::Status {
-                    session_token: self.get_session_id(&session_token).await?,
+                    session_id: self.get_session_id(&session_token).await?,
+                    session_token,
                     session_state,
                     reason_code,
                 })
