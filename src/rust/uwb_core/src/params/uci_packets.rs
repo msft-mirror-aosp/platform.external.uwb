@@ -18,19 +18,22 @@
 use std::collections::{hash_map::RandomState, HashMap};
 use std::iter::FromIterator;
 
+use num_derive::{FromPrimitive, ToPrimitive};
+
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
     AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, BitsPerSample, CapTlv,
-    CapTlvType, Controlee, ControleePhaseList, ControleeStatus, Controlees, CreditAvailability,
-    DataRcvStatusCode, DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode,
-    DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
-    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, GroupId, MacAddressIndicator,
-    MessageType, MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus,
-    RadarConfigTlv, RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode,
-    ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
-    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement,
-    StatusCode, UpdateMulticastListAction,
+    CapTlvType, Controlee, ControleePhaseList, ControleeStatusV1, ControleeStatusV2, Controlees,
+    CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode,
+    DataTransferPhaseConfigUpdateStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
+    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MacAddressIndicator, MessageType,
+    MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus, RadarConfigTlv,
+    RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode, ResetConfig,
+    SessionState, SessionType, SessionUpdateControllerMulticastListNtfV1Payload,
+    SessionUpdateControllerMulticastListNtfV2Payload, ShortAddressDlTdoaRangingMeasurement,
+    ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    UpdateMulticastListAction,
 };
 pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
@@ -49,6 +52,24 @@ pub type SessionToken = u32;
 #[derive(Clone, PartialEq)]
 pub struct AppConfigTlv {
     tlv: RawAppConfigTlv,
+}
+
+/// Controlee Status Enum compatible with different Fira version.
+pub enum ControleeStatusList {
+    /// Controlee status defined in Fira 1.x.
+    V1(Vec<ControleeStatusV1>),
+    /// Controlee status defined in Fira 2.0.
+    V2(Vec<ControleeStatusV2>),
+}
+
+/// UCI major version
+#[derive(FromPrimitive, ToPrimitive, PartialEq, Clone)]
+#[repr(u8)]
+pub enum UCIMajorVersion {
+    /// Version 1.x
+    V1 = 1,
+    /// Version 2.0
+    V2 = 2,
 }
 
 impl std::fmt::Debug for AppConfigTlv {

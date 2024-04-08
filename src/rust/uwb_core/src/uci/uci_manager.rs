@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, error, info, warn};
+use num_traits::FromPrimitive;
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 use crate::error::{Error, Result};
@@ -30,6 +31,7 @@ use crate::params::uci_packets::{
     UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
 };
 use crate::params::utils::{bytes_to_u16, bytes_to_u64};
+use crate::params::UCIMajorVersion;
 use crate::uci::command::UciCommand;
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{
@@ -932,6 +934,15 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
         }
     }
 
+    fn get_uwbs_uci_major_version(&mut self) -> Option<u8> {
+        if let Some(core_get_device_info_rsp) = &self.get_device_info_rsp {
+            // Byte 0 : Major UCI version
+            // Calling unwrap() will be safe here as with the bitmask, the value will be within u8.
+            return Some((core_get_device_info_rsp.uci_version & 0xFF).try_into().unwrap());
+        }
+        None
+    }
+
     #[allow(unknown_lints)]
     #[allow(clippy::unnecessary_fallible_conversions)]
     fn store_if_uwbs_caps_info(&mut self, resp: &UciResponse) {
@@ -1264,7 +1275,15 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             UciDefragPacket::Control(packet) => {
                 self.logger.log_uci_response_or_notification(&packet);
 
-                match packet.try_into() {
+                // Use a safe value of Fira 1.x as the UWBS UCI version.
+                let uci_fira_major_version = self.get_uwbs_uci_major_version().unwrap_or(1);
+                match (
+                    packet,
+                    UCIMajorVersion::from_u8(uci_fira_major_version)
+                        .map_or(UCIMajorVersion::V1, |v| v),
+                )
+                    .try_into()
+                {
                     Ok(UciMessage::Response(resp)) => {
                         self.handle_response(resp).await;
                     }
@@ -1348,9 +1367,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciNotification::Session(orig_session_notf) => {
                 let mod_session_notf = {
-                    match self
-                        .add_session_id_to_session_status_ntf(orig_session_notf.clone())
-                        .await
+                    match self.add_session_id_to_session_status_ntf(orig_session_notf.clone()).await
                     {
                         Ok(session_notf) => session_notf,
                         Err(e) => {
@@ -1361,7 +1378,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 };
                 match orig_session_notf {
                     SessionNotification::Status {
-                        session_id:_,
+                        session_id: _,
                         session_token,
                         session_state,
                         reason_code: _,
@@ -1422,23 +1439,31 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
     ) -> Result<SessionNotification> {
         match session_notification {
             SessionNotification::Status {
-                    session_id:_, session_token, session_state, reason_code } => {
-                Ok(SessionNotification::Status {
-                    session_id: self.get_session_id(&session_token).await?,
-                    session_token,
-                    session_state,
-                    reason_code,
-                })
-            }
-            SessionNotification::UpdateControllerMulticastList {
+                session_id: _,
+                session_token,
+                session_state,
+                reason_code,
+            } => Ok(SessionNotification::Status {
+                session_id: self.get_session_id(&session_token).await?,
+                session_token,
+                session_state,
+                reason_code,
+            }),
+            SessionNotification::UpdateControllerMulticastListV1 {
                 session_token,
                 remaining_multicast_list_size,
                 status_list,
-            } => Ok(SessionNotification::UpdateControllerMulticastList {
+            } => Ok(SessionNotification::UpdateControllerMulticastListV1 {
                 session_token: self.get_session_id(&session_token).await?,
                 remaining_multicast_list_size,
                 status_list,
             }),
+            SessionNotification::UpdateControllerMulticastListV2 { session_token, status_list } => {
+                Ok(SessionNotification::UpdateControllerMulticastListV2 {
+                    session_token: self.get_session_id(&session_token).await?,
+                    status_list,
+                })
+            }
             SessionNotification::SessionInfo(session_range_data) => {
                 Ok(SessionNotification::SessionInfo(SessionRangeData {
                     sequence_number: session_range_data.sequence_number,
