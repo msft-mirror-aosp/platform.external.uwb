@@ -997,21 +997,35 @@ test SessionUpdateControllerMulticastListRsp {
     "\x41\x07\x00\x01\x00\x00\x00\x00",
 }
 
-struct ControleeStatus {
+struct ControleeStatusV1 {
     mac_address: 8[2],
     subsession_id: 32,
     status: MulticastUpdateStatusCode,
 }
 
+struct ControleeStatusV2 {
+    mac_address: 8[2],
+    status: MulticastUpdateStatusCode,
+}
+
 packet SessionUpdateControllerMulticastListNtf : SessionConfigNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    remaining_multicast_list_size: 8,
-    _count_(controlee_status): 8,
-    controlee_status: ControleeStatus[],
+    _payload_,
 }
 
 test SessionUpdateControllerMulticastListNtf {
     "\x61\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
+}
+
+struct SessionUpdateControllerMulticastListNtfV1Payload {
+    remaining_multicast_list_size: 8,
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV1[],
+}
+
+struct SessionUpdateControllerMulticastListNtfV2Payload {
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV2[],
 }
 
 packet DataCreditNtf : SessionControlNotification (opcode = 0x04) { // SESSION_DATA_CREDIT_NTF
