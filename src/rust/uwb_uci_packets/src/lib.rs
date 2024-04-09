@@ -1107,6 +1107,74 @@ mod tests {
     }
 
     #[test]
+    fn test_build_multicast_update_packet_v2_short_session_key() {
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlee = Controlee_V2_0_16_Byte_Version {
+            short_address,
+            subsession_id: 0x1324_3546,
+            subsession_key: [
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef,
+            ],
+        };
+        let packet: UciControlPacket = build_session_update_controller_multicast_list_cmd(
+            0x1425_3647,
+            UpdateMulticastListAction::AddControleeWithShortSubSessionKey,
+            Controlees::ShortSessionKey(vec![controlee; 1]),
+        )
+        .unwrap()
+        .into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
+        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        assert_eq!(
+            uci_packet,
+            vec![
+                0x21, 0x07, 0x00, 0x1c, // 2(packet info), RFU, payload length(28)
+                0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
+                0x02, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
+                0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef, // 16(subsession key(LE))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_multicast_update_packet_v2_long_session_key() {
+        let short_address: [u8; 2] = [0x12, 0x34];
+        let controlee = Controlee_V2_0_32_Byte_Version {
+            short_address,
+            subsession_id: 0x1324_3546,
+            subsession_key: [
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+                0x90, 0xab, 0xcd, 0xef,
+            ],
+        };
+        let packet: UciControlPacket = build_session_update_controller_multicast_list_cmd(
+            0x1425_3647,
+            UpdateMulticastListAction::AddControleeWithLongSubSessionKey,
+            Controlees::LongSessionKey(vec![controlee; 1]),
+        )
+        .unwrap()
+        .into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
+        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        assert_eq!(
+            uci_packet,
+            vec![
+                0x21, 0x07, 0x00, 0x2c, // 2(packet info), RFU, payload length(44)
+                0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
+                0x03, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
+                0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+                0x90, 0xab, 0xcd, 0xef, // 32(subsession key(LE))
+            ]
+        );
+    }
+
+    #[test]
     fn test_to_raw_payload() {
         let payload = vec![0x11, 0x22, 0x33];
         let payload_clone = payload.clone();
@@ -1313,5 +1381,60 @@ mod tests {
         assert_eq!(measurement.initiator_responder_tof, 0x0502);
         assert_eq!(measurement.dt_anchor_location, vec![]);
         assert_eq!(measurement.ranging_rounds, vec![0x02, 0x05]);
+    }
+
+    #[test]
+    fn test_build_data_transfer_phase_config_cmd() {
+        let packet: UciControlPacket =
+            build_data_transfer_phase_config_cmd(0x1234_5678, 0x0, 0x2, 1, vec![0, 1], vec![2, 3])
+                .unwrap()
+                .into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
+        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        assert_eq!(
+            uci_packet,
+            vec![
+                0x21, 0x0e, 0x00, 0x0b, // 2(packet info), RFU, payload length(11)
+                0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
+                0x00, 0x02, 0x01, // dtpcm_repetition, data_transfer_control, dtpml_size
+                0x00, 0x01, 0x02, 0x03, // payload
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_session_set_hybrid_controller_config_cmd() {
+        let phase_list_short_mac_address = PhaseListShortMacAddress {
+            session_token: 0x1324_3546,
+            start_slot_index: 0x1111,
+            end_slot_index: 0x1121,
+            phase_participation: 0x0,
+            mac_address: [0x1, 0x2],
+        };
+        let packet: UciControlPacket = build_session_set_hybrid_controller_config_cmd(
+            0x1234_5678,
+            0x0,
+            0x0,
+            [1; 8],
+            PhaseList::ShortMacAddress(vec![phase_list_short_mac_address]),
+        )
+        .unwrap()
+        .into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
+        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        assert_eq!(
+            uci_packet,
+            vec![
+                0x21, 0x0c, 0x00, 0x19, // 2(packet info), RFU, payload length(25)
+                0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
+                0x00, 0x00, // message_control, number_of_phases
+                0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, // update_time
+                0x46, 0x35, 0x24, 0x13, // session id (LE)
+                0x11, 0x11, // start slot index (LE)
+                0x21, 0x11, // end slot index (LE)
+                0x00, // phase_participation
+                0x01, 0x02, // mac address
+            ]
+        );
     }
 }
