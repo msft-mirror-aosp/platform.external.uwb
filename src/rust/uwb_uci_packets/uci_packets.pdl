@@ -306,6 +306,7 @@ enum FrameReportTlvType : 8 {
     RSSI = 0x0,
     AOA = 0x1,
     CIR = 0x2,
+    SEGMENT_METRICS = 0x6,
 }
 
 enum CapTlvType : 8 {
@@ -1430,6 +1431,26 @@ packet Cir : FrameReportTlvPacket (t = CIR) {
 
 test Cir {
     "\x02\x15\x00\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04",
+}
+
+packet SegmentMetrics : FrameReportTlvPacket (t = SEGMENT_METRICS) {
+    segment_metrics: SegmentMetricsValue[],
+}
+
+struct SegmentMetricsValue {
+    receiver: 8,
+    rf_noise_floor: 16,
+    segment_rsl: 16,
+    first_path_index: 16,
+    first_path_rsl: 16,
+    first_path_time_ns: 16,
+    peak_path_index: 16,
+    peak_path_rsl: 16,
+    peak_path_time_ns: 16,
+}
+
+test SegmentMetrics {
+    "\x08\xB0\xFF\x04\x3C\xE1\x02\xA1\xFF\x52\xB8\xE3\x02\xC4\xFF\xC0\xB8",
 }
 
 struct FrameReport {

@@ -766,6 +766,7 @@ pub struct ParsedFrameReport {
     rssi: Vec<u8>,
     aoa: Vec<AoaMeasurement>,
     cir: Vec<CirValue>,
+    segment_metrics: Vec<SegmentMetricsValue>,
 }
 
 pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDiagnosticNtfPacket> {
@@ -776,6 +777,7 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
         let mut rssi_vec = Vec::new();
         let mut aoa_vec = Vec::new();
         let mut cir_vec = Vec::new();
+        let mut segment_metrics_vec = Vec::new();
         for tlv in &report.frame_report_tlvs {
             match FrameReportTlvPacket::parse(
                 &[vec![tlv.t as u8, tlv.v.len() as u8, (tlv.v.len() >> 8) as u8], tlv.v.clone()]
@@ -790,6 +792,9 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
                     }
                     FrameReportTlvPacketChild::Cir(cir) => {
                         cir_vec.append(&mut cir.get_cir_value().clone())
+                    }
+                    FrameReportTlvPacketChild::SegmentMetrics(sm) => {
+                        segment_metrics_vec.append(&mut sm.get_segment_metrics().clone())
                     }
                     _ => return Err(Error::InvalidPacketError),
                 },
@@ -806,6 +811,7 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
             rssi: rssi_vec,
             aoa: aoa_vec,
             cir: cir_vec,
+            segment_metrics: segment_metrics_vec,
         });
     }
     Ok(ParsedDiagnosticNtfPacket {
@@ -1050,11 +1056,28 @@ mod tests {
             sample_window: vec![0, 1, 2, 3],
         }];
         let cir = CirBuilder { cir_value: cir_vec.clone() }.build();
+        let segment_metrics_vec = vec![SegmentMetricsValue {
+            receiver: 1,
+            rf_noise_floor: 2,
+            segment_rsl: 3,
+            first_path_index: 4,
+            first_path_rsl: 5,
+            first_path_time_ns: 6,
+            peak_path_index: 7,
+            peak_path_rsl: 8,
+            peak_path_time_ns: 9,
+        }];
+        let segment_metrics =
+            SegmentMetricsBuilder { segment_metrics: segment_metrics_vec.clone() }.build();
         let mut frame_reports = Vec::new();
         let tlvs = vec![
             FrameReportTlv { t: rssi.get_t(), v: rssi.get_rssi().to_vec() },
             FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[3..].to_vec() },
             FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[3..].to_vec() },
+            FrameReportTlv {
+                t: segment_metrics.get_t(),
+                v: segment_metrics.to_vec()[3..].to_vec(),
+            },
         ];
         let frame_report =
             FrameReport { uwb_msg_id: 1, action: 1, antenna_set: 1, frame_report_tlvs: tlvs };
@@ -1071,6 +1094,7 @@ mod tests {
         assert_eq!(aoa_1, parsed_frame_report.aoa[0]);
         assert_eq!(aoa_2, parsed_frame_report.aoa[1]);
         assert_eq!(cir_vec, parsed_frame_report.cir);
+        assert_eq!(segment_metrics_vec, parsed_frame_report.segment_metrics);
     }
 
     #[test]
