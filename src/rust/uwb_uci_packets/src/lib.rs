@@ -1403,7 +1403,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_session_set_hybrid_controller_config_cmd() {
+    fn test_build_session_set_hybrid_controller_config_cmd_short_address() {
         let phase_list_short_mac_address = PhaseListShortMacAddress {
             session_token: 0x1324_3546,
             start_slot_index: 0x1111,
@@ -1434,6 +1434,42 @@ mod tests {
                 0x21, 0x11, // end slot index (LE)
                 0x00, // phase_participation
                 0x01, 0x02, // mac address
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_session_set_hybrid_controller_config_cmd_extended_address() {
+        let phase_list_extended_mac_address = PhaseListExtendedMacAddress {
+            session_token: 0x1324_3546,
+            start_slot_index: 0x1111,
+            end_slot_index: 0x1121,
+            phase_participation: 0x0,
+            mac_address: [0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8],
+        };
+        let packet: UciControlPacket = build_session_set_hybrid_controller_config_cmd(
+            0x1234_5678,
+            0x0,
+            0x0,
+            [1; 8],
+            PhaseList::ExtendedMacAddress(vec![phase_list_extended_mac_address]),
+        )
+        .unwrap()
+        .into();
+        let packet_fragments: Vec<UciControlPacketHal> = packet.into();
+        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        assert_eq!(
+            uci_packet,
+            vec![
+                0x21, 0x0c, 0x00, 0x1f, // 2(packet info), RFU, payload length(31)
+                0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
+                0x00, 0x00, // message_control, number_of_phases
+                0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, // update_time
+                0x46, 0x35, 0x24, 0x13, // session id (LE)
+                0x11, 0x11, // start slot index (LE)
+                0x21, 0x11, // end slot index (LE)
+                0x00, // phase_participation
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // mac address
             ]
         );
     }
