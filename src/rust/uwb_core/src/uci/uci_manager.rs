@@ -1672,7 +1672,10 @@ mod tests {
 
     use bytes::Bytes;
     use tokio::macros::support::Future;
-    use uwb_uci_packets::{SessionGetCountCmdBuilder, SessionGetCountRspBuilder};
+    use uwb_uci_packets::{
+        Controlee_V2_0_16_Byte_Version, Controlee_V2_0_32_Byte_Version, SessionGetCountCmdBuilder,
+        SessionGetCountRspBuilder,
+    };
 
     use crate::params::uci_packets::{
         AppConfigStatus, AppConfigTlvType, BitsPerSample, CapTlvType, Controlee, DataRcvStatusCode,
@@ -2534,7 +2537,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_update_controller_multicast_list_ok() {
+    async fn test_session_update_controller_multicast_list_v1_ok() {
         let session_id = 0x123;
         let session_token = 0x123;
         let action = UpdateMulticastListAction::AddControlee;
@@ -2572,6 +2575,163 @@ mod tests {
             )
             .await;
         assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_v2_short_subsession_key_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let action = UpdateMulticastListAction::AddControleeWithShortSubSessionKey;
+        let short_address: [u8; 2] = [0x45, 0x67];
+        let controlee = Controlee_V2_0_16_Byte_Version {
+            short_address,
+            subsession_key: [
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef,
+            ],
+            subsession_id: 0x90ab,
+        };
+        let controlee_clone = controlee.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionUpdateControllerMulticastList {
+                    session_token,
+                    action,
+                    controlees: Controlees::ShortSessionKey(vec![controlee_clone]),
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_update_controller_multicast_list(
+                session_id,
+                action,
+                uwb_uci_packets::Controlees::ShortSessionKey(vec![controlee]),
+            )
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_update_controller_multicast_list_v2_long_subsession_key_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let action = UpdateMulticastListAction::AddControleeWithLongSubSessionKey;
+        let short_address: [u8; 2] = [0x45, 0x67];
+        let controlee = Controlee_V2_0_32_Byte_Version {
+            short_address,
+            subsession_key: [
+                0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+                0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+                0x90, 0xab, 0xcd, 0xef,
+            ],
+            subsession_id: 0x90ab,
+        };
+        let controlee_clone = controlee.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionUpdateControllerMulticastList {
+                    session_token,
+                    action,
+                    controlees: Controlees::LongSessionKey(vec![controlee_clone]),
+                };
+                let resp = into_uci_hal_packets(
+                    uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                    },
+                );
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager
+            .session_update_controller_multicast_list(
+                session_id,
+                action,
+                uwb_uci_packets::Controlees::LongSessionKey(vec![controlee]),
+            )
+            .await;
+        assert!(result.is_ok());
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_query_max_data_size_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let max_data_size = 100;
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionQueryMaxDataSize { session_token };
+                let resp =
+                    into_uci_hal_packets(uwb_uci_packets::SessionQueryMaxDataSizeRspBuilder {
+                        max_data_size,
+                        session_token: 0x10,
+                        status: StatusCode::UciStatusOk,
+                    });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager.session_query_max_data_size(session_id).await.unwrap();
+
+        assert_eq!(result, max_data_size);
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_core_query_uwb_timestamp_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let time_stamp = 200;
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::CoreQueryTimeStamp {};
+                let resp = into_uci_hal_packets(uwb_uci_packets::CoreQueryTimeStampRspBuilder {
+                    status: StatusCode::UciStatusOk,
+                    timeStamp: time_stamp,
+                });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let result = uci_manager.core_query_uwb_timestamp().await.unwrap();
+
+        assert_eq!(result, time_stamp);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
