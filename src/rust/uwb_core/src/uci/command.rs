@@ -68,6 +68,7 @@ pub enum UciCommand {
         session_token: SessionToken,
         action: UpdateMulticastListAction,
         controlees: Controlees,
+        is_multicast_list_ntf_v2_supported: bool,
     },
     SessionUpdateDtTagRangingRounds {
         session_token: u32,
@@ -146,6 +147,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 session_token,
                 action,
                 controlees,
+                ..
             } => build_session_update_controller_multicast_list_cmd(
                 session_token,
                 action,
@@ -406,6 +408,7 @@ mod tests {
             session_token: 1,
             action: UpdateMulticastListAction::AddControlee,
             controlees: Controlees::NoSessionKey(vec![]),
+            is_multicast_list_ntf_v2_supported: false,
         };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
