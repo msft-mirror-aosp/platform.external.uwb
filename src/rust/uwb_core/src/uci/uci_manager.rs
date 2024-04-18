@@ -1779,6 +1779,32 @@ mod tests {
         (uci_manager, hal)
     }
 
+    async fn setup_uci_manager_with_open_hal_nop_logger<F, Fut>(
+        setup_hal_fn: F,
+        uci_logger_mode: UciLoggerMode,
+    ) -> (UciManagerImpl, MockUciHal)
+    where
+        F: FnOnce(MockUciHal) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        // Open the hal.
+        setup_hal_for_open(&mut hal);
+
+        // Verify open_hal() is working.
+        let uci_manager =
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), uci_logger_mode);
+        let result = uci_manager.open_hal().await;
+        assert!(result.is_ok());
+        assert!(hal.wait_expected_calls_done().await);
+
+        setup_hal_fn(hal.clone()).await;
+
+        (uci_manager, hal)
+    }
+
     #[tokio::test]
     async fn test_open_hal_without_notification() {
         init_test_logging();
@@ -2112,6 +2138,39 @@ mod tests {
         (uci_manager, hal)
     }
 
+    async fn setup_uci_manager_with_session_initialized_nop_logger<F, Fut>(
+        setup_hal_fn: F,
+        uci_logger_mode: UciLoggerMode,
+        session_id: u32,
+        session_token: u32,
+    ) -> (UciManagerImpl, MockUciHal)
+    where
+        F: FnOnce(MockUciHal) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let session_type = SessionType::FiraRangingSession;
+
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        setup_hal_for_session_initialize(&mut hal, session_type, session_id, session_token);
+
+        // Verify open_hal() is working.
+        let uci_manager =
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), uci_logger_mode);
+        let result = uci_manager.open_hal().await;
+        assert!(result.is_ok());
+
+        // Verify session is initialized.
+        let result = uci_manager.session_init(session_id, session_type).await;
+        assert!(result.is_ok());
+        assert!(hal.wait_expected_calls_done().await);
+
+        setup_hal_fn(hal.clone()).await;
+
+        (uci_manager, hal)
+    }
+
     #[tokio::test]
     async fn test_session_init_ok() {
         let session_id = 0x123;
@@ -2131,10 +2190,9 @@ mod tests {
     async fn test_session_init_v2_ok() {
         let session_id = 0x123;
         let session_token = 0x321; // different session handle
-        let (_, mut mock_hal) = setup_uci_manager_with_session_initialized(
+        let (_, mut mock_hal) = setup_uci_manager_with_session_initialized_nop_logger(
             |_hal| async move {},
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -2173,7 +2231,7 @@ mod tests {
         let session_id = 0x123;
         let session_token = 0x321; // different session handle
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized_nop_logger(
             |mut hal| async move {
                 let cmd = UciCommand::SessionDeinit { session_token };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionDeinitRspBuilder {
@@ -2183,7 +2241,6 @@ mod tests {
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -2236,7 +2293,7 @@ mod tests {
         let config_tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![0x12, 0x34, 0x56]);
         let config_tlv_clone = config_tlv.clone();
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized_nop_logger(
             |mut hal| async move {
                 let cmd = UciCommand::SessionSetAppConfig {
                     session_token,
@@ -2250,7 +2307,6 @@ mod tests {
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -2614,7 +2670,7 @@ mod tests {
         };
         let controlee_clone = controlee.clone();
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized_nop_logger(
             |mut hal| async move {
                 let cmd = UciCommand::SessionUpdateControllerMulticastList {
                     session_token,
@@ -2631,7 +2687,6 @@ mod tests {
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -3047,7 +3102,7 @@ mod tests {
         let app_config = AppConfigStatus { cfg_id, status };
         let cfg_status = vec![app_config];
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal_nop_logger(
             |mut hal| async move {
                 let cmd = UciCommand::RawUciCmd { mt, gid, oid, payload: cmd_payload_clone };
                 let resp = into_uci_hal_packets(uwb_uci_packets::SessionSetAppConfigRspBuilder {
@@ -3058,7 +3113,6 @@ mod tests {
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
         )
         .await;
 
@@ -3238,10 +3292,9 @@ mod tests {
         let oid = 0x1;
         let cmd_payload = vec![0x11, 0x22, 0x33, 0x44];
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal_nop_logger(
             move |_hal| async {},
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
         )
         .await;
 
@@ -3333,7 +3386,7 @@ mod tests {
         let resp_mt: u8 = 0x7; // Undefined MessageType
         let resp_payload = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_open_hal_nop_logger(
             |mut hal| async move {
                 let cmd = UciCommand::RawUciCmd {
                     mt: cmd_mt.into(),
@@ -3345,7 +3398,6 @@ mod tests {
                 hal.expected_send_command(cmd, vec![resp], Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
         )
         .await;
 
@@ -3399,6 +3451,43 @@ mod tests {
         // Verify open_hal() is working.
         let uci_manager =
             UciManagerImpl::new(hal.clone(), MockUciLogger::new(log_sender), uci_logger_mode);
+        let result = uci_manager.open_hal().await;
+        assert!(result.is_ok());
+
+        // Verify session is initialized.
+        let result = uci_manager.session_init(session_id, session_type).await;
+        assert!(result.is_ok());
+
+        // Verify session is started.
+        let result = uci_manager.range_start(session_id).await;
+        assert!(result.is_ok());
+        assert!(hal.wait_expected_calls_done().await);
+
+        setup_hal_fn(hal.clone()).await;
+
+        (uci_manager, hal)
+    }
+
+    async fn setup_uci_manager_with_session_active_nop_logger<F, Fut>(
+        setup_hal_fn: F,
+        uci_logger_mode: UciLoggerMode,
+        session_id: u32,
+        session_token: u32,
+    ) -> (UciManagerImpl, MockUciHal)
+    where
+        F: FnOnce(MockUciHal) -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        let session_type = SessionType::FiraRangingSession;
+
+        init_test_logging();
+
+        let mut hal = MockUciHal::new();
+        setup_hal_for_session_active(&mut hal, session_type, session_id, session_token);
+
+        // Verify open_hal() is working.
+        let uci_manager =
+            UciManagerImpl::new(hal.clone(), NopUciLogger::default(), uci_logger_mode);
         let result = uci_manager.open_hal().await;
         assert!(result.is_ok());
 
@@ -3519,10 +3608,9 @@ mod tests {
         };
 
         // Setup an active UWBS session over which the DataPacket will be received by the Host.
-        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+        let (mut uci_manager, mut mock_hal) = setup_uci_manager_with_session_active_nop_logger(
             |_| async move {},
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -3675,7 +3763,7 @@ mod tests {
         let status = DataTransferNtfStatusCode::UciDataTransferStatusRepetitionOk;
         let tx_count = 0x00;
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active_nop_logger(
             |mut hal| async move {
                 // Now setup the notifications that should be received after a Data packet send.
                 let data_packet_snd =
@@ -3695,7 +3783,6 @@ mod tests {
                 hal.expected_send_packet(data_packet_snd, ntfs, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
@@ -3858,7 +3945,7 @@ mod tests {
             }
         }
 
-        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active(
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_active_nop_logger(
             |mut hal| async move {
                 // Expected UCI CMD CORE_GET_DEVICE_INFO
                 let cmd = UciCommand::CoreGetDeviceInfo;
@@ -3917,7 +4004,6 @@ mod tests {
                 hal.expected_send_packet(data_packet_snd_fragment_2, ntfs, Ok(()));
             },
             UciLoggerMode::Disabled,
-            mpsc::unbounded_channel::<UciLogEvent>().0,
             session_id,
             session_token,
         )
