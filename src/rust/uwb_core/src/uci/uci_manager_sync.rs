@@ -316,14 +316,11 @@ impl<U: UciManager> UciManagerSync<U> {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-        is_multicast_list_ntf_v2_supported: bool,
     ) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.session_update_controller_multicast_list(
-            session_id,
-            action,
-            controlees,
-            is_multicast_list_ntf_v2_supported,
-        ))
+        self.runtime_handle.block_on(
+            self.uci_manager
+                .session_update_controller_multicast_list(session_id, action, controlees),
+        )
     }
 
     /// Update ranging rounds for DT Tag
