@@ -121,7 +121,6 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-        is_multicast_list_ntf_v2_supported: bool,
     ) -> Result<()>;
 
     // Update ranging rounds for DT Tag
@@ -471,7 +470,6 @@ impl UciManager for UciManagerImpl {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-        is_multicast_list_ntf_v2_supported: bool,
     ) -> Result<()> {
         let controlees_len = match controlees {
             Controlees::NoSessionKey(ref controlee_vec) => controlee_vec.len(),
@@ -486,7 +484,6 @@ impl UciManager for UciManagerImpl {
             session_token: self.get_session_token(&session_id).await?,
             action,
             controlees,
-            is_multicast_list_ntf_v2_supported,
         };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
@@ -790,9 +787,6 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     // DATA_MSG_SEND packets (from Host to UWBS), larger than this should be fragmented into
     // multiple packets with this as the payload size.
     max_data_packet_payload_size: usize,
-
-    // The flag that indicate whether multicast list ntf v2 is supported.
-    is_multicast_list_ntf_v2_supported: bool,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -830,7 +824,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             session_id_to_token_map,
             get_device_info_rsp: None,
             max_data_packet_payload_size: MAX_DATA_PACKET_PAYLOAD_SIZE,
-            is_multicast_list_ntf_v2_supported: false,
         }
     }
 
@@ -1085,16 +1078,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     });
                 }
 
-                if let UciCommand::SessionUpdateControllerMulticastList {
-                    session_token: _,
-                    action: _,
-                    controlees: _,
-                    is_multicast_list_ntf_v2_supported,
-                } = cmd.clone()
-                {
-                    self.is_multicast_list_ntf_v2_supported = is_multicast_list_ntf_v2_supported;
-                }
-
                 self.uci_cmd_retryer =
                     Some(UciCmdRetryer { cmd, result_sender, retry_count: MAX_RETRY_COUNT });
 
@@ -1298,7 +1281,6 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     packet,
                     UCIMajorVersion::from_u8(uci_fira_major_version)
                         .map_or(UCIMajorVersion::V1, |v| v),
-                    self.is_multicast_list_ntf_v2_supported,
                 )
                     .try_into()
                 {
@@ -2625,7 +2607,6 @@ mod tests {
                     session_token,
                     action,
                     controlees: Controlees::NoSessionKey(vec![controlee_clone]),
-                    is_multicast_list_ntf_v2_supported: false,
                 };
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
@@ -2647,7 +2628,6 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::NoSessionKey(vec![controlee]),
-                false,
             )
             .await;
         assert!(result.is_ok());
@@ -2676,7 +2656,6 @@ mod tests {
                     session_token,
                     action,
                     controlees: Controlees::ShortSessionKey(vec![controlee_clone]),
-                    is_multicast_list_ntf_v2_supported: true,
                 };
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
@@ -2697,7 +2676,6 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::ShortSessionKey(vec![controlee]),
-                true,
             )
             .await;
         assert!(result.is_ok());
@@ -2727,7 +2705,6 @@ mod tests {
                     session_token,
                     action,
                     controlees: Controlees::LongSessionKey(vec![controlee_clone]),
-                    is_multicast_list_ntf_v2_supported: true,
                 };
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
@@ -2749,7 +2726,6 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::LongSessionKey(vec![controlee]),
-                true,
             )
             .await;
         assert!(result.is_ok());

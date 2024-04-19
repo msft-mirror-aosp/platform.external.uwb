@@ -342,21 +342,20 @@ impl UciNotification {
     }
 }
 
-impl TryFrom<(uwb_uci_packets::UciNotification, UCIMajorVersion, bool)> for UciNotification {
+impl TryFrom<(uwb_uci_packets::UciNotification, UCIMajorVersion)> for UciNotification {
     type Error = Error;
     fn try_from(
-        pair: (uwb_uci_packets::UciNotification, UCIMajorVersion, bool),
+        pair: (uwb_uci_packets::UciNotification, UCIMajorVersion),
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
         let evt = pair.0;
         let uci_fira_major_ver = pair.1;
-        let is_multicast_list_ntf_v2_supported = pair.2;
 
         match evt.specialize() {
             UciNotificationChild::CoreNotification(evt) => Ok(Self::Core(evt.try_into()?)),
-            UciNotificationChild::SessionConfigNotification(evt) => Ok(Self::Session(
-                (evt, uci_fira_major_ver, is_multicast_list_ntf_v2_supported).try_into()?,
-            )),
+            UciNotificationChild::SessionConfigNotification(evt) => {
+                Ok(Self::Session((evt, uci_fira_major_ver).try_into()?))
+            }
             UciNotificationChild::SessionControlNotification(evt) => {
                 Ok(Self::Session(evt.try_into()?))
             }
@@ -392,17 +391,16 @@ impl TryFrom<uwb_uci_packets::CoreNotification> for CoreNotification {
     }
 }
 
-impl TryFrom<(uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool)>
+impl TryFrom<(uwb_uci_packets::SessionConfigNotification, UCIMajorVersion)>
     for SessionNotification
 {
     type Error = Error;
     fn try_from(
-        pair: (uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool),
+        pair: (uwb_uci_packets::SessionConfigNotification, UCIMajorVersion),
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigNotificationChild;
         let evt = pair.0;
         let uci_fira_major_ver = pair.1;
-        let is_multicast_list_ntf_v2_supported = pair.2;
         match evt.specialize() {
             SessionConfigNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
                 //no sessionId recieved, assign from sessionIdToToken map in uci_manager
@@ -412,8 +410,7 @@ impl TryFrom<(uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool)
                 reason_code: evt.get_reason_code(),
             }),
             SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt)
-                if uci_fira_major_ver == UCIMajorVersion::V1
-                    || !is_multicast_list_ntf_v2_supported =>
+                if uci_fira_major_ver == UCIMajorVersion::V1 =>
             {
                 let payload = evt.get_payload();
                 let multicast_update_list_payload_v1 =
@@ -946,12 +943,9 @@ mod tests {
         let session_notification_packet =
             uwb_uci_packets::SessionConfigNotification::try_from(session_status_ntf).unwrap();
         let uci_fira_major_version = UCIMajorVersion::V1;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            false,
-        ))
-        .unwrap();
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
+                .unwrap();
         let uci_notification_from_session_status_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -1035,12 +1029,9 @@ mod tests {
         )
         .unwrap();
         let uci_fira_major_version = UCIMajorVersion::V1;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            false,
-        ))
-        .unwrap();
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
+                .unwrap();
         let uci_notification_from_session_update_controller_multicast_list_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -1079,11 +1070,8 @@ mod tests {
         )
         .unwrap();
         let uci_fira_major_version = UCIMajorVersion::V1;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            false,
-        ));
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version));
         assert_eq!(session_notification, Err(Error::BadParameters));
     }
 
@@ -1111,11 +1099,8 @@ mod tests {
         )
         .unwrap();
         let uci_fira_major_version = UCIMajorVersion::V2;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            true,
-        ));
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version));
         assert_eq!(session_notification, Err(Error::BadParameters));
     }
 
@@ -1149,12 +1134,9 @@ mod tests {
         )
         .unwrap();
         let uci_fira_major_version = UCIMajorVersion::V2;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            true,
-        ))
-        .unwrap();
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
+                .unwrap();
         let uci_notification_from_session_update_controller_multicast_list_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -1179,12 +1161,9 @@ mod tests {
         )
         .unwrap();
         let uci_fira_major_version = UCIMajorVersion::V1;
-        let session_notification = SessionNotification::try_from((
-            session_notification_packet,
-            uci_fira_major_version,
-            false,
-        ))
-        .unwrap();
+        let session_notification =
+            SessionNotification::try_from((session_notification_packet, uci_fira_major_version))
+                .unwrap();
         let uci_notification_from_session_data_transfer_phase_config_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
@@ -1344,33 +1323,26 @@ mod tests {
         let uci_notification_from_vendor_9 = UciNotification::try_from((
             vendor_9_empty_notification,
             uci_fira_major_version.clone(),
-            false,
         ))
         .unwrap();
         let uci_notification_from_vendor_A = UciNotification::try_from((
             vendor_A_nonempty_notification,
             uci_fira_major_version.clone(),
-            false,
         ))
         .unwrap();
         let uci_notification_from_vendor_B = UciNotification::try_from((
             vendor_B_nonempty_notification,
             uci_fira_major_version.clone(),
-            false,
         ))
         .unwrap();
         let uci_notification_from_vendor_E = UciNotification::try_from((
             vendor_E_nonempty_notification,
             uci_fira_major_version.clone(),
-            false,
         ))
         .unwrap();
-        let uci_notification_from_vendor_F = UciNotification::try_from((
-            vendor_F_nonempty_notification,
-            uci_fira_major_version,
-            false,
-        ))
-        .unwrap();
+        let uci_notification_from_vendor_F =
+            UciNotification::try_from((vendor_F_nonempty_notification, uci_fira_major_version))
+                .unwrap();
         assert_eq!(
             uci_notification_from_vendor_9,
             UciNotification::Vendor(RawUciMessage {
@@ -1419,7 +1391,7 @@ mod tests {
             uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
         let uci_fira_major_version = UCIMajorVersion::V1;
         let test_uci_notification =
-            UciNotification::try_from((test_notification, uci_fira_major_version, false)).unwrap();
+            UciNotification::try_from((test_notification, uci_fira_major_version)).unwrap();
         assert_eq!(
             test_uci_notification,
             UciNotification::Vendor(RawUciMessage {
