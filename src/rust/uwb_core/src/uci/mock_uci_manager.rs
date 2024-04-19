@@ -839,7 +839,6 @@ impl UciManager for MockUciManager {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-        _is_multicast_list_ntf_v2_supported: bool,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {

@@ -312,7 +312,6 @@ impl<T: UciManager> UwbSessionActor<T> {
                 self.session_id,
                 action,
                 Controlees::NoSessionKey(controlees),
-                false,
             )
             .await?;
 
