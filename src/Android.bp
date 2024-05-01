@@ -139,22 +139,6 @@ rust_test {
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
         },
-        host: {
-            test_suites: [
-                "general-tests",
-            ],
-            data_libs: [
-                "libandroid_runtime_lazy",
-                "libbase",
-                "libcutils",
-                "liblog",
-                "libutils",
-                "libc++",
-                "server_configurable_flags",
-            ],
-            // See b/268061150
-            stem: "libuwb_core_tests_host",
-        },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
     // build targets with secondary architectures, as the MTS test suite packaging logic flattens
@@ -284,7 +268,6 @@ rust_defaults {
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
-    host_supported: true,
     srcs: [
         "rust/uci_hal_android/lib.rs",
     ],
@@ -324,23 +307,6 @@ rust_test {
                 "mts-uwb"
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
-        },
-        host: {
-            test_suites: [
-                "general-tests",
-            ],
-            data_libs: [
-                "libandroid_runtime_lazy",
-                "libbase",
-                "libcutils",
-                "liblog",
-                "libutils",
-                "libbinder_ndk",
-                "libbinder",
-                "libc++",
-            ],
-            // See b/268061150
-            stem: "libuci_hal_android_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
