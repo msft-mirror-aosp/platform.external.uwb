@@ -192,6 +192,7 @@ rust_library {
     ],
     features: ["proto"],
     host_supported: true,
+    native_coverage: false,
 }
 
 genrule {
