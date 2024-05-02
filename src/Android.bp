@@ -99,7 +99,6 @@ rust_defaults {
         "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
-    host_supported: true,
 }
 
 // Build uwb_core library with the production version of Aconfig flags lib.
@@ -172,7 +171,6 @@ rust_binary {
     lints: "android",
     clippy_lints: "android",
     min_sdk_version: "Tiramisu",
-    host_supported: true,
 }
 
 // Build the uwb_core library with "proto" feature enabled.
@@ -192,6 +190,7 @@ rust_library {
     ],
     features: ["proto"],
     host_supported: true,
+    native_coverage: false,
 }
 
 genrule {
