@@ -119,6 +119,7 @@ rust_library {
     crate_name: "uwb_core",
     features: ["mock-utils"],
     host_supported: true,
+    native_coverage: false,
 }
 
 // The test target uses the test version of Aconfig flags lib, as that has
@@ -289,6 +290,7 @@ rust_library {
     rustlibs: [
         "libuwb_core_with_mock",
     ],
+    native_coverage: false,
 }
 
 rust_test {
