@@ -18,25 +18,26 @@ use std::process::Command;
 fn main() {
     let out_dir = std::env::var_os("OUT_DIR").unwrap();
     let generated_file = "uci_packets.rs";
+    let dst_path = Path::new(&out_dir).join(generated_file);
 
     if Path::new(generated_file).exists() {
         // Copy the rust code directly if the file exists.
-        let dst_path = Path::new(&out_dir).join(generated_file);
         let result = std::fs::copy(generated_file, &dst_path);
         eprintln!("{} exists, copy to {:?}: {:?}", generated_file, dst_path, result);
         return;
     }
 
-    // Generate the rust code by bluetooth_packetgen.
-    // The binary should be compiled by `m bluetooth_packetgen -j32` before calling cargo.
+    // The binary should be compiled by `m pdlc` before calling cargo.
     let output = Command::new("env")
-        .arg("bluetooth_packetgen")
-        .arg("--out=".to_owned() + out_dir.to_str().unwrap())
-        .arg("--include=.")
-        .arg("--rust")
+        .arg("pdlc")
+        .arg("--output-format")
+        .arg("rust")
         .arg("uci_packets.pdl")
         .output()
         .unwrap();
+
+    std::fs::write(&dst_path, &output.stdout)
+        .expect(&format!("Could not write {}", dst_path.display()));
 
     eprintln!(
         "Status: {}, stdout: {}, stderr: {}",

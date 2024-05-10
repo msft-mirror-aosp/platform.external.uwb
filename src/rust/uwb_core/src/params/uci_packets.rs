@@ -18,21 +18,24 @@
 use std::collections::{hash_map::RandomState, HashMap};
 use std::iter::FromIterator;
 
+use num_derive::{FromPrimitive, ToPrimitive};
+
 // Re-export enums and structs from uwb_uci_packets.
 pub use uwb_uci_packets::{
-    AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType,
-    Controlee, ControleeStatus, Controlees, CreditAvailability, DataRcvStatusCode,
-    DataTransferNtfStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv, DeviceState,
-    ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
-    ExtendedAddressTwoWayRangingMeasurement, FiraComponent, GroupId, MessageType,
-    MulticastUpdateStatusCode, OwrAoaStatusCode, PowerStats, RangingMeasurementType, ReasonCode,
-    ResetConfig, SessionState, SessionType, ShortAddressDlTdoaRangingMeasurement,
+    AppConfigStatus, AppConfigTlv as RawAppConfigTlv, AppConfigTlvType, BitsPerSample, CapTlv,
+    CapTlvType, Controlee, ControleePhaseList, ControleeStatusV1, ControleeStatusV2, Controlees,
+    CreditAvailability, DataRcvStatusCode, DataTransferNtfStatusCode,
+    DataTransferPhaseConfigUpdateStatusCode, DeviceConfigId, DeviceConfigStatus, DeviceConfigTlv,
+    DeviceState, ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
+    ExtendedAddressTwoWayRangingMeasurement, GroupId, MacAddressIndicator, MessageType,
+    MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus, RadarConfigTlv,
+    RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode, ResetConfig,
+    SessionState, SessionType, SessionUpdateControllerMulticastListNtfV1Payload,
+    SessionUpdateControllerMulticastListNtfV2Payload, ShortAddressDlTdoaRangingMeasurement,
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
     UpdateMulticastListAction,
 };
-pub(crate) use uwb_uci_packets::{
-    UciControlPacketPacket, UciDataPacketHalPacket, UciDataPacketPacket, UciDataSndPacket,
-};
+pub(crate) use uwb_uci_packets::{UciControlPacket, UciDataPacket, UciDataPacketHal};
 
 use crate::error::Error;
 
@@ -40,11 +43,33 @@ use crate::error::Error;
 pub type SessionId = u32;
 /// The type of the sub-session identifier.
 pub type SubSessionId = u32;
+/// The type of the session handle.
+pub type SessionHandle = u32;
+/// Generic type used to represent either a session id or session handle.
+pub type SessionToken = u32;
 
 /// Wrap the original AppConfigTlv type to redact the PII fields when logging.
 #[derive(Clone, PartialEq)]
 pub struct AppConfigTlv {
     tlv: RawAppConfigTlv,
+}
+
+/// Controlee Status Enum compatible with different Fira version.
+pub enum ControleeStatusList {
+    /// Controlee status defined in Fira 1.x.
+    V1(Vec<ControleeStatusV1>),
+    /// Controlee status defined in Fira 2.0.
+    V2(Vec<ControleeStatusV2>),
+}
+
+/// UCI major version
+#[derive(FromPrimitive, ToPrimitive, PartialEq, Clone)]
+#[repr(u8)]
+pub enum UCIMajorVersion {
+    /// Version 1.x
+    V1 = 1,
+    /// Version 2.0
+    V2 = 2,
 }
 
 impl std::fmt::Debug for AppConfigTlv {
@@ -123,6 +148,19 @@ fn device_config_tlvs_to_map(
     HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
 }
 
+/// Compare if two RadarConfigTlv array are equal. Convert the array to HashMap before comparing
+/// because the order of TLV elements doesn't matter.
+#[allow(dead_code)]
+pub fn radar_config_tlvs_eq(a: &[RadarConfigTlv], b: &[RadarConfigTlv]) -> bool {
+    radar_config_tlvs_to_map(a) == radar_config_tlvs_to_map(b)
+}
+
+fn radar_config_tlvs_to_map(
+    tlvs: &[RadarConfigTlv],
+) -> HashMap<RadarConfigTlvType, &Vec<u8>, RandomState> {
+    HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
+}
+
 /// The response of the UciManager::core_set_config() method.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreSetConfigResponse {
@@ -141,9 +179,18 @@ pub struct SetAppConfigResponse {
     pub config_status: Vec<AppConfigStatus>,
 }
 
-/// The response from UciManager::session_update_active_rounds_dt_tag() method.
+/// The response of the UciManager::android_set_radar_config() method.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AndroidRadarConfigResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// The status of each config TLV.
+    pub config_status: Vec<RadarConfigStatus>,
+}
+
+/// The response from UciManager::session_update_dt_tag_ranging_rounds() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SessionUpdateActiveRoundsDtTagResponse {
+pub struct SessionUpdateDtTagRangingRoundsResponse {
     /// The status code of the response.
     pub status: StatusCode,
     /// Indexes of unsuccessful ranging rounds.
@@ -155,12 +202,16 @@ pub struct SessionUpdateActiveRoundsDtTagResponse {
 pub struct CountryCode([u8; 2]);
 
 impl CountryCode {
+    const UNKNOWN_COUNTRY_CODE: &'static [u8] = "00".as_bytes();
+
     /// Create a CountryCode instance.
     pub fn new(code: &[u8; 2]) -> Option<Self> {
-        if !code[0].is_ascii_uppercase() || !code[1].is_ascii_uppercase() {
+        if code != CountryCode::UNKNOWN_COUNTRY_CODE
+            && !code.iter().all(|x| (*x as char).is_ascii_alphabetic())
+        {
             None
         } else {
-            Some(Self(*code))
+            Some(Self((*code).to_ascii_uppercase().try_into().ok()?))
         }
     }
 }
@@ -179,9 +230,28 @@ impl TryFrom<String> for CountryCode {
     }
 }
 
+/// absolute time in UWBS Time domain(ms) when this configuration applies
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub struct UpdateTime([u8; 8]);
+
+impl UpdateTime {
+    /// Create a UpdateTime instance.
+    pub fn new(update_time: &[u8; 8]) -> Option<Self> {
+        Some(Self(*update_time))
+    }
+}
+
+impl From<UpdateTime> for [u8; 8] {
+    fn from(item: UpdateTime) -> [u8; 8] {
+        item.0
+    }
+}
+
 /// The response of the UciManager::core_get_device_info() method.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GetDeviceInfoResponse {
+    /// Status
+    pub status: StatusCode,
     /// The UCI version.
     pub uci_version: u16,
     /// The MAC version.
@@ -205,10 +275,10 @@ pub struct RawUciMessage {
     pub payload: Vec<u8>,
 }
 
-impl From<UciControlPacketPacket> for RawUciMessage {
-    fn from(packet: UciControlPacketPacket) -> Self {
+impl From<UciControlPacket> for RawUciMessage {
+    fn from(packet: UciControlPacket) -> Self {
         Self {
-            gid: packet.get_group_id() as u32,
+            gid: packet.get_group_id().into(),
             oid: packet.get_opcode() as u32,
             payload: packet.to_raw_payload(),
         }
@@ -234,5 +304,15 @@ mod tests {
         let tlv = AppConfigTlv::new(AppConfigTlvType::DeviceType, vec![12, 34]);
         let format_str = format!("{tlv:?}");
         assert_eq!(format_str, "AppConfigTlv { cfg_id: DeviceType, v: [12, 34] }");
+    }
+
+    #[test]
+    fn test_country_code() {
+        let _country_code_ascii: CountryCode = String::from("US").try_into().unwrap();
+        let _country_code_unknown: CountryCode = String::from("00").try_into().unwrap();
+        let country_code_invalid_1: Result<CountryCode, Error> = String::from("0S").try_into();
+        country_code_invalid_1.unwrap_err();
+        let country_code_invalid_2: Result<CountryCode, Error> = String::from("ÀÈ").try_into();
+        country_code_invalid_2.unwrap_err();
     }
 }

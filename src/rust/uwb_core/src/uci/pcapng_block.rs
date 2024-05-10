@@ -143,7 +143,7 @@ pub struct InterfaceDescriptionBlockBuilder {
 impl Default for InterfaceDescriptionBlockBuilder {
     fn default() -> Self {
         Self {
-            link_type: 293, // USB 2.0 Low Speed
+            link_type: 299, // FiRa UCI
             snap_len: 0,    // unlimited
             block_options: vec![],
         }
@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn test_interface_description_block_with_options_build() {
         let comment_opt = BlockOption::new(0x1, "ABCDEF".to_owned().into_bytes());
-        let link_type: u16 = 293; // 0x125
+        let link_type: u16 = 299; // 0x12b
         let snap_len: u32 = 0;
         let interface_description_block = InterfaceDescriptionBlockBuilder::new()
             .link_type(link_type)
@@ -433,7 +433,7 @@ mod tests {
         let expected_block: Vec<u8> = vec![
             0x01, 0x00, 0x00, 0x00, // block type
             0x24, 0x00, 0x00, 0x00, // block length
-            0x25, 0x01, 0x00, 0x00, // link type, reserved
+            0x2b, 0x01, 0x00, 0x00, // link type, reserved
             0x00, 0x00, 0x00, 0x00, // SnapLen
             0x01, 0x00, 0x06, 0x00, // option code, padded length
             0x41, 0x42, 0x43, 0x44, // option (ABCD)

@@ -14,17 +14,15 @@
 
 use std::convert::{TryFrom, TryInto};
 
-use num_traits::ToPrimitive;
-
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv, GetDeviceInfoResponse,
-    PowerStats, RawUciMessage, SessionState, SessionUpdateActiveRoundsDtTagResponse,
-    SetAppConfigResponse, StatusCode, UciControlPacketPacket,
+    AndroidRadarConfigResponse, AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv,
+    GetDeviceInfoResponse, PowerStats, RadarConfigTlv, RawUciMessage, SessionHandle, SessionState,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) enum UciResponse {
     SetLoggerMode,
     SetNotification,
@@ -35,20 +33,28 @@ pub(super) enum UciResponse {
     CoreGetCapsInfo(Result<Vec<CapTlv>>),
     CoreSetConfig(CoreSetConfigResponse),
     CoreGetConfig(Result<Vec<DeviceConfigTlv>>),
-    SessionInit(Result<()>),
+    CoreQueryTimeStamp(Result<u64>),
+    SessionInit(Result<Option<SessionHandle>>),
     SessionDeinit(Result<()>),
     SessionSetAppConfig(SetAppConfigResponse),
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
     SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
     SessionUpdateControllerMulticastList(Result<()>),
-    SessionUpdateActiveRoundsDtTag(Result<SessionUpdateActiveRoundsDtTagResponse>),
+    SessionUpdateDtTagRangingRounds(Result<SessionUpdateDtTagRangingRoundsResponse>),
+    SessionQueryMaxDataSize(Result<u16>),
     SessionStart(Result<()>),
     SessionStop(Result<()>),
     SessionGetRangingCount(Result<usize>),
     AndroidSetCountryCode(Result<()>),
     AndroidGetPowerStats(Result<PowerStats>),
+    AndroidSetRadarConfig(AndroidRadarConfigResponse),
+    AndroidGetRadarConfig(Result<Vec<RadarConfigTlv>>),
     RawUciCmd(Result<RawUciMessage>),
+    SendUciData(Result<()>),
+    SessionSetHybridControllerConfig(Result<()>),
+    SessionSetHybridControleeConfig(Result<()>),
+    SessionDataTransferPhaseConfig(Result<()>),
 }
 
 impl UciResponse {
@@ -59,6 +65,7 @@ impl UciResponse {
             Self::CoreGetDeviceInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetCapsInfo(result) => Self::matches_result_retry(result),
             Self::CoreGetConfig(result) => Self::matches_result_retry(result),
+            Self::CoreQueryTimeStamp(result) => Self::matches_result_retry(result),
             Self::SessionInit(result) => Self::matches_result_retry(result),
             Self::SessionDeinit(result) => Self::matches_result_retry(result),
             Self::SessionGetAppConfig(result) => Self::matches_result_retry(result),
@@ -67,16 +74,24 @@ impl UciResponse {
             Self::SessionUpdateControllerMulticastList(result) => {
                 Self::matches_result_retry(result)
             }
-            Self::SessionUpdateActiveRoundsDtTag(result) => Self::matches_result_retry(result),
+            Self::SessionUpdateDtTagRangingRounds(result) => Self::matches_result_retry(result),
             Self::SessionStart(result) => Self::matches_result_retry(result),
             Self::SessionStop(result) => Self::matches_result_retry(result),
             Self::SessionGetRangingCount(result) => Self::matches_result_retry(result),
             Self::AndroidSetCountryCode(result) => Self::matches_result_retry(result),
             Self::AndroidGetPowerStats(result) => Self::matches_result_retry(result),
+            Self::AndroidGetRadarConfig(result) => Self::matches_result_retry(result),
+            Self::AndroidSetRadarConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::RawUciCmd(result) => Self::matches_result_retry(result),
-
+            Self::SessionSetHybridControllerConfig(result) => Self::matches_result_retry(result),
+            Self::SessionSetHybridControleeConfig(result) => Self::matches_result_retry(result),
+            Self::SessionDataTransferPhaseConfig(result) => Self::matches_result_retry(result),
             Self::CoreSetConfig(resp) => Self::matches_status_retry(&resp.status),
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
+
+            Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
+            // TODO(b/273376343): Implement retry logic for Data packet send.
+            Self::SendUciData(_result) => false,
         }
     }
 
@@ -88,9 +103,9 @@ impl UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::UciResponse> for UciResponse {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciResponsePacket) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::UciResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
             UciResponseChild::CoreResponse(evt) => evt.try_into(),
@@ -107,15 +122,14 @@ impl TryFrom<uwb_uci_packets::UciResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::CoreResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::CoreResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::CoreResponseChild;
         match evt.specialize() {
             CoreResponseChild::GetDeviceInfoRsp(evt) => Ok(UciResponse::CoreGetDeviceInfo(
                 status_code_to_result(evt.get_status()).map(|_| GetDeviceInfoResponse {
+                    status: evt.get_status(),
                     uci_version: evt.get_uci_version(),
                     mac_version: evt.get_mac_version(),
                     phy_version: evt.get_phy_version(),
@@ -139,21 +153,27 @@ impl TryFrom<uwb_uci_packets::CoreResponsePacket> for UciResponse {
             CoreResponseChild::GetConfigRsp(evt) => Ok(UciResponse::CoreGetConfig(
                 status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
             )),
+            CoreResponseChild::CoreQueryTimeStampRsp(evt) => Ok(UciResponse::CoreQueryTimeStamp(
+                status_code_to_result(evt.get_status()).map(|_| evt.get_timeStamp()),
+            )),
             _ => Err(Error::Unknown),
         }
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionConfigResponsePacket,
+        evt: uwb_uci_packets::SessionConfigResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigResponseChild;
         match evt.specialize() {
             SessionConfigResponseChild::SessionInitRsp(evt) => {
-                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status())))
+                Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status()).map(|_| None)))
             }
+            SessionConfigResponseChild::SessionInitRsp_V2(evt) => Ok(UciResponse::SessionInit(
+                status_code_to_result(evt.get_status()).map(|_| Some(evt.get_session_handle())),
+            )),
             SessionConfigResponseChild::SessionDeinitRsp(evt) => {
                 Ok(UciResponse::SessionDeinit(status_code_to_result(evt.get_status())))
             }
@@ -172,9 +192,9 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
                     evt.get_status(),
                 )))
             }
-            SessionConfigResponseChild::SessionUpdateActiveRoundsDtTagRsp(evt) => {
-                Ok(UciResponse::SessionUpdateActiveRoundsDtTag(Ok(
-                    SessionUpdateActiveRoundsDtTagResponse {
+            SessionConfigResponseChild::SessionUpdateDtTagRangingRoundsRsp(evt) => {
+                Ok(UciResponse::SessionUpdateDtTagRangingRounds(Ok(
+                    SessionUpdateDtTagRangingRoundsResponse {
                         status: evt.get_status(),
                         ranging_round_indexes: evt.get_ranging_round_indexes().to_vec(),
                     },
@@ -193,15 +213,35 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponsePacket> for UciResponse {
                     }),
                 ))
             }
+            SessionConfigResponseChild::SessionQueryMaxDataSizeRsp(evt) => {
+                Ok(UciResponse::SessionQueryMaxDataSize(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_max_data_size()),
+                ))
+            }
+            SessionConfigResponseChild::SessionSetHybridControllerConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridControllerConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
+            }
+            SessionConfigResponseChild::SessionSetHybridControleeConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetHybridControleeConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
+            }
+            SessionConfigResponseChild::SessionDataTransferPhaseConfigRsp(evt) => {
+                Ok(UciResponse::SessionDataTransferPhaseConfig(status_code_to_result(
+                    evt.get_status(),
+                )))
+            }
             _ => Err(Error::Unknown),
         }
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::SessionControlResponse> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionControlResponsePacket,
+        evt: uwb_uci_packets::SessionControlResponse,
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionControlResponseChild;
         match evt.specialize() {
@@ -221,11 +261,9 @@ impl TryFrom<uwb_uci_packets::SessionControlResponsePacket> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
+impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
     type Error = Error;
-    fn try_from(
-        evt: uwb_uci_packets::AndroidResponsePacket,
-    ) -> std::result::Result<Self, Self::Error> {
+    fn try_from(evt: uwb_uci_packets::AndroidResponse) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::AndroidResponseChild;
         match evt.specialize() {
             AndroidResponseChild::AndroidSetCountryCodeRsp(evt) => {
@@ -236,14 +274,123 @@ impl TryFrom<uwb_uci_packets::AndroidResponsePacket> for UciResponse {
                     status_code_to_result(evt.get_stats().status).map(|_| evt.get_stats().clone()),
                 ))
             }
+            AndroidResponseChild::AndroidSetRadarConfigRsp(evt) => {
+                Ok(UciResponse::AndroidSetRadarConfig(AndroidRadarConfigResponse {
+                    status: evt.get_status(),
+                    config_status: evt.get_cfg_status().clone(),
+                }))
+            }
+            AndroidResponseChild::AndroidGetRadarConfigRsp(evt) => {
+                Ok(UciResponse::AndroidGetRadarConfig(
+                    status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
+                ))
+            }
             _ => Err(Error::Unknown),
         }
     }
 }
 
-fn raw_response(evt: uwb_uci_packets::UciResponsePacket) -> Result<UciResponse> {
-    let gid = evt.get_group_id().to_u32().ok_or(Error::Unknown)?;
-    let oid = evt.get_opcode().to_u32().ok_or(Error::Unknown)?;
-    let packet: UciControlPacketPacket = evt.into();
+fn raw_response(evt: uwb_uci_packets::UciResponse) -> Result<UciResponse> {
+    let gid: u32 = evt.get_group_id().into();
+    let oid: u32 = evt.get_opcode().into();
+    let packet: UciControlPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uci_response_casting_from_uci_vendor_response_packet() {
+        let mut uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_9_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        let mut uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0x9,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_A_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xA,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_B_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xB,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_E_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xE,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_F_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xF,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+    }
 }

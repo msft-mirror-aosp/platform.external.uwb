@@ -24,7 +24,7 @@ use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, ControleeStatus, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
+    Controlee, ControleeStatusList, Controlees, MulticastUpdateStatusCode, SessionId, SessionState,
     SessionType, UpdateMulticastListAction,
 };
 use crate::uci::error::status_code_to_result;
@@ -42,7 +42,7 @@ pub(super) type ResponseSender = oneshot::Sender<Result<Response>>;
 pub(super) struct UwbSession {
     cmd_sender: mpsc::UnboundedSender<(Command, ResponseSender)>,
     state_sender: watch::Sender<SessionState>,
-    controlee_status_notf_sender: Option<oneshot::Sender<Vec<ControleeStatus>>>,
+    controlee_status_notf_sender: Option<oneshot::Sender<ControleeStatusList>>,
 }
 
 impl UwbSession {
@@ -110,7 +110,7 @@ impl UwbSession {
         let _ = self.state_sender.send(state);
     }
 
-    pub fn on_controller_multicast_list_udpated(&mut self, status_list: Vec<ControleeStatus>) {
+    pub fn on_controller_multicast_list_updated(&mut self, status_list: ControleeStatusList) {
         if let Some(sender) = self.controlee_status_notf_sender.take() {
             let _ = sender.send(status_list);
         }
@@ -178,6 +178,8 @@ impl<T: UciManager> UwbSessionActor<T> {
     async fn initialize(&mut self, params: AppConfigParams) -> Result<Response> {
         debug_assert!(*self.state_receiver.borrow() == SessionState::SessionStateDeinit);
 
+        // TODO(b/279669973): Support CR-461 fully here. Need to wait for session init rsp.
+        // But, that does not seem to be fully plumbed up in session_manager yet.
         self.uci_manager.session_init(self.session_id, self.session_type).await?;
         self.wait_state(SessionState::SessionStateInit).await?;
 
@@ -292,7 +294,7 @@ impl<T: UciManager> UwbSessionActor<T> {
         &mut self,
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
-        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
+        notf_receiver: oneshot::Receiver<ControleeStatusList>,
     ) -> Result<Response> {
         if self.session_type == SessionType::Ccc {
             error!("Cannot update multicast list for CCC session");
@@ -310,6 +312,7 @@ impl<T: UciManager> UwbSessionActor<T> {
                 self.session_id,
                 action,
                 Controlees::NoSessionKey(controlees),
+                false,
             )
             .await?;
 
@@ -327,10 +330,22 @@ impl<T: UciManager> UwbSessionActor<T> {
 
         // Check the update status for adding new controlees.
         if action == UpdateMulticastListAction::AddControlee {
-            for result in results.iter() {
-                if result.status != MulticastUpdateStatusCode::StatusOkMulticastListUpdate {
-                    error!("Failed to update multicast list: {:?}", result);
-                    return Err(Error::Unknown);
+            match results {
+                ControleeStatusList::V1(res) => {
+                    for result in res.iter() {
+                        if result.status != MulticastUpdateStatusCode::StatusOkMulticastListUpdate {
+                            error!("Failed to update multicast list: {:?}", result);
+                            return Err(Error::Unknown);
+                        }
+                    }
+                }
+                ControleeStatusList::V2(res) => {
+                    for result in res.iter() {
+                        if result.status != MulticastUpdateStatusCode::StatusOkMulticastListUpdate {
+                            error!("Failed to update multicast list: {:?}", result);
+                            return Err(Error::Unknown);
+                        }
+                    }
                 }
             }
         }
@@ -385,7 +400,7 @@ enum Command {
     UpdateControllerMulticastList {
         action: UpdateMulticastListAction,
         controlees: Vec<Controlee>,
-        notf_receiver: oneshot::Receiver<Vec<ControleeStatus>>,
+        notf_receiver: oneshot::Receiver<ControleeStatusList>,
     },
     GetParams,
 }

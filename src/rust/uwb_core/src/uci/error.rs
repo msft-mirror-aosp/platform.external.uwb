@@ -22,10 +22,14 @@ pub(crate) fn status_code_to_result(status: StatusCode) -> Result<()> {
         StatusCode::UciStatusInvalidParam
         | StatusCode::UciStatusInvalidRange
         | StatusCode::UciStatusInvalidMsgSize => Err(Error::BadParameters),
-        StatusCode::UciStatusSessionNotExist
+        StatusCode::UciStatusSessionDuplicate => Err(Error::DuplicatedSessionId),
+        StatusCode::UciStatusFailed
+        | StatusCode::UciStatusSessionNotExist
+        | StatusCode::UciStatusSessionNotConfigured
         | StatusCode::UciStatusErrorCccSeBusy
         | StatusCode::UciStatusErrorCccLifecycle => Err(Error::ProtocolSpecific),
         StatusCode::UciStatusCommandRetry => Err(Error::CommandRetry),
+        StatusCode::UciStatusRegulationUwbOff => Err(Error::RegulationUwbOff),
         _ => Err(Error::Unknown),
     }
 }

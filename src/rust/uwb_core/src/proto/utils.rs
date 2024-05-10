@@ -22,7 +22,7 @@ use crate::error::{Error, Result};
 /// Convert the protobuf message to a byte buffers. Return dbus::MethodErr when conversion fails.
 pub fn write_to_bytes<M: Message>(msg: &M) -> Result<Vec<u8>> {
     msg.write_to_bytes().map_err(|e| {
-        error!("Failed to write protobuf {} to bytes: {:?}", msg.descriptor().name(), e);
+        error!("Failed to write protobuf {} to bytes: {:?}", M::NAME, e);
         Error::Unknown
     })
 }
@@ -30,7 +30,7 @@ pub fn write_to_bytes<M: Message>(msg: &M) -> Result<Vec<u8>> {
 /// Parse the byte buffer to the protobuf message. Return dbus::MethodErr when failed to parse.
 pub fn parse_from_bytes<M: Message>(bytes: &[u8]) -> Result<M> {
     M::parse_from_bytes(bytes).map_err(|e| {
-        error!("Failed to parse {:?}: {:?}", M::descriptor_static().name(), e);
+        error!("Failed to parse {:?}: {:?}", M::NAME, e);
         Error::BadParameters
     })
 }

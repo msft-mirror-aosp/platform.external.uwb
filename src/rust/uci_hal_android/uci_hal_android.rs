@@ -39,10 +39,10 @@ use uwb_uci_packets::{DeviceState, DeviceStatusNtfBuilder};
 
 use crate::error::{Error, Result};
 
-fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacketPacket>>(
+fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacket>>(
     builder: T,
 ) -> Vec<UciHalPacket> {
-    let packets: Vec<uwb_uci_packets::UciControlPacketHalPacket> = builder.into().into();
+    let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
     packets.into_iter().map(|packet| packet.into()).collect()
 }
 
@@ -262,11 +262,20 @@ impl UciHal for UciHalAndroid {
     async fn send_packet(&mut self, packet: UciHalPacket) -> UwbCoreResult<()> {
         match &self.hal_uci_recipient {
             Some(i_uwb_chip) => {
-                i_uwb_chip
+                let bytes_written = i_uwb_chip
                     .sendUciMessage(&packet)
                     .await
                     .map_err(|e| UwbCoreError::from(Error::from(e)))?;
-                Ok(())
+                if bytes_written != packet.len() as i32 {
+                    log::error!(
+                        "sendUciMessage did not write the full packet: {} != {}",
+                        bytes_written,
+                        packet.len()
+                    );
+                    Err(UwbCoreError::PacketTxError)
+                } else {
+                    Ok(())
+                }
             }
             None => Err(UwbCoreError::BadParameters),
         }
@@ -284,5 +293,51 @@ impl UciHal for UciHalAndroid {
             }
             None => Err(UwbCoreError::BadParameters),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_device_state_error_notification() {
+        let (uci_sender, _) = mpsc::unbounded_channel();
+        let res = send_device_state_error_notification(&uci_sender);
+        assert_eq!(res, Err(UwbCoreError::BadParameters));
+    }
+
+    #[tokio::test]
+    async fn test_new() {
+        let chip_id = "test_chip_id";
+        let hal = UciHalAndroid::new(chip_id);
+        assert_eq!(hal.chip_id, chip_id);
+        assert!(hal.hal_close_result_receiver.is_none());
+        assert!(hal.hal_death_recipient.is_none());
+        assert!(hal.hal_uci_recipient.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_open_error() {
+        let chip_id = "test_chip_id";
+        let mut hal = UciHalAndroid::new(chip_id);
+        let packet_sender = mpsc::unbounded_channel().0;
+        let res = hal.open(packet_sender).await;
+        assert_eq!(res, Err(UwbCoreError::BadParameters));
+    }
+
+    #[tokio::test]
+    async fn test_close() {
+        let chip_id = "test_chip_id";
+        let mut hal = UciHalAndroid::new(chip_id);
+        let (_, receiver) = mpsc::channel::<Result<()>>(1);
+        let death_recipient = Arc::new(Mutex::new(DeathRecipient::new(|| {})));
+        hal.hal_close_result_receiver = Some(receiver);
+        hal.hal_death_recipient = Some(death_recipient.clone());
+        let res = hal.close().await;
+        assert_eq!(res, Err(UwbCoreError::BadParameters));
+        assert!(hal.hal_close_result_receiver.is_none());
+        assert!(hal.hal_death_recipient.is_none());
+        assert!(hal.hal_uci_recipient.is_none());
     }
 }
