@@ -367,7 +367,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 }
             },
             UciSessionNotification::SessionInfo(range_data) => {
-                if self.active_sessions.get(&range_data.session_token).is_some() {
+                if self.active_sessions.contains_key(&range_data.session_token) {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_token,
                         range_data,
