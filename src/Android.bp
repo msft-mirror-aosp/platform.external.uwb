@@ -248,7 +248,7 @@ rust_defaults {
         "libbinder_rs",
         "libbinder_tokio_rs",
         "libbytes",
-        "libjni",
+        "libjni_legacy",
         "liblog_rust",
         "libthiserror",
         "libtokio",
