@@ -20,7 +20,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::error::{Error, Result};
 use crate::params::app_config_params::AppConfigParams;
 use crate::params::uci_packets::{
-    Controlee, ReasonCode, SessionId, SessionState, SessionType, UpdateMulticastListAction,
+    Controlee, ControleeStatusList, ReasonCode, SessionId, SessionState, SessionType,
+    UpdateMulticastListAction,
 };
 use crate::session::uwb_session::{Response as SessionResponse, ResponseSender, UwbSession};
 use crate::uci::notification::{SessionNotification as UciSessionNotification, SessionRangeData};
@@ -294,7 +295,12 @@ impl<T: UciManager> SessionManagerActor<T> {
 
     fn handle_uci_notification(&mut self, notf: UciSessionNotification) {
         match notf {
-            UciSessionNotification::Status { session_token, session_state, reason_code } => {
+            UciSessionNotification::Status {
+                session_id: _,
+                session_token,
+                session_state,
+                reason_code,
+            } => {
                 let reason_code = match ReasonCode::try_from(reason_code) {
                     Ok(r) => r,
                     Err(_) => {
@@ -333,12 +339,26 @@ impl<T: UciManager> SessionManagerActor<T> {
                     }
                 }
             }
-            UciSessionNotification::UpdateControllerMulticastList {
+            UciSessionNotification::UpdateControllerMulticastListV1 {
                 session_token,
                 remaining_multicast_list_size: _,
                 status_list,
             } => match self.active_sessions.get_mut(&session_token) {
-                Some(session) => session.on_controller_multicast_list_udpated(status_list),
+                Some(session) => session
+                    .on_controller_multicast_list_updated(ControleeStatusList::V1(status_list)),
+                None => {
+                    warn!(
+                        "Received the notification of the unknown Session {}: {:?}",
+                        session_token, status_list
+                    );
+                }
+            },
+            UciSessionNotification::UpdateControllerMulticastListV2 {
+                session_token,
+                status_list,
+            } => match self.active_sessions.get_mut(&session_token) {
+                Some(session) => session
+                    .on_controller_multicast_list_updated(ControleeStatusList::V2(status_list)),
                 None => {
                     warn!(
                         "Received the notification of the unknown Session {}: {:?}",
@@ -347,7 +367,7 @@ impl<T: UciManager> SessionManagerActor<T> {
                 }
             },
             UciSessionNotification::SessionInfo(range_data) => {
-                if self.active_sessions.get(&range_data.session_token).is_some() {
+                if self.active_sessions.contains_key(&range_data.session_token) {
                     let _ = self.session_notf_sender.send(SessionNotification::RangeData {
                         session_id: range_data.session_token,
                         range_data,
@@ -542,6 +562,7 @@ pub(crate) mod test_utils {
         session_state: SessionState,
     ) -> UciNotification {
         UciNotification::Session(UciSessionNotification::Status {
+            session_id: 0x0,
             session_token: session_id,
             session_state,
             reason_code: ReasonCode::StateChangeWithSessionManagementCommands.into(),
@@ -584,7 +605,7 @@ mod tests {
 
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
-        AppConfigTlv, AppConfigTlvType, ControleeStatus, Controlees, MulticastUpdateStatusCode,
+        AppConfigTlv, AppConfigTlvType, ControleeStatusV1, Controlees, MulticastUpdateStatusCode,
         ReasonCode, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
@@ -810,10 +831,10 @@ mod tests {
         let (mut session_manager, mut mock_uci_manager, _) =
             setup_session_manager(move |uci_manager| {
                 let multicast_list_notf = vec![UciNotification::Session(
-                    UciSessionNotification::UpdateControllerMulticastList {
+                    UciSessionNotification::UpdateControllerMulticastListV1 {
                         session_token: session_id,
                         remaining_multicast_list_size: 1,
-                        status_list: vec![ControleeStatus {
+                        status_list: vec![ControleeStatusV1 {
                             mac_address: [0x34, 0x12],
                             subsession_id: 0x24,
                             status: MulticastUpdateStatusCode::StatusOkMulticastListUpdate,

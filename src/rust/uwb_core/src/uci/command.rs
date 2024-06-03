@@ -68,6 +68,7 @@ pub enum UciCommand {
         session_token: SessionToken,
         action: UpdateMulticastListAction,
         controlees: Controlees,
+        is_multicast_list_ntf_v2_supported: bool,
     },
     SessionUpdateDtTagRangingRounds {
         session_token: u32,
@@ -146,6 +147,7 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 session_token,
                 action,
                 controlees,
+                ..
             } => build_session_update_controller_multicast_list_cmd(
                 session_token,
                 action,
@@ -311,6 +313,7 @@ fn build_raw_uci_cmd_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uwb_uci_packets::PhaseListShortMacAddress;
 
     #[test]
     fn test_build_raw_uci_cmd() {
@@ -405,6 +408,7 @@ mod tests {
             session_token: 1,
             action: UpdateMulticastListAction::AddControlee,
             controlees: Controlees::NoSessionKey(vec![]),
+            is_multicast_list_ntf_v2_supported: false,
         };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
@@ -492,6 +496,92 @@ mod tests {
             uwb_uci_packets::AndroidGetRadarConfigCmdBuilder { session_token: 1, tlvs: vec![] }
                 .build()
                 .into()
+        );
+
+        cmd = UciCommand::CoreQueryTimeStamp {};
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(packet, uwb_uci_packets::CoreQueryTimeStampCmdBuilder {}.build().into());
+
+        cmd = UciCommand::RawUciCmd { mt: 1, gid: 0xa, oid: 0, payload: vec![0, 1, 2, 3] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(
+            packet,
+            build_raw_uci_cmd_packet(1, 0xa, 0, vec![0, 1, 2, 3])
+                .expect("Failed to build raw cmd packet.")
+        );
+
+        let phase_list_short_mac_address = PhaseListShortMacAddress {
+            session_token: 0x1324_3546,
+            start_slot_index: 0x1111,
+            end_slot_index: 0x1121,
+            phase_participation: 0x0,
+            mac_address: [0x1, 0x2],
+        };
+        cmd = UciCommand::SessionSetHybridControllerConfig {
+            session_token: 1,
+            message_control: 0,
+            number_of_phases: 0,
+            update_time: UpdateTime::new(&[1; 8]).unwrap(),
+            phase_list: PhaseList::ShortMacAddress(vec![phase_list_short_mac_address]),
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionSetHybridControllerConfigCmdBuilder {
+                message_control: 0,
+                number_of_phases: 0,
+                session_token: 1,
+                update_time: [1; 8],
+                payload: Some(
+                    vec![
+                        0x46, 0x35, 0x24, 0x13, // session id (LE)
+                        0x11, 0x11, // start slot index (LE)
+                        0x21, 0x11, // end slot index (LE)
+                        0x00, // phase_participation
+                        0x01, 0x02
+                    ]
+                    .into()
+                )
+            }
+            .build()
+            .into()
+        );
+
+        cmd = UciCommand::SessionSetHybridControleeConfig {
+            session_token: 1,
+            controlee_phase_list: vec![],
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionSetHybridControleeConfigCmdBuilder {
+                controlee_phase_list: vec![],
+                session_token: 1,
+            }
+            .build()
+            .into()
+        );
+
+        cmd = UciCommand::SessionDataTransferPhaseConfig {
+            session_token: 1,
+            dtpcm_repetition: 0,
+            data_transfer_control: 2,
+            dtpml_size: 1,
+            mac_address: vec![0, 1],
+            slot_bitmap: vec![2, 3],
+        };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionDataTransferPhaseConfigCmdBuilder {
+                session_token: 1,
+                dtpcm_repetition: 0,
+                data_transfer_control: 2,
+                dtpml_size: 1,
+                payload: Some(vec![0x00, 0x01, 0x02, 0x03].into()),
+            }
+            .build()
+            .into()
         );
     }
 }

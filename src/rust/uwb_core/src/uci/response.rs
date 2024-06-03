@@ -296,3 +296,101 @@ fn raw_response(evt: uwb_uci_packets::UciResponse) -> Result<UciResponse> {
     let packet: UciControlPacket = evt.into();
     Ok(UciResponse::RawUciCmd(Ok(RawUciMessage { gid, oid, payload: packet.to_raw_payload() })))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uci_response_casting_from_uci_vendor_response_packet() {
+        let mut uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_9_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        let mut uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0x9,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_A_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xA,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_B_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xB,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_E_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xE,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+
+        uci_vendor_rsp_packet = uwb_uci_packets::UciResponse::try_from(
+            uwb_uci_packets::UciVendor_F_ResponseBuilder {
+                opcode: 0x00,
+                payload: Some(vec![0x0, 0x1, 0x2, 0x3].into()),
+            }
+            .build(),
+        )
+        .unwrap();
+        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        assert_eq!(
+            uci_response,
+            UciResponse::RawUciCmd(Ok(RawUciMessage {
+                gid: 0xF,
+                oid: 0x0,
+                payload: vec![0x0, 0x1, 0x2, 0x3],
+            }))
+        );
+    }
+}
