@@ -15,6 +15,7 @@
 //! Implements UciLoggerPcapng, a UciLogger with PCAPNG format log.
 
 use log::warn;
+use pdl_runtime::Packet;
 use tokio::sync::mpsc;
 use uwb_uci_packets::{UciControlPacket, UciDataPacket};
 
@@ -51,7 +52,7 @@ impl UciLogger for UciLoggerPcapng {
     fn log_uci_control_packet(&mut self, packet: UciControlPacket) {
         let block_bytes = match EnhancedPacketBlockBuilder::new()
             .interface_id(self.interface_id)
-            .packet(packet.into())
+            .packet(packet.encode_to_vec().unwrap())
             .into_le_bytes()
         {
             Some(b) => b,
@@ -63,7 +64,7 @@ impl UciLogger for UciLoggerPcapng {
     fn log_uci_data_packet(&mut self, packet: &UciDataPacket) {
         let packet_header_bytes = match EnhancedPacketBlockBuilder::new()
             .interface_id(self.interface_id)
-            .packet(packet.clone().into())
+            .packet(packet.encode_to_vec().unwrap())
             .into_le_bytes()
         {
             Some(b) => b,
