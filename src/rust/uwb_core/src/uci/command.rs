@@ -69,6 +69,7 @@ pub enum UciCommand {
         action: UpdateMulticastListAction,
         controlees: Controlees,
         is_multicast_list_ntf_v2_supported: bool,
+        is_multicast_list_rsp_v2_supported: bool,
     },
     SessionUpdateDtTagRangingRounds {
         session_token: u32,
@@ -409,6 +410,7 @@ mod tests {
             action: UpdateMulticastListAction::AddControlee,
             controlees: Controlees::NoSessionKey(vec![]),
             is_multicast_list_ntf_v2_supported: false,
+            is_multicast_list_rsp_v2_supported: false,
         };
         packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
         assert_eq!(
