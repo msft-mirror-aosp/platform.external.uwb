@@ -29,8 +29,8 @@ use crate::params::{
     AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats,
     RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction, UpdateTime,
+    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
+    SetAppConfigResponse, UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -317,12 +317,14 @@ impl<U: UciManager> UciManagerSync<U> {
         action: UpdateMulticastListAction,
         controlees: Controlees,
         is_multicast_list_ntf_v2_supported: bool,
-    ) -> Result<()> {
+        is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse> {
         self.runtime_handle.block_on(self.uci_manager.session_update_controller_multicast_list(
             session_id,
             action,
             controlees,
             is_multicast_list_ntf_v2_supported,
+            is_multicast_list_rsp_v2_supported,
         ))
     }
 

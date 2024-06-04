@@ -28,18 +28,19 @@ pub(super) enum UciMessage {
     Notification(UciNotification),
 }
 
-impl TryFrom<(uwb_uci_packets::UciControlPacket, UCIMajorVersion, bool)> for UciMessage {
+impl TryFrom<(uwb_uci_packets::UciControlPacket, UCIMajorVersion, bool, bool)> for UciMessage {
     type Error = Error;
     fn try_from(
-        pair: (uwb_uci_packets::UciControlPacket, UCIMajorVersion, bool),
+        pair: (uwb_uci_packets::UciControlPacket, UCIMajorVersion, bool, bool),
     ) -> Result<Self, Self::Error> {
         let packet = pair.0;
         let uci_fira_major_ver = pair.1;
         let is_multicast_list_ntf_v2_supported = pair.2;
+        let is_multicast_list_rsp_v2_supported = pair.3;
         match packet.specialize() {
-            uwb_uci_packets::UciControlPacketChild::UciResponse(evt) => {
-                Ok(UciMessage::Response(evt.try_into()?))
-            }
+            uwb_uci_packets::UciControlPacketChild::UciResponse(evt) => Ok(UciMessage::Response(
+                (evt, uci_fira_major_ver, is_multicast_list_rsp_v2_supported).try_into()?,
+            )),
             uwb_uci_packets::UciControlPacketChild::UciNotification(evt) => {
                 Ok(UciMessage::Notification(
                     (evt, uci_fira_major_ver, is_multicast_list_ntf_v2_supported).try_into()?,

@@ -606,7 +606,7 @@ mod tests {
     use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
     use crate::params::uci_packets::{
         AppConfigTlv, AppConfigTlvType, ControleeStatusV1, Controlees, MulticastUpdateStatusCode,
-        ReasonCode, SetAppConfigResponse, StatusCode,
+        ReasonCode, SessionUpdateControllerMulticastResponse, SetAppConfigResponse, StatusCode,
     };
     use crate::params::utils::{u32_to_bytes, u64_to_bytes, u8_to_bytes};
     use crate::params::{FiraAppConfigParamsBuilder, KeyRotation};
@@ -861,7 +861,10 @@ mod tests {
                     action,
                     Controlees::NoSessionKey(controlees_clone),
                     multicast_list_notf,
-                    Ok(()),
+                    Ok(SessionUpdateControllerMulticastResponse {
+                        status: StatusCode::UciStatusOk,
+                        status_list: vec![],
+                    }),
                 );
             })
             .await;
@@ -948,7 +951,10 @@ mod tests {
                     action,
                     uwb_uci_packets::Controlees::NoSessionKey(controlees_clone),
                     vec![], // Not sending notification.
-                    Ok(()),
+                    Ok(SessionUpdateControllerMulticastResponse {
+                        status: StatusCode::UciStatusOk,
+                        status_list: vec![],
+                    }),
                 );
             })
             .await;

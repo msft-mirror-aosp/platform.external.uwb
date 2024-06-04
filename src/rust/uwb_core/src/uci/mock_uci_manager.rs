@@ -31,8 +31,9 @@ use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList, Controlees, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats,
     RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionToken, SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction, UpdateTime,
+    SessionToken, SessionType, SessionUpdateControllerMulticastResponse,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
+    UpdateTime,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
@@ -263,7 +264,7 @@ impl MockUciManager {
         expected_action: UpdateMulticastListAction,
         expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
-        out: Result<()>,
+        out: Result<SessionUpdateControllerMulticastResponse>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
             ExpectedCall::SessionUpdateControllerMulticastList {
@@ -840,7 +841,8 @@ impl UciManager for MockUciManager {
         action: UpdateMulticastListAction,
         controlees: Controlees,
         _is_multicast_list_ntf_v2_supported: bool,
-    ) -> Result<()> {
+        _is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::SessionUpdateControllerMulticastList {
@@ -1274,7 +1276,7 @@ enum ExpectedCall {
         expected_action: UpdateMulticastListAction,
         expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
-        out: Result<()>,
+        out: Result<SessionUpdateControllerMulticastResponse>,
     },
     SessionUpdateDtTagRangingRounds {
         expected_session_id: u32,
