@@ -29,6 +29,7 @@ pub(crate) fn status_code_to_result(status: StatusCode) -> Result<()> {
         | StatusCode::UciStatusErrorCccSeBusy
         | StatusCode::UciStatusErrorCccLifecycle => Err(Error::ProtocolSpecific),
         StatusCode::UciStatusCommandRetry => Err(Error::CommandRetry),
+        StatusCode::UciStatusRegulationUwbOff => Err(Error::RegulationUwbOff),
         _ => Err(Error::Unknown),
     }
 }
