@@ -196,6 +196,7 @@ enum SessionType {
   FIRA_RANGING_WITH_DATA_PHASE = 0x05;
   CCC = 0xA0;
   RADAR_SESSION = 0xA1;
+  ALIRO = 0xA2;
   DEVICE_TEST_MODE = 0xD0;
 }
 
@@ -205,6 +206,12 @@ enum UpdateMulticastListAction {
   REMOVE_CONTROLEE = 1;
   ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY = 2;
   ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY = 3;
+}
+
+// Represent uwb_uci_packets::MacAddressIndicator.
+enum MacAddressIndicator {
+  SHORT_ADDRESS = 0x00;
+  EXTENDED_ADDRESS = 0x01;
 }
 
 // Represent uwb_core::params::fira_app_config_params::DeviceType.

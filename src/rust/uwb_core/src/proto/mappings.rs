@@ -28,8 +28,8 @@ use crate::params::fira_app_config_params::{
 };
 use crate::params::uci_packets::{
     Controlee, DeviceState, ExtendedAddressDlTdoaRangingMeasurement,
-    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement, PowerStats,
-    RangingMeasurementType, ReasonCode, SessionState, SessionType,
+    ExtendedAddressOwrAoaRangingMeasurement, ExtendedAddressTwoWayRangingMeasurement,
+    MacAddressIndicator, PowerStats, RangingMeasurementType, ReasonCode, SessionState, SessionType,
     ShortAddressDlTdoaRangingMeasurement, ShortAddressOwrAoaRangingMeasurement,
     ShortAddressTwoWayRangingMeasurement, StatusCode, UpdateMulticastListAction,
 };
@@ -39,11 +39,12 @@ use crate::proto::bindings::{
     Controlee as ProtoControlee, DeviceRole as ProtoDeviceRole, DeviceState as ProtoDeviceState,
     DeviceType as ProtoDeviceType, DlTDoARangingMeasurement as ProtoDlTDoARangingMeasurement,
     FiraAppConfigParams as ProtoFiraAppConfigParams, HoppingMode as ProtoHoppingMode,
-    KeyRotation as ProtoKeyRotation, MacAddressMode as ProtoMacAddressMode,
-    MacFcsType as ProtoMacFcsType, MultiNodeMode as ProtoMultiNodeMode,
-    OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement, PowerStats as ProtoPowerStats,
-    PreambleDuration as ProtoPreambleDuration, PrfMode as ProtoPrfMode,
-    PsduDataRate as ProtoPsduDataRate, RangeDataNtfConfig as ProtoRangeDataNtfConfig,
+    KeyRotation as ProtoKeyRotation, MacAddressIndicator as ProtoMacAddressIndicator,
+    MacAddressMode as ProtoMacAddressMode, MacFcsType as ProtoMacFcsType,
+    MultiNodeMode as ProtoMultiNodeMode, OwrAoaRangingMeasurement as ProtoOwrAoaRangingMeasurement,
+    PowerStats as ProtoPowerStats, PreambleDuration as ProtoPreambleDuration,
+    PrfMode as ProtoPrfMode, PsduDataRate as ProtoPsduDataRate,
+    RangeDataNtfConfig as ProtoRangeDataNtfConfig,
     RangingMeasurementType as ProtoRangingMeasurementType,
     RangingRoundControl as ProtoRangingRoundControl, RangingRoundUsage as ProtoRangingRoundUsage,
     RangingTimeStruct as ProtoRangingTimeStruct, ReasonCode as ProtoReasonCode,
@@ -539,6 +540,7 @@ enum_mapping! {
     FIRA_RANGING_WITH_DATA_PHASE => FiraRangingWithDataPhase,
     CCC => Ccc,
     RADAR_SESSION => RadarSession,
+    ALIRO => Aliro,
     DEVICE_TEST_MODE => DeviceTestMode,
 }
 
@@ -694,6 +696,12 @@ enum_mapping! {
     REMOVE_CONTROLEE => RemoveControlee,
     ADD_CONTROLEE_WITH_SHORT_SUB_SESSION_KEY => AddControleeWithShortSubSessionKey,
     ADD_CONTROLEE_WITH_LONG_SUB_SESSION_KEY => AddControleeWithLongSubSessionKey,
+}
+
+enum_mapping! {
+    ProtoMacAddressIndicator => MacAddressIndicator,
+    SHORT_ADDRESS => ShortAddress,
+    EXTENDED_ADDRESS => ExtendedAddress,
 }
 
 pub enum ProtoRangingMeasurements {

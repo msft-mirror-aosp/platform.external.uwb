@@ -30,6 +30,7 @@ use android_hardware_uwb::binder::{
 use async_trait::async_trait;
 use binder_tokio::{Tokio, TokioRuntime};
 use log::error;
+use pdl_runtime::Packet;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_core::error::{Error as UwbCoreError, Result as UwbCoreResult};
@@ -43,7 +44,7 @@ fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacket>>(
     builder: T,
 ) -> Vec<UciHalPacket> {
     let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
-    packets.into_iter().map(|packet| packet.into()).collect()
+    packets.into_iter().map(|packet| packet.encode_to_vec().unwrap()).collect()
 }
 
 /// Send device status notification with error state.
@@ -262,11 +263,20 @@ impl UciHal for UciHalAndroid {
     async fn send_packet(&mut self, packet: UciHalPacket) -> UwbCoreResult<()> {
         match &self.hal_uci_recipient {
             Some(i_uwb_chip) => {
-                i_uwb_chip
+                let bytes_written = i_uwb_chip
                     .sendUciMessage(&packet)
                     .await
                     .map_err(|e| UwbCoreError::from(Error::from(e)))?;
-                Ok(())
+                if bytes_written != packet.len() as i32 {
+                    log::error!(
+                        "sendUciMessage did not write the full packet: {} != {}",
+                        bytes_written,
+                        packet.len()
+                    );
+                    Err(UwbCoreError::PacketTxError)
+                } else {
+                    Ok(())
+                }
             }
             None => Err(UwbCoreError::BadParameters),
         }

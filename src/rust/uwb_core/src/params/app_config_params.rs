@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 
+use crate::params::aliro_app_config_params::AliroAppConfigParams;
 use crate::params::ccc_app_config_params::CccAppConfigParams;
 use crate::params::ccc_started_app_config_params::CccStartedAppConfigParams;
 use crate::params::fira_app_config_params::FiraAppConfigParams;
@@ -31,6 +32,7 @@ pub enum AppConfigParams {
     Fira(FiraAppConfigParams),
     Ccc(CccAppConfigParams),
     CccStarted(CccStartedAppConfigParams),
+    Aliro(AliroAppConfigParams),
 }
 
 impl AppConfigParams {
@@ -58,6 +60,7 @@ impl AppConfigParams {
         match self {
             Self::Fira(params) => params.generate_config_map(),
             Self::Ccc(params) => params.generate_config_map(),
+            Self::Aliro(params) => params.generate_config_map(),
             _ => HashMap::new(),
         }
     }
@@ -87,6 +90,14 @@ impl AppConfigParams {
                     None
                 }
             }
+            (Self::Aliro(_), Self::Aliro(_)) => {
+                let updated_config_map = Self::diff_config_map(config_map, prev_config_map);
+                if AliroAppConfigParams::is_config_updatable(&updated_config_map, session_state) {
+                    Some(updated_config_map)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -102,6 +113,7 @@ impl AppConfigParams {
                     || session_type == SessionType::FiraRangingWithDataPhase
             }
             Self::Ccc(_) | Self::CccStarted(_) => session_type == SessionType::Ccc,
+            Self::Aliro(_) => session_type == SessionType::Aliro,
         }
     }
 

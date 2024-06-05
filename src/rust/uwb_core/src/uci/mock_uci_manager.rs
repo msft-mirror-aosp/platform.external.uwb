@@ -28,11 +28,12 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, AndroidRadarConfigResponse,
-    AppConfigTlv, AppConfigTlvType, CapTlv, Controlees, CoreSetConfigResponse, CountryCode,
-    DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats, RadarConfigTlv,
-    RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction, UpdateTime,
+    AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList, Controlees, CoreSetConfigResponse,
+    CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats,
+    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
+    SessionToken, SessionType, SessionUpdateControllerMulticastResponse,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
+    UpdateTime,
 };
 use crate::uci::notification::{
     CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
@@ -263,7 +264,7 @@ impl MockUciManager {
         expected_action: UpdateMulticastListAction,
         expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
-        out: Result<()>,
+        out: Result<SessionUpdateControllerMulticastResponse>,
     ) {
         self.expected_calls.lock().unwrap().push_back(
             ExpectedCall::SessionUpdateControllerMulticastList {
@@ -452,24 +453,72 @@ impl MockUciManager {
         });
     }
 
-    /// Prepare Mock to expect session_set_hybrid_config.
+    /// Prepare Mock to expect session_set_hybrid_controller_config.
     ///
     /// MockUciManager expects call with parameters, returns out as response
-    pub fn expect_session_set_hybrid_config(
+    pub fn expect_session_set_hybrid_controller_config(
         &mut self,
         expected_session_id: SessionId,
+        expected_message_control: u8,
         expected_number_of_phases: u8,
         expected_update_time: UpdateTime,
-        expected_phase_list: Vec<PhaseList>,
+        expected_phase_list: PhaseList,
         out: Result<()>,
     ) {
-        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetHybridConfig {
-            expected_session_id,
-            expected_number_of_phases,
-            expected_update_time,
-            expected_phase_list,
-            out,
-        });
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionSetHybridControllerConfig {
+                expected_session_id,
+                expected_message_control,
+                expected_number_of_phases,
+                expected_update_time,
+                expected_phase_list,
+                out,
+            },
+        );
+    }
+
+    /// Prepare Mock to expect session_set_hybrid_controlee_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response
+    pub fn expect_session_set_hybrid_controlee_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_controlee_phase_list: Vec<ControleePhaseList>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionSetHybridControleeConfig {
+                expected_session_id,
+                expected_controlee_phase_list,
+                out,
+            },
+        );
+    }
+
+    /// Prepare Mock to expect session_data_transfer_phase_config
+    /// MockUciManager expects call with parameters, returns out as response
+    #[allow(clippy::too_many_arguments)]
+    pub fn expect_session_data_transfer_phase_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_dtpcm_repetition: u8,
+        expected_data_transfer_control: u8,
+        expected_dtpml_size: u8,
+        expected_mac_address: Vec<u8>,
+        expected_slot_bitmap: Vec<u8>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(
+            ExpectedCall::SessionDataTransferPhaseConfig {
+                expected_session_id,
+                expected_dtpcm_repetition,
+                expected_data_transfer_control,
+                expected_dtpml_size,
+                expected_mac_address,
+                expected_slot_bitmap,
+                out,
+            },
+        );
     }
 
     /// Call Mock to send notifications.
@@ -791,7 +840,9 @@ impl UciManager for MockUciManager {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-    ) -> Result<()> {
+        _is_multicast_list_ntf_v2_supported: bool,
+        _is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
             Some(ExpectedCall::SessionUpdateControllerMulticastList {
@@ -806,6 +857,43 @@ impl UciManager for MockUciManager {
             {
                 self.expect_call_consumed.notify_one();
                 self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionDataTransferPhaseConfig {
+                expected_session_id,
+                expected_dtpcm_repetition,
+                expected_data_transfer_control,
+                expected_dtpml_size,
+                expected_mac_address,
+                expected_slot_bitmap,
+                out,
+            }) if expected_session_id == session_id
+                && expected_dtpcm_repetition == dtpcm_repetition
+                && expected_data_transfer_control == data_transfer_control
+                && expected_dtpml_size == dtpml_size
+                && expected_mac_address == mac_address
+                && expected_slot_bitmap == slot_bitmap =>
+            {
+                self.expect_call_consumed.notify_one();
                 out
             }
             Some(call) => {
@@ -1062,26 +1150,54 @@ impl UciManager for MockUciManager {
         Ok(1) // No uci call here, no mock required.
     }
 
-    async fn session_set_hybrid_config(
+    async fn session_set_hybrid_controller_config(
         &self,
         session_id: SessionId,
+        message_control: u8,
         number_of_phases: u8,
         update_time: UpdateTime,
-        phase_list: Vec<PhaseList>,
+        phase_lists: PhaseList,
     ) -> Result<()> {
         let mut expected_calls = self.expected_calls.lock().unwrap();
         match expected_calls.pop_front() {
-            Some(ExpectedCall::SessionSetHybridConfig {
+            Some(ExpectedCall::SessionSetHybridControllerConfig {
                 expected_session_id,
+                expected_message_control,
                 expected_number_of_phases,
                 expected_update_time,
                 expected_phase_list,
                 out,
             }) if expected_session_id == session_id
+                && expected_message_control == message_control
                 && expected_number_of_phases == number_of_phases
                 && expected_update_time == update_time
-                && expected_phase_list.len() == phase_list.len()
-                && expected_phase_list == phase_list =>
+                && expected_phase_list == phase_lists =>
+            {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn session_set_hybrid_controlee_config(
+        &self,
+        session_id: SessionId,
+        controlee_phase_list: Vec<ControleePhaseList>,
+    ) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionSetHybridControleeConfig {
+                expected_session_id,
+                expected_controlee_phase_list,
+                out,
+            }) if expected_session_id == session_id
+                && expected_controlee_phase_list.len() == controlee_phase_list.len()
+                && expected_controlee_phase_list == controlee_phase_list =>
             {
                 self.expect_call_consumed.notify_one();
                 out
@@ -1160,7 +1276,7 @@ enum ExpectedCall {
         expected_action: UpdateMulticastListAction,
         expected_controlees: Controlees,
         notfs: Vec<UciNotification>,
-        out: Result<()>,
+        out: Result<SessionUpdateControllerMulticastResponse>,
     },
     SessionUpdateDtTagRangingRounds {
         expected_session_id: u32,
@@ -1217,11 +1333,26 @@ enum ExpectedCall {
         expected_app_payload_data: Vec<u8>,
         out: Result<()>,
     },
-    SessionSetHybridConfig {
+    SessionSetHybridControllerConfig {
         expected_session_id: SessionId,
+        expected_message_control: u8,
         expected_number_of_phases: u8,
         expected_update_time: UpdateTime,
-        expected_phase_list: Vec<PhaseList>,
+        expected_phase_list: PhaseList,
+        out: Result<()>,
+    },
+    SessionSetHybridControleeConfig {
+        expected_session_id: SessionId,
+        expected_controlee_phase_list: Vec<ControleePhaseList>,
+        out: Result<()>,
+    },
+    SessionDataTransferPhaseConfig {
+        expected_session_id: SessionId,
+        expected_dtpcm_repetition: u8,
+        expected_data_transfer_control: u8,
+        expected_dtpml_size: u8,
+        expected_mac_address: Vec<u8>,
+        expected_slot_bitmap: Vec<u8>,
         out: Result<()>,
     },
 }

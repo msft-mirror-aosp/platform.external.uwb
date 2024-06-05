@@ -17,8 +17,9 @@
 use std::convert::TryInto;
 
 use async_trait::async_trait;
+use pdl_runtime::Packet;
 use tokio::sync::mpsc;
-use uwb_uci_packets::{Packet, UciControlPacket, UciControlPacketHal};
+use uwb_uci_packets::{UciControlPacket, UciControlPacketHal};
 
 use crate::error::Result;
 use crate::params::uci_packets::SessionId;
@@ -57,7 +58,7 @@ pub trait UciHal: 'static + Send + Sync {
         let packet: UciControlPacket = cmd.try_into()?;
         let fragmented_packets: Vec<UciControlPacketHal> = packet.into();
         for packet in fragmented_packets.into_iter() {
-            self.send_packet(packet.to_vec()).await?;
+            self.send_packet(packet.encode_to_vec().unwrap()).await?;
         }
         Ok(())
     }

@@ -16,6 +16,7 @@
 
 pub(super) mod utils;
 
+pub mod aliro_app_config_params;
 pub mod app_config_params;
 pub mod ccc_app_config_params;
 pub mod ccc_started_app_config_params;
@@ -23,6 +24,7 @@ pub mod fira_app_config_params;
 pub mod uci_packets;
 
 // Re-export params from all of the sub-modules.
+pub use aliro_app_config_params::*;
 pub use app_config_params::*;
 pub use ccc_app_config_params::*;
 pub use ccc_started_app_config_params::*;

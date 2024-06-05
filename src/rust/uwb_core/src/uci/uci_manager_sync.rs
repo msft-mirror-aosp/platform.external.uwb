@@ -29,8 +29,8 @@ use crate::params::{
     AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats,
     RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse,
-    UpdateMulticastListAction, UpdateTime,
+    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
+    SetAppConfigResponse, UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
@@ -40,7 +40,7 @@ use crate::uci::notification::{
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
 use crate::uci::uci_manager::{UciManager, UciManagerImpl};
-use uwb_uci_packets::{Controlees, PhaseList};
+use uwb_uci_packets::{ControleePhaseList, Controlees, PhaseList};
 
 /// The NotificationManager processes UciNotification relayed from UciManagerSync in a sync fashion.
 /// The UciManagerSync assumes the NotificationManager takes the responsibility to properly handle
@@ -316,11 +316,16 @@ impl<U: UciManager> UciManagerSync<U> {
         session_id: SessionId,
         action: UpdateMulticastListAction,
         controlees: Controlees,
-    ) -> Result<()> {
-        self.runtime_handle.block_on(
-            self.uci_manager
-                .session_update_controller_multicast_list(session_id, action, controlees),
-        )
+        is_multicast_list_ntf_v2_supported: bool,
+        is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse> {
+        self.runtime_handle.block_on(self.uci_manager.session_update_controller_multicast_list(
+            session_id,
+            action,
+            controlees,
+            is_multicast_list_ntf_v2_supported,
+            is_multicast_list_rsp_v2_supported,
+        ))
     }
 
     /// Update ranging rounds for DT Tag
@@ -417,19 +422,52 @@ impl<U: UciManager> UciManagerSync<U> {
         self.runtime_handle.block_on(self.uci_manager.get_session_token_from_session_id(session_id))
     }
 
-    /// Send UCI command for setting hybrid configuration
-    pub fn session_set_hybrid_config(
+    /// Send UCI command for setting hybrid controller configuration
+    pub fn session_set_hybrid_controller_config(
         &self,
         session_id: SessionId,
+        message_control: u8,
         number_of_phases: u8,
         update_time: UpdateTime,
-        phase_list: Vec<PhaseList>,
+        phase_list: PhaseList,
     ) -> Result<()> {
-        self.runtime_handle.block_on(self.uci_manager.session_set_hybrid_config(
+        self.runtime_handle.block_on(self.uci_manager.session_set_hybrid_controller_config(
             session_id,
+            message_control,
             number_of_phases,
             update_time,
             phase_list,
+        ))
+    }
+
+    /// Send UCI command for setting hybrid controlee configuration
+    pub fn session_set_hybrid_controlee_config(
+        &self,
+        session_id: SessionId,
+        controlee_phase_list: Vec<ControleePhaseList>,
+    ) -> Result<()> {
+        self.runtime_handle.block_on(
+            self.uci_manager.session_set_hybrid_controlee_config(session_id, controlee_phase_list),
+        )
+    }
+
+    /// Send UCI command for session data transfer phase config
+    pub fn session_data_transfer_phase_config(
+        &self,
+        session_id: SessionId,
+        dtpcm_repetition: u8,
+        data_transfer_control: u8,
+        dtpml_size: u8,
+        mac_address: Vec<u8>,
+        slot_bitmap: Vec<u8>,
+    ) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.session_data_transfer_phase_config(
+            session_id,
+            dtpcm_repetition,
+            data_transfer_control,
+            dtpml_size,
+            mac_address,
+            slot_bitmap,
         ))
     }
 }

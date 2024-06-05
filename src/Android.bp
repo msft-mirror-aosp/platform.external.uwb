@@ -14,7 +14,7 @@ rust_defaults {
         "libbytes",
         "liblog_rust",
         "libnum_traits",
-        "libthiserror",
+        "libpdl_runtime",
         "libzeroize",
     ],
     host_supported: true,
@@ -69,7 +69,7 @@ rust_library {
 
 genrule {
     name: "UwbGeneratedPackets_rust",
-    defaults: ["pdl_rust_generator_defaults"],
+    defaults: ["pdl_rust_legacy_generator_defaults"],
     srcs: [
         "rust/uwb_uci_packets/uci_packets.pdl",
     ],
@@ -88,6 +88,7 @@ rust_defaults {
         "libbytes",
         "libnum_traits",
         "liblog_rust",
+        "libpdl_runtime",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
@@ -98,9 +99,9 @@ rust_defaults {
         "libnum_derive",
     ],
     min_sdk_version: "Tiramisu",
-    host_supported: true,
 }
 
+// Build uwb_core library with the production version of Aconfig flags lib.
 rust_library {
     name: "libuwb_core",
     defaults: ["libuwb_core_defaults"],
@@ -118,8 +119,11 @@ rust_library {
     crate_name: "uwb_core",
     features: ["mock-utils"],
     host_supported: true,
+    native_coverage: false,
 }
 
+// The test target uses the test version of Aconfig flags lib, as that has
+// support for setting the flag values in unit tests.
 rust_test {
     name: "libuwb_core_tests",
     defaults: ["libuwb_core_defaults"],
@@ -134,20 +138,6 @@ rust_test {
                 "mts-uwb"
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
-        },
-        host: {
-            test_suites: [
-                "general-tests",
-            ],
-            data_libs: [
-                "libandroid_runtime_lazy",
-                "libbase",
-                "libcutils",
-                "liblog",
-                "libutils",
-            ],
-            // See b/268061150
-            stem: "libuwb_core_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -182,7 +172,6 @@ rust_binary {
     lints: "android",
     clippy_lints: "android",
     min_sdk_version: "Tiramisu",
-    host_supported: true,
 }
 
 // Build the uwb_core library with "proto" feature enabled.
@@ -202,6 +191,7 @@ rust_library {
     ],
     features: ["proto"],
     host_supported: true,
+    native_coverage: false,
 }
 
 genrule {
@@ -209,7 +199,6 @@ genrule {
     tools: ["aprotoc", "protoc-gen-rust"],
     cmd: "$(location aprotoc)" +
          " --proto_path=`dirname $(in)`" +
-         " --dependency_out=$(depfile)" +
          " --plugin=protoc-gen-rust=$(location protoc-gen-rust)" +
          " --rust_out=$(genDir) $(in)",
     srcs: [
@@ -218,7 +207,6 @@ genrule {
     out: [
         "uwb_service.rs",
     ],
-    depfile: true,
 }
 
 genrule {
@@ -260,8 +248,9 @@ rust_defaults {
         "libbinder_rs",
         "libbinder_tokio_rs",
         "libbytes",
-        "libjni",
+        "libjni_legacy",
         "liblog_rust",
+        "libpdl_runtime",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",
@@ -280,7 +269,6 @@ rust_defaults {
         "com.android.uwb",
     ],
     min_sdk_version: "Tiramisu",
-    host_supported: true,
     srcs: [
         "rust/uci_hal_android/lib.rs",
     ],
@@ -303,6 +291,7 @@ rust_library {
     rustlibs: [
         "libuwb_core_with_mock",
     ],
+    native_coverage: false,
 }
 
 rust_test {
@@ -320,23 +309,6 @@ rust_test {
                 "mts-uwb"
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
-        },
-        host: {
-            test_suites: [
-                "general-tests",
-            ],
-            data_libs: [
-                "libandroid_runtime_lazy",
-                "libbase",
-                "libcutils",
-                "liblog",
-                "libutils",
-                "libbinder_ndk",
-                "libbinder",
-                "libc++",
-            ],
-            // See b/268061150
-            stem: "libuci_hal_android_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -362,23 +334,28 @@ genrule {
         "pdlc",
         "soong_zip",
     ],
+    srcs: [
+        "rust/uwb_core/**/*",
+        "rust/uwb_uci_packets/**/*",
+        "rust/Cargo.toml",
+    ],
     cmd:
         // Create a artifacts directory and copy the source code into it.
-        "mkdir $(genDir)/artifacts;" +
+        "mkdir $(genDir)/artifacts && " +
         "cp -r external/uwb/src/rust/uwb_core " +
         "      external/uwb/src/rust/uwb_uci_packets " +
         "      external/uwb/src/rust/Cargo.toml " +
-        "      $(genDir)/artifacts;" +
+        "      $(genDir)/artifacts && " +
 
         // Generate uci_packets.rs at $(genDir)/artifacts/uwb_uci_packets/.
         "$(location pdlc) --output-format rust " +
         "      external/uwb/src/rust/uwb_uci_packets/uci_packets.pdl " +
-        "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs;" +
+        "      > $(genDir)/artifacts/uwb_uci_packets/uci_packets.rs && " +
 
         // Pack the artifacts directory and clean up the directory.
         "$(location soong_zip) -o $(out) " +
         "                      -C $(genDir)/artifacts " +
-        "                      -D $(genDir)/artifacts;" +
+        "                      -D $(genDir)/artifacts && " +
         "rm -rf $(genDir)/artifacts",
     out: [
         "uwb_core_artifacts.zip",
