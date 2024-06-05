@@ -30,6 +30,7 @@ use android_hardware_uwb::binder::{
 use async_trait::async_trait;
 use binder_tokio::{Tokio, TokioRuntime};
 use log::error;
+use pdl_runtime::Packet;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex};
 use uwb_core::error::{Error as UwbCoreError, Result as UwbCoreResult};
@@ -43,7 +44,7 @@ fn input_uci_hal_packet<T: Into<uwb_uci_packets::UciControlPacket>>(
     builder: T,
 ) -> Vec<UciHalPacket> {
     let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
-    packets.into_iter().map(|packet| packet.into()).collect()
+    packets.into_iter().map(|packet| packet.encode_to_vec().unwrap()).collect()
 }
 
 /// Send device status notification with error state.

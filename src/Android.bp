@@ -69,7 +69,7 @@ rust_library {
 
 genrule {
     name: "UwbGeneratedPackets_rust",
-    defaults: ["pdl_rust_generator_defaults"],
+    defaults: ["pdl_rust_legacy_generator_defaults"],
     srcs: [
         "rust/uwb_uci_packets/uci_packets.pdl",
     ],
@@ -250,6 +250,7 @@ rust_defaults {
         "libbytes",
         "libjni_legacy",
         "liblog_rust",
+        "libpdl_runtime",
         "libthiserror",
         "libtokio",
         "libuwb_uci_packets",

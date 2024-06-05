@@ -108,10 +108,10 @@ fn filter_uci_response(rsp: UciResponse) -> UciResponse {
 // Log only the Data Packet header bytes, so that we don't log any PII (payload bytes).
 fn filter_uci_data(
     packet: &UciDataPacket,
-) -> std::result::Result<UciDataPacket, pdl_runtime::Error> {
+) -> std::result::Result<UciDataPacket, pdl_runtime::DecodeError> {
     // Initialize a (zeroed out) Vec to the same length as the data packet, and then copy over
     // only the Data Packet header bytes into it. This masks out all the payload bytes to 0.
-    let data_packet_bytes: Vec<u8> = packet.clone().to_vec();
+    let data_packet_bytes: Vec<u8> = packet.encode_to_vec().unwrap();
     let mut filtered_data_packet_bytes: Vec<u8> = vec![0; data_packet_bytes.len()];
     for (i, &b) in data_packet_bytes[..UCI_PACKET_HAL_HEADER_LEN].iter().enumerate() {
         filtered_data_packet_bytes[i] = b;

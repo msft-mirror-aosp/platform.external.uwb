@@ -58,7 +58,7 @@ pub trait UciHal: 'static + Send + Sync {
         let packet: UciControlPacket = cmd.try_into()?;
         let fragmented_packets: Vec<UciControlPacketHal> = packet.into();
         for packet in fragmented_packets.into_iter() {
-            self.send_packet(packet.to_vec()).await?;
+            self.send_packet(packet.encode_to_vec().unwrap()).await?;
         }
         Ok(())
     }

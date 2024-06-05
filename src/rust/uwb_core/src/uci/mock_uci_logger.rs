@@ -14,6 +14,7 @@
 
 use std::convert::TryFrom;
 
+use pdl_runtime::Packet;
 use tokio::sync::mpsc;
 use uwb_uci_packets::{UciControlPacket, UciDataPacket};
 
@@ -58,10 +59,10 @@ impl UciLogger for MockUciLogger {
     }
 
     fn log_uci_control_packet(&mut self, packet: UciControlPacket) {
-        let _ = self.log_sender.send(UciLogEvent::Packet(packet.into()));
+        let _ = self.log_sender.send(UciLogEvent::Packet(packet.encode_to_vec().unwrap()));
     }
 
     fn log_uci_data_packet(&mut self, packet: &UciDataPacket) {
-        let _ = self.log_sender.send(UciLogEvent::Packet(packet.clone().into()));
+        let _ = self.log_sender.send(UciLogEvent::Packet(packet.encode_to_vec().unwrap()));
     }
 }

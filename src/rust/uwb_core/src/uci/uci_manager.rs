@@ -1153,7 +1153,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 return;
             }
 
-            match self.hal.send_packet(uci_data_snd_retryer.data_packet.clone().to_vec()).await {
+            match self
+                .hal
+                .send_packet(uci_data_snd_retryer.data_packet.encode_to_vec().unwrap())
+                .await
+            {
                 Ok(_) => {
                     self.uci_data_snd_retryer = Some(uci_data_snd_retryer);
                 }
@@ -1266,7 +1270,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             retry_count: MAX_RETRY_COUNT,
         });
 
-        let result = self.hal.send_packet(hal_data_packet_fragment.to_vec()).await;
+        let result = self.hal.send_packet(hal_data_packet_fragment.encode_to_vec().unwrap()).await;
         if result.is_err() {
             error!(
                 "Result {:?} of sending data packet fragment SessionToken: {} to HAL",
@@ -1699,6 +1703,7 @@ mod tests {
     use super::*;
 
     use bytes::Bytes;
+    use pdl_runtime::Packet;
     use tokio::macros::support::Future;
     use uwb_uci_packets::{
         Controlee_V2_0_16_Byte_Version, Controlee_V2_0_32_Byte_Version, SessionGetCountCmdBuilder,
@@ -1725,7 +1730,7 @@ mod tests {
         builder: T,
     ) -> Vec<UciHalPacket> {
         let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
-        packets.into_iter().map(|packet| packet.into()).collect()
+        packets.into_iter().map(|packet| packet.encode_to_vec().unwrap()).collect()
     }
 
     // Construct a UCI packet, with the header fields and payload bytes.
@@ -4341,13 +4346,14 @@ mod tests {
         uci_manager.set_logger_mode(UciLoggerMode::Filtered).await.unwrap();
         uci_manager.session_get_count().await.unwrap();
         let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
-        let cmd_packet: Vec<u8> = SessionGetCountCmdBuilder {}.build().into();
+        let cmd_packet: Vec<u8> = SessionGetCountCmdBuilder {}.build().encode_to_vec().unwrap();
         assert_eq!(&packet, &cmd_packet);
         let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
         let rsp_packet: Vec<u8> =
             SessionGetCountRspBuilder { status: StatusCode::UciStatusOk, session_count: 2 }
                 .build()
-                .into();
+                .encode_to_vec()
+                .unwrap();
         assert_eq!(&packet, &rsp_packet);
 
         assert!(mock_hal.wait_expected_calls_done().await);

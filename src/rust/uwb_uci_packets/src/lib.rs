@@ -283,10 +283,10 @@ impl From<DataPacketFormat> for GroupIdOrDataPacketFormat {
 // The GroupIdOrDataPacketFormat enum has more values defined (for the GroupId bits) than the
 // DataPacketFormat enum. Hence this is implemented as TryFrom() instead of From().
 impl TryFrom<GroupIdOrDataPacketFormat> for DataPacketFormat {
-    type Error = Error;
+    type Error = DecodeError;
 
-    fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self> {
-        DataPacketFormat::try_from(u8::from(gid_or_dpf)).or(Err(Error::InvalidPacketError))
+    fn try_from(gid_or_dpf: GroupIdOrDataPacketFormat) -> Result<Self, DecodeError> {
+        DataPacketFormat::try_from(u8::from(gid_or_dpf)).or(Err(DecodeError::InvalidPacketError))
     }
 }
 
@@ -298,9 +298,9 @@ struct UciControlPacketHeader {
 }
 
 impl UciControlPacketHeader {
-    fn new(message_type: MessageType, group_id: GroupId, opcode: u8) -> Result<Self> {
+    fn new(message_type: MessageType, group_id: GroupId, opcode: u8) -> Result<Self, DecodeError> {
         if !is_uci_control_packet(message_type) {
-            return Err(Error::InvalidPacketError);
+            return Err(DecodeError::InvalidPacketError);
         }
 
         Ok(UciControlPacketHeader {
@@ -330,9 +330,9 @@ fn get_oid_from_uci_control_packet(packet: &[u8]) -> u8 {
 
 // This function parses the packet bytes to return the Control Packet Opcode (OID) field. The
 // caller should check that the packet bytes represent a UCI control packet. The code will not
-// panic because UciPacketHal::to_bytes() should always be larger then the place we access.
+// panic because UciPacketHal::encode_to_bytes() should always be larger then the place we access.
 fn get_opcode_from_uci_control_packet(packet: &UciPacketHal) -> u8 {
-    get_oid_from_uci_control_packet(&packet.clone().to_bytes())
+    get_oid_from_uci_control_packet(&packet.encode_to_bytes().unwrap())
 }
 
 fn is_uci_control_packet(message_type: MessageType) -> bool {
@@ -371,25 +371,25 @@ fn is_device_state_err_control_packet(packet: &UciPacketHal) -> bool {
     packet.get_message_type() == MessageType::Notification.into()
         && packet.get_group_id_or_data_packet_format() == GroupIdOrDataPacketFormat::Core.into()
         && get_opcode_from_uci_control_packet(packet) == CoreOpCode::CoreDeviceStatusNtf.into()
-        && packet.clone().to_vec()[UCI_PACKET_HAL_HEADER_LEN]
+        && packet.encode_to_vec().unwrap()[UCI_PACKET_HAL_HEADER_LEN]
             == DeviceState::DeviceStateError.into()
 }
 
 impl UciControlPacket {
     // For some usage, we need to get the raw payload.
     pub fn to_raw_payload(self) -> Vec<u8> {
-        self.to_bytes().slice(UCI_PACKET_HEADER_LEN..).to_vec()
+        self.encode_to_bytes().unwrap().slice(UCI_PACKET_HEADER_LEN..).to_vec()
     }
 }
 
 // Helper to convert from vector of |UciPacketHal| to |UciControlPacket|. An example
 // usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
 impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
-    type Error = Error;
+    type Error = DecodeError;
 
-    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self> {
+    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self, DecodeError> {
         if packets.is_empty() {
-            return Err(Error::InvalidPacketError);
+            return Err(DecodeError::InvalidPacketError);
         }
 
         // Store header info from the first packet.
@@ -413,17 +413,25 @@ impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
                             message_type: packet.get_message_type(),
                             group_id: packet.get_group_id_or_data_packet_format().into(),
                             opcode: get_opcode_from_uci_control_packet(&packet),
-                            payload: Some(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..)),
+                            payload: Some(
+                                packet
+                                    .encode_to_bytes()
+                                    .unwrap()
+                                    .slice(UCI_PACKET_HAL_HEADER_LEN..),
+                            ),
                         }
                         .build()
-                        .to_bytes(),
+                        .encode_to_bytes()
+                        .unwrap(),
                     );
                 }
                 error!("Received unexpected fragment: {:?}", packet);
-                return Err(Error::InvalidPacketError);
+                return Err(DecodeError::InvalidPacketError);
             }
             // get payload by stripping the header.
-            payload_buf.extend_from_slice(&packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
+            payload_buf.extend_from_slice(
+                &packet.encode_to_bytes().unwrap().slice(UCI_PACKET_HAL_HEADER_LEN..),
+            )
         }
 
         // Create assembled |UciControlPacket| and convert to bytes again since we need to
@@ -436,7 +444,8 @@ impl TryFrom<Vec<UciPacketHal>> for UciControlPacket {
                 payload: Some(payload_buf.into()),
             }
             .build()
-            .to_bytes(),
+            .encode_to_bytes()
+            .unwrap(),
         )
     }
 }
@@ -472,24 +481,24 @@ fn is_data_rcv_or_radar_format(data_packet_format: DataPacketFormat) -> bool {
 fn try_into_data_payload(
     packet: UciPacketHal,
     expected_data_packet_format: DataPacketFormat,
-) -> Result<Bytes> {
+) -> Result<Bytes, DecodeError> {
     let dpf: DataPacketFormat = packet.get_group_id_or_data_packet_format().try_into()?;
     if is_uci_data_packet(packet.get_message_type()) && dpf == expected_data_packet_format {
-        Ok(packet.to_bytes().slice(UCI_PACKET_HAL_HEADER_LEN..))
+        Ok(packet.encode_to_bytes().unwrap().slice(UCI_PACKET_HAL_HEADER_LEN..))
     } else {
         error!("Received unexpected data packet fragment: {:?}", packet);
-        Err(Error::InvalidPacketError)
+        Err(DecodeError::InvalidPacketError)
     }
 }
 
 // Helper to convert from vector of |UciPacketHal| to |UciDataPacket|. An example
 // usage is to convert a list UciPacketHAL fragments to one UciPacket, during de-fragmentation.
 impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
-    type Error = Error;
+    type Error = DecodeError;
 
-    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self> {
+    fn try_from(packets: Vec<UciPacketHal>) -> Result<Self, DecodeError> {
         if packets.is_empty() {
-            return Err(Error::InvalidPacketError);
+            return Err(DecodeError::InvalidPacketError);
         }
 
         let dpf: DataPacketFormat = packets[0].get_group_id_or_data_packet_format().try_into()?;
@@ -514,7 +523,8 @@ impl TryFrom<Vec<UciPacketHal>> for UciDataPacket {
                 payload: Some(payload_buf.into()),
             }
             .build()
-            .to_bytes(),
+            .encode_to_bytes()
+            .unwrap(),
         )
     }
 }
@@ -541,7 +551,7 @@ impl From<UciControlPacket> for Vec<UciControlPacketHal> {
 
         let mut fragments = Vec::new();
         // get payload by stripping the header.
-        let payload = packet.to_bytes().slice(UCI_PACKET_HEADER_LEN..);
+        let payload = packet.encode_to_bytes().unwrap().slice(UCI_PACKET_HEADER_LEN..);
         if payload.is_empty() {
             fragments.push(
                 UciControlPacketHalBuilder {
@@ -585,7 +595,7 @@ pub fn fragment_data_msg_send(packet: UciDataSnd, max_payload_len: usize) -> Vec
     let dpf = packet.get_data_packet_format().into();
 
     // get payload by stripping the header.
-    let payload = packet.to_bytes().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
+    let payload = packet.encode_to_bytes().unwrap().slice(UCI_DATA_SND_PACKET_HEADER_LEN..);
     if payload.is_empty() {
         fragments.push(
             UciDataPacketHalBuilder {
@@ -632,7 +642,7 @@ pub struct PacketDefrager {
 pub enum UciDefragPacket {
     Control(UciControlPacket),
     Data(UciDataPacket),
-    Raw(Result<()>, RawUciControlPacket),
+    Raw(Result<(), DecodeError>, RawUciControlPacket),
 }
 
 impl PacketDefrager {
@@ -654,7 +664,7 @@ impl PacketDefrager {
                 Err(_) => {
                     error!("Rx packet from HAL has unrecognized MT={}", mt_u8);
                     return Some(UciDefragPacket::Raw(
-                        Err(Error::InvalidPacketError),
+                        Err(DecodeError::InvalidPacketError),
                         RawUciControlPacket { mt: mt_u8, gid: 0, oid: 0, payload: Vec::new() },
                     ));
                 }
@@ -742,7 +752,7 @@ impl PacketDefrager {
                 mt_u8, pbf, gid, oid
             );
             return Some(UciDefragPacket::Raw(
-                Err(Error::InvalidPacketError),
+                Err(DecodeError::InvalidPacketError),
                 RawUciControlPacket { mt: mt_u8, gid, oid, payload: Vec::new() },
             ));
         }
@@ -769,7 +779,9 @@ pub struct ParsedFrameReport {
     segment_metrics: Vec<SegmentMetricsValue>,
 }
 
-pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDiagnosticNtfPacket> {
+pub fn parse_diagnostics_ntf(
+    evt: AndroidRangeDiagnosticsNtf,
+) -> Result<ParsedDiagnosticNtfPacket, DecodeError> {
     let session_token = evt.get_session_token();
     let sequence_number = evt.get_sequence_number();
     let mut parsed_frame_reports = Vec::new();
@@ -796,11 +808,11 @@ pub fn parse_diagnostics_ntf(evt: AndroidRangeDiagnosticsNtf) -> Result<ParsedDi
                     FrameReportTlvPacketChild::SegmentMetrics(sm) => {
                         segment_metrics_vec.append(&mut sm.get_segment_metrics().clone())
                     }
-                    _ => return Err(Error::InvalidPacketError),
+                    _ => return Err(DecodeError::InvalidPacketError),
                 },
                 Err(e) => {
                     error!("Failed to parse the packet {:?}", e);
-                    return Err(Error::InvalidPacketError);
+                    return Err(DecodeError::InvalidPacketError);
                 }
             }
         }
@@ -863,7 +875,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
     session_token: u32,
     action: UpdateMulticastListAction,
     controlees: Controlees,
-) -> Result<SessionUpdateControllerMulticastListCmd> {
+) -> Result<SessionUpdateControllerMulticastListCmd, DecodeError> {
     let mut controlees_buf = BytesMut::new();
     match controlees {
         Controlees::NoSessionKey(controlee_v1) => {
@@ -888,7 +900,7 @@ pub fn build_session_update_controller_multicast_list_cmd(
                 controlees_buf.extend_from_slice(&write_controlee_2_0_32byte(&controlee));
             }
         }
-        _ => return Err(Error::InvalidPacketError),
+        _ => return Err(DecodeError::InvalidPacketError),
     }
     Ok(SessionUpdateControllerMulticastListCmdBuilder {
         session_token,
@@ -906,7 +918,7 @@ pub fn build_data_transfer_phase_config_cmd(
     dtpml_size: u8,
     mac_address: Vec<u8>,
     slot_bitmap: Vec<u8>,
-) -> Result<SessionDataTransferPhaseConfigCmd> {
+) -> Result<SessionDataTransferPhaseConfigCmd, DecodeError> {
     let mut dtpml_buffer = BytesMut::new();
 
     //calculate mac address mode from data transfer control
@@ -916,7 +928,7 @@ pub fn build_data_transfer_phase_config_cmd(
     let mac_address_size = match mac_address_mode {
         SHORT_ADDRESS => 2,
         EXTENDED_ADDRESS => 8,
-        _ => return Err(Error::InvalidPacketError),
+        _ => return Err(DecodeError::InvalidPacketError),
     };
 
     // Calculate slot bitmap size from data transfer control
@@ -932,7 +944,7 @@ pub fn build_data_transfer_phase_config_cmd(
 
     // Validate sizes of mac_address and slot_bitmap
     if slot_bitmap_vec.len() != dtpml_size.into() || mac_address_vec.len() != dtpml_size.into() {
-        return Err(Error::InvalidPacketError);
+        return Err(DecodeError::InvalidPacketError);
     }
 
     // Combine segmented vectors into dtpml_buffer
@@ -973,7 +985,7 @@ pub fn build_session_set_hybrid_controller_config_cmd(
     number_of_phases: u8,
     update_time: [u8; 8],
     phase_list: PhaseList,
-) -> Result<SessionSetHybridControllerConfigCmd> {
+) -> Result<SessionSetHybridControllerConfigCmd, DecodeError> {
     let mut phase_list_buffer = BytesMut::new();
     match phase_list {
         PhaseList::ShortMacAddress(phaseListShortMacAddressVec) => {
@@ -1010,7 +1022,7 @@ pub fn build_session_set_hybrid_controller_config_cmd(
                 phase_list_buffer.extend_from_slice(&phaseListExtendedMacAddress.mac_address);
             }
         }
-        _ => return Err(Error::InvalidPacketError),
+        _ => return Err(DecodeError::InvalidPacketError),
     }
     Ok(SessionSetHybridControllerConfigCmdBuilder {
         session_token,
@@ -1072,11 +1084,11 @@ mod tests {
         let mut frame_reports = Vec::new();
         let tlvs = vec![
             FrameReportTlv { t: rssi.get_t(), v: rssi.get_rssi().to_vec() },
-            FrameReportTlv { t: aoa.get_t(), v: aoa.to_vec()[3..].to_vec() },
-            FrameReportTlv { t: cir.get_t(), v: cir.to_vec()[3..].to_vec() },
+            FrameReportTlv { t: aoa.get_t(), v: aoa.encode_to_vec().unwrap()[3..].to_vec() },
+            FrameReportTlv { t: cir.get_t(), v: cir.encode_to_vec().unwrap()[3..].to_vec() },
             FrameReportTlv {
                 t: segment_metrics.get_t(),
-                v: segment_metrics.to_vec()[3..].to_vec(),
+                v: segment_metrics.encode_to_vec().unwrap()[3..].to_vec(),
             },
         ];
         let frame_report =
@@ -1118,15 +1130,15 @@ mod tests {
         .unwrap()
         .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x07, 0x00, 0x0c, // 2(packet info), RFU, payload length(12)
                 0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
                 0x00, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
                 0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
-            ]
+            ])
         );
     }
 
@@ -1149,17 +1161,17 @@ mod tests {
         .unwrap()
         .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x07, 0x00, 0x1c, // 2(packet info), RFU, payload length(28)
                 0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
                 0x02, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
                 0x46, 0x35, 0x24, 0x13, // 4(subsession id (LE))
                 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
                 0xcd, 0xef, // 16(subsession key(LE))
-            ]
+            ])
         );
     }
 
@@ -1183,10 +1195,10 @@ mod tests {
         .unwrap()
         .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x07, 0x00, 0x2c, // 2(packet info), RFU, payload length(44)
                 0x47, 0x36, 0x25, 0x14, // 4(session id (LE))
                 0x03, 0x01, 0x12, 0x34, // action, # controlee, 2(short address (LE))
@@ -1194,7 +1206,7 @@ mod tests {
                 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
                 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
                 0x90, 0xab, 0xcd, 0xef, // 32(subsession key(LE))
-            ]
+            ])
         );
     }
 
@@ -1414,15 +1426,15 @@ mod tests {
                 .unwrap()
                 .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x0e, 0x00, 0x0b, // 2(packet info), RFU, payload length(11)
                 0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
                 0x00, 0x02, 0x01, // dtpcm_repetition, data_transfer_control, dtpml_size
                 0x00, 0x01, 0x02, 0x03, // payload
-            ]
+            ])
         );
     }
 
@@ -1445,10 +1457,10 @@ mod tests {
         .unwrap()
         .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x0c, 0x00, 0x19, // 2(packet info), RFU, payload length(25)
                 0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
                 0x00, 0x00, // message_control, number_of_phases
@@ -1458,7 +1470,7 @@ mod tests {
                 0x21, 0x11, // end slot index (LE)
                 0x00, // phase_participation
                 0x01, 0x02, // mac address
-            ]
+            ])
         );
     }
 
@@ -1481,10 +1493,10 @@ mod tests {
         .unwrap()
         .into();
         let packet_fragments: Vec<UciControlPacketHal> = packet.into();
-        let uci_packet: Vec<u8> = packet_fragments[0].clone().into();
+        let uci_packet = packet_fragments[0].encode_to_vec();
         assert_eq!(
             uci_packet,
-            vec![
+            Ok(vec![
                 0x21, 0x0c, 0x00, 0x1f, // 2(packet info), RFU, payload length(31)
                 0x78, 0x56, 0x34, 0x12, // 4(session id (LE))
                 0x00, 0x00, // message_control, number_of_phases
@@ -1494,7 +1506,7 @@ mod tests {
                 0x21, 0x11, // end slot index (LE)
                 0x00, // phase_participation
                 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08 // mac address
-            ]
+            ])
         );
     }
 }
