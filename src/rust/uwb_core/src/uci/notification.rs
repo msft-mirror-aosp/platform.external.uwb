@@ -498,7 +498,7 @@ impl TryFrom<uwb_uci_packets::SessionControlNotification> for SessionNotificatio
 impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::SessionInfoNtf) -> std::result::Result<Self, Self::Error> {
-        let raw_ranging_data = evt.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = evt.encode_to_bytes().unwrap()[UCI_PACKET_HEADER_LEN..].to_vec();
         use uwb_uci_packets::SessionInfoNtfChild;
         let ranging_measurements = match evt.specialize() {
             SessionInfoNtfChild::ShortMacTwoWaySessionInfoNtf(evt) => {
@@ -772,8 +772,9 @@ mod tests {
                 vendor_data: vec![],
             }
             .build();
-        let raw_ranging_data =
-            extended_two_way_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = extended_two_way_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(extended_two_way_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -822,8 +823,9 @@ mod tests {
             vendor_data: vec![0x02, 0x01],
         }
         .build();
-        let raw_ranging_data =
-            short_two_way_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = short_two_way_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(short_two_way_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -868,8 +870,9 @@ mod tests {
                 vendor_data: vec![],
             }
             .build();
-        let raw_ranging_data =
-            extended_owr_aoa_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = extended_owr_aoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(extended_owr_aoa_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -913,8 +916,9 @@ mod tests {
             vendor_data: vec![],
         }
         .build();
-        let raw_ranging_data =
-            short_owr_aoa_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = short_owr_aoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(short_owr_aoa_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -1226,8 +1230,9 @@ mod tests {
                 session_token: 0x11,
             }
             .build();
-        let raw_ranging_data =
-            short_mac_dl_tdoa_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = short_mac_dl_tdoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let short_measurement =
             ShortAddressDlTdoaRangingMeasurement::parse(&dl_tdoa_measurements, 1).unwrap();
         let range_notification_packet =
@@ -1279,7 +1284,7 @@ mod tests {
                 session_token: 0x11,
             }
             .build();
-        let raw_ranging_data = extended_mac_dl_tdoa_session_info_ntf.clone().to_bytes()
+        let raw_ranging_data = extended_mac_dl_tdoa_session_info_ntf.encode_to_bytes().unwrap()
             [UCI_PACKET_HEADER_LEN..]
             .to_vec();
         let short_measurement =
