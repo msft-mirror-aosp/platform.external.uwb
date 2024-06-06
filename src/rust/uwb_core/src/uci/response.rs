@@ -14,11 +14,16 @@
 
 use std::convert::{TryFrom, TryInto};
 
+use log::error;
+
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AndroidRadarConfigResponse, AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv,
     GetDeviceInfoResponse, PowerStats, RadarConfigTlv, RawUciMessage, SessionHandle, SessionState,
-    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UciControlPacket,
+    SessionUpdateControllerMulticastListRspV1Payload,
+    SessionUpdateControllerMulticastListRspV2Payload, SessionUpdateControllerMulticastResponse,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UCIMajorVersion,
+    UciControlPacket,
 };
 use crate::uci::error::status_code_to_result;
 
@@ -40,7 +45,7 @@ pub(super) enum UciResponse {
     SessionGetAppConfig(Result<Vec<AppConfigTlv>>),
     SessionGetCount(Result<u8>),
     SessionGetState(Result<SessionState>),
-    SessionUpdateControllerMulticastList(Result<()>),
+    SessionUpdateControllerMulticastList(Result<SessionUpdateControllerMulticastResponse>),
     SessionUpdateDtTagRangingRounds(Result<SessionUpdateDtTagRangingRoundsResponse>),
     SessionQueryMaxDataSize(Result<u16>),
     SessionStart(Result<()>),
@@ -103,13 +108,20 @@ impl UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::UciResponse> for UciResponse {
+impl TryFrom<(uwb_uci_packets::UciResponse, UCIMajorVersion, bool)> for UciResponse {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciResponse) -> std::result::Result<Self, Self::Error> {
+    fn try_from(
+        pair: (uwb_uci_packets::UciResponse, UCIMajorVersion, bool),
+    ) -> std::result::Result<Self, Self::Error> {
+        let evt = pair.0;
+        let uci_fira_major_ver = pair.1;
+        let is_multicast_list_rsp_v2_supported = pair.2;
         use uwb_uci_packets::UciResponseChild;
         match evt.specialize() {
             UciResponseChild::CoreResponse(evt) => evt.try_into(),
-            UciResponseChild::SessionConfigResponse(evt) => evt.try_into(),
+            UciResponseChild::SessionConfigResponse(evt) => {
+                (evt, uci_fira_major_ver, is_multicast_list_rsp_v2_supported).try_into()
+            }
             UciResponseChild::SessionControlResponse(evt) => evt.try_into(),
             UciResponseChild::AndroidResponse(evt) => evt.try_into(),
             UciResponseChild::UciVendor_9_Response(evt) => raw_response(evt.into()),
@@ -161,12 +173,15 @@ impl TryFrom<uwb_uci_packets::CoreResponse> for UciResponse {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
+impl TryFrom<(uwb_uci_packets::SessionConfigResponse, UCIMajorVersion, bool)> for UciResponse {
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionConfigResponse,
+        pair: (uwb_uci_packets::SessionConfigResponse, UCIMajorVersion, bool),
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigResponseChild;
+        let evt = pair.0;
+        let uci_fira_major_ver = pair.1;
+        let is_multicast_list_rsp_v2_supported = pair.2;
         match evt.specialize() {
             SessionConfigResponseChild::SessionInitRsp(evt) => {
                 Ok(UciResponse::SessionInit(status_code_to_result(evt.get_status()).map(|_| None)))
@@ -187,9 +202,54 @@ impl TryFrom<uwb_uci_packets::SessionConfigResponse> for UciResponse {
                     status_code_to_result(evt.get_status()).map(|_| evt.get_session_state()),
                 ))
             }
-            SessionConfigResponseChild::SessionUpdateControllerMulticastListRsp(evt) => {
-                Ok(UciResponse::SessionUpdateControllerMulticastList(status_code_to_result(
-                    evt.get_status(),
+            SessionConfigResponseChild::SessionUpdateControllerMulticastListRsp(evt)
+                if uci_fira_major_ver == UCIMajorVersion::V1
+                    || !is_multicast_list_rsp_v2_supported =>
+            {
+                error!(
+                    "Tryfrom: SessionConfigResponse:: SessionUpdateControllerMulticastListRspV1 "
+                );
+                let payload = evt.get_payload();
+                let multicast_update_list_rsp_payload_v1 =
+                    SessionUpdateControllerMulticastListRspV1Payload::parse(payload).map_err(
+                        |e| {
+                            error!(
+                                "Failed to parse Multicast list ntf v1 {:?}, payload: {:?}",
+                                e, &payload
+                            );
+                            Error::BadParameters
+                        },
+                    )?;
+
+                Ok(UciResponse::SessionUpdateControllerMulticastList(Ok(
+                    SessionUpdateControllerMulticastResponse {
+                        status: multicast_update_list_rsp_payload_v1.status,
+                        status_list: vec![],
+                    },
+                )))
+            }
+            SessionConfigResponseChild::SessionUpdateControllerMulticastListRsp(evt)
+                if uci_fira_major_ver == UCIMajorVersion::V2 =>
+            {
+                error!(
+                    "Tryfrom: SessionConfigResponse:: SessionUpdateControllerMulticastListRspV2 "
+                );
+                let payload = evt.get_payload();
+                let multicast_update_list_rsp_payload_v2 =
+                    SessionUpdateControllerMulticastListRspV2Payload::parse(payload).map_err(
+                        |e| {
+                            error!(
+                                "Failed to parse Multicast list ntf v1 {:?}, payload: {:?}",
+                                e, &payload
+                            );
+                            Error::BadParameters
+                        },
+                    )?;
+                Ok(UciResponse::SessionUpdateControllerMulticastList(Ok(
+                    SessionUpdateControllerMulticastResponse {
+                        status: multicast_update_list_rsp_payload_v2.status,
+                        status_list: multicast_update_list_rsp_payload_v2.controlee_status,
+                    },
                 )))
             }
             SessionConfigResponseChild::SessionUpdateDtTagRangingRoundsRsp(evt) => {
@@ -311,7 +371,13 @@ mod tests {
             .build(),
         )
         .unwrap();
-        let mut uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let mut uci_response = UciResponse::try_from((
+            uci_vendor_rsp_packet.clone(),
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_response,
             UciResponse::RawUciCmd(Ok(RawUciMessage {
@@ -329,7 +395,12 @@ mod tests {
             .build(),
         )
         .unwrap();
-        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        uci_response = UciResponse::try_from((
+            uci_vendor_rsp_packet.clone(),
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_response,
             UciResponse::RawUciCmd(Ok(RawUciMessage {
@@ -347,7 +418,12 @@ mod tests {
             .build(),
         )
         .unwrap();
-        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        uci_response = UciResponse::try_from((
+            uci_vendor_rsp_packet.clone(),
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_response,
             UciResponse::RawUciCmd(Ok(RawUciMessage {
@@ -365,7 +441,12 @@ mod tests {
             .build(),
         )
         .unwrap();
-        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        uci_response = UciResponse::try_from((
+            uci_vendor_rsp_packet.clone(),
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_response,
             UciResponse::RawUciCmd(Ok(RawUciMessage {
@@ -383,7 +464,12 @@ mod tests {
             .build(),
         )
         .unwrap();
-        uci_response = UciResponse::try_from(uci_vendor_rsp_packet.clone()).unwrap();
+        uci_response = UciResponse::try_from((
+            uci_vendor_rsp_packet.clone(),
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_response,
             UciResponse::RawUciCmd(Ok(RawUciMessage {
