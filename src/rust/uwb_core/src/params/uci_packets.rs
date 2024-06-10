@@ -31,7 +31,9 @@ pub use uwb_uci_packets::{
     MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus, RadarConfigTlv,
     RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode, ResetConfig,
     SessionState, SessionType, SessionUpdateControllerMulticastListNtfV1Payload,
-    SessionUpdateControllerMulticastListNtfV2Payload, ShortAddressDlTdoaRangingMeasurement,
+    SessionUpdateControllerMulticastListNtfV2Payload,
+    SessionUpdateControllerMulticastListRspV1Payload,
+    SessionUpdateControllerMulticastListRspV2Payload, ShortAddressDlTdoaRangingMeasurement,
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
     UpdateMulticastListAction,
 };
@@ -186,6 +188,15 @@ pub struct AndroidRadarConfigResponse {
     pub status: StatusCode,
     /// The status of each config TLV.
     pub config_status: Vec<RadarConfigStatus>,
+}
+
+/// The response from UciManager::(session_update_controller_multicast_list() method.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionUpdateControllerMulticastResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// Controlee Status
+    pub status_list: Vec<ControleeStatusV2>,
 }
 
 /// The response from UciManager::session_update_dt_tag_ranging_rounds() method.
