@@ -27,8 +27,8 @@ use crate::params::uci_packets::{
     CoreSetConfigResponse, CountryCode, CreditAvailability, DeviceConfigId, DeviceConfigTlv,
     DeviceState, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RadarConfigTlv,
     RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
-    SessionType, SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UciDataPacket,
-    UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
+    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
+    SetAppConfigResponse, UciDataPacket, UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
 };
 use crate::params::utils::{bytes_to_u16, bytes_to_u64};
 use crate::params::UCIMajorVersion;
@@ -122,7 +122,8 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         action: UpdateMulticastListAction,
         controlees: Controlees,
         is_multicast_list_ntf_v2_supported: bool,
-    ) -> Result<()>;
+        is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse>;
 
     // Update ranging rounds for DT Tag
     async fn session_update_dt_tag_ranging_rounds(
@@ -472,7 +473,8 @@ impl UciManager for UciManagerImpl {
         action: UpdateMulticastListAction,
         controlees: Controlees,
         is_multicast_list_ntf_v2_supported: bool,
-    ) -> Result<()> {
+        is_multicast_list_rsp_v2_supported: bool,
+    ) -> Result<SessionUpdateControllerMulticastResponse> {
         let controlees_len = match controlees {
             Controlees::NoSessionKey(ref controlee_vec) => controlee_vec.len(),
             Controlees::ShortSessionKey(ref controlee_vec) => controlee_vec.len(),
@@ -487,6 +489,7 @@ impl UciManager for UciManagerImpl {
             action,
             controlees,
             is_multicast_list_ntf_v2_supported,
+            is_multicast_list_rsp_v2_supported,
         };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionUpdateControllerMulticastList(resp)) => resp,
@@ -793,6 +796,9 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
 
     // The flag that indicate whether multicast list ntf v2 is supported.
     is_multicast_list_ntf_v2_supported: bool,
+
+    // The flag that indicate whether multicast list rsp v2 is supported.
+    is_multicast_list_rsp_v2_supported: bool,
 }
 
 impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
@@ -831,6 +837,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             get_device_info_rsp: None,
             max_data_packet_payload_size: MAX_DATA_PACKET_PAYLOAD_SIZE,
             is_multicast_list_ntf_v2_supported: false,
+            is_multicast_list_rsp_v2_supported: false,
         }
     }
 
@@ -1090,9 +1097,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     action: _,
                     controlees: _,
                     is_multicast_list_ntf_v2_supported,
+                    is_multicast_list_rsp_v2_supported,
                 } = cmd.clone()
                 {
                     self.is_multicast_list_ntf_v2_supported = is_multicast_list_ntf_v2_supported;
+                    self.is_multicast_list_rsp_v2_supported = is_multicast_list_rsp_v2_supported;
                 }
 
                 self.uci_cmd_retryer =
@@ -1144,7 +1153,11 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 return;
             }
 
-            match self.hal.send_packet(uci_data_snd_retryer.data_packet.clone().to_vec()).await {
+            match self
+                .hal
+                .send_packet(uci_data_snd_retryer.data_packet.encode_to_vec().unwrap())
+                .await
+            {
                 Ok(_) => {
                     self.uci_data_snd_retryer = Some(uci_data_snd_retryer);
                 }
@@ -1257,7 +1270,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             retry_count: MAX_RETRY_COUNT,
         });
 
-        let result = self.hal.send_packet(hal_data_packet_fragment.to_vec()).await;
+        let result = self.hal.send_packet(hal_data_packet_fragment.encode_to_vec().unwrap()).await;
         if result.is_err() {
             error!(
                 "Result {:?} of sending data packet fragment SessionToken: {} to HAL",
@@ -1299,6 +1312,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                     UCIMajorVersion::from_u8(uci_fira_major_version)
                         .map_or(UCIMajorVersion::V1, |v| v),
                     self.is_multicast_list_ntf_v2_supported,
+                    self.is_multicast_list_rsp_v2_supported,
                 )
                     .try_into()
                 {
@@ -1689,6 +1703,7 @@ mod tests {
     use super::*;
 
     use bytes::Bytes;
+    use pdl_runtime::Packet;
     use tokio::macros::support::Future;
     use uwb_uci_packets::{
         Controlee_V2_0_16_Byte_Version, Controlee_V2_0_32_Byte_Version, SessionGetCountCmdBuilder,
@@ -1706,12 +1721,16 @@ mod tests {
     use crate::uci::notification::RadarSweepData;
     use crate::uci::uci_logger::NopUciLogger;
     use crate::utils::init_test_logging;
+    use bytes::{BufMut, BytesMut};
+    use uwb_uci_packets::ControleeStatusV2;
+    use uwb_uci_packets::SessionUpdateControllerMulticastListRspV1Payload;
+    use uwb_uci_packets::SessionUpdateControllerMulticastListRspV2Payload;
 
     fn into_uci_hal_packets<T: Into<uwb_uci_packets::UciControlPacket>>(
         builder: T,
     ) -> Vec<UciHalPacket> {
         let packets: Vec<uwb_uci_packets::UciControlPacketHal> = builder.into().into();
-        packets.into_iter().map(|packet| packet.into()).collect()
+        packets.into_iter().map(|packet| packet.encode_to_vec().unwrap()).collect()
     }
 
     // Construct a UCI packet, with the header fields and payload bytes.
@@ -2610,6 +2629,31 @@ mod tests {
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 
+    fn write_multicast_rsp_v1_payload(
+        payload: &SessionUpdateControllerMulticastListRspV1Payload,
+        buffer: &mut BytesMut,
+    ) {
+        buffer.put_u8(payload.status.into());
+    }
+
+    fn write_v2_controlee_status(status: &ControleeStatusV2, buffer: &mut BytesMut) {
+        for elem in &status.mac_address {
+            buffer.put_u8(*elem);
+        }
+        buffer.put_u8(u8::from(status.status));
+    }
+
+    fn write_multicast_rsp_v2_payload(
+        payload: &SessionUpdateControllerMulticastListRspV2Payload,
+        buffer: &mut BytesMut,
+    ) {
+        buffer.put_u8(payload.status.into());
+        buffer.put_u8(payload.controlee_status.len() as u8);
+        for elem in &payload.controlee_status {
+            write_v2_controlee_status(elem, buffer);
+        }
+    }
+
     #[tokio::test]
     async fn test_session_update_controller_multicast_list_v1_ok() {
         let session_id = 0x123;
@@ -2626,10 +2670,16 @@ mod tests {
                     action,
                     controlees: Controlees::NoSessionKey(vec![controlee_clone]),
                     is_multicast_list_ntf_v2_supported: false,
+                    is_multicast_list_rsp_v2_supported: false,
                 };
+                let pload = SessionUpdateControllerMulticastListRspV1Payload {
+                    status: StatusCode::UciStatusOk,
+                };
+                let mut buf = BytesMut::new();
+                write_multicast_rsp_v1_payload(&pload, &mut buf);
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
-                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                        payload: Some(buf.freeze()),
                     },
                 );
 
@@ -2647,6 +2697,7 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::NoSessionKey(vec![controlee]),
+                false,
                 false,
             )
             .await;
@@ -2677,13 +2728,19 @@ mod tests {
                     action,
                     controlees: Controlees::ShortSessionKey(vec![controlee_clone]),
                     is_multicast_list_ntf_v2_supported: true,
+                    is_multicast_list_rsp_v2_supported: true,
                 };
+                let pload = SessionUpdateControllerMulticastListRspV2Payload {
+                    status: StatusCode::UciStatusOk,
+                    controlee_status: vec![],
+                };
+                let mut buf = BytesMut::new();
+                write_multicast_rsp_v2_payload(&pload, &mut buf);
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
-                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                        payload: Some(buf.freeze()),
                     },
                 );
-
                 hal.expected_send_command(cmd, resp, Ok(()));
             },
             UciLoggerMode::Disabled,
@@ -2697,6 +2754,7 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::ShortSessionKey(vec![controlee]),
+                true,
                 true,
             )
             .await;
@@ -2728,10 +2786,17 @@ mod tests {
                     action,
                     controlees: Controlees::LongSessionKey(vec![controlee_clone]),
                     is_multicast_list_ntf_v2_supported: true,
+                    is_multicast_list_rsp_v2_supported: true,
                 };
+                let pload = SessionUpdateControllerMulticastListRspV2Payload {
+                    status: StatusCode::UciStatusOk,
+                    controlee_status: vec![],
+                };
+                let mut buf = BytesMut::new();
+                write_multicast_rsp_v2_payload(&pload, &mut buf);
                 let resp = into_uci_hal_packets(
                     uwb_uci_packets::SessionUpdateControllerMulticastListRspBuilder {
-                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                        payload: Some(buf.freeze()),
                     },
                 );
 
@@ -2749,6 +2814,7 @@ mod tests {
                 session_id,
                 action,
                 uwb_uci_packets::Controlees::LongSessionKey(vec![controlee]),
+                true,
                 true,
             )
             .await;
@@ -4280,13 +4346,14 @@ mod tests {
         uci_manager.set_logger_mode(UciLoggerMode::Filtered).await.unwrap();
         uci_manager.session_get_count().await.unwrap();
         let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
-        let cmd_packet: Vec<u8> = SessionGetCountCmdBuilder {}.build().into();
+        let cmd_packet: Vec<u8> = SessionGetCountCmdBuilder {}.build().encode_to_vec().unwrap();
         assert_eq!(&packet, &cmd_packet);
         let packet: Vec<u8> = log_receiver.recv().await.unwrap().try_into().unwrap();
         let rsp_packet: Vec<u8> =
             SessionGetCountRspBuilder { status: StatusCode::UciStatusOk, session_count: 2 }
                 .build()
-                .into();
+                .encode_to_vec()
+                .unwrap();
         assert_eq!(&packet, &rsp_packet);
 
         assert!(mock_hal.wait_expected_calls_done().await);
