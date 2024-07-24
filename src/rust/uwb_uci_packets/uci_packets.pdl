@@ -66,7 +66,8 @@ enum SessionConfigOpCode : 6 {
     SESSION_UPDATE_ACTIVE_ROUNDS_DT_TAG = 0x09,
     SESSION_SET_INITIATOR_DT_ANCHOR_RR_RDM_LIST = 0x0a,
     SESSION_QUERY_DATA_SIZE_IN_RANGING = 0x0b,
-    SESSION_SET_HUS_CONFIG = 0x0c,
+    SESSION_SET_HUS_CONTROLLER_CONFIG = 0x0c,
+    SESSION_SET_HUS_CONTROLEE_CONFIG = 0x0d,
     SESSION_DATA_TRANSFER_PHASE_CONFIGURATION = 0x0e,
 }
 
@@ -298,6 +299,7 @@ enum AppConfigTlvType : 8 {
         NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
         ENABLE_DIAGNOSTICS = 0xE8,
         DIAGRAMS_FRAME_REPORTS_FIELDS = 0xE9,
+        ANTENNA_MODE = 0xEA,
     },
 }
 
@@ -305,6 +307,7 @@ enum FrameReportTlvType : 8 {
     RSSI = 0x0,
     AOA = 0x1,
     CIR = 0x2,
+    SEGMENT_METRICS = 0x6,
 }
 
 enum CapTlvType : 8 {
@@ -972,22 +975,6 @@ packet SessionUpdateControllerMulticastListCmd : SessionConfigCommand (opcode = 
     _payload_,
 }
 
-struct PhaseList {
-    session_token: 32,
-    start_slot_index: 16,
-    end_slot_index: 16,
-}
-
-packet SessionSetHybridConfigCmd : SessionConfigCommand (opcode = 0x0c) { //SESSION_SET_HUS_CONFIG
-    session_token: 32,
-    number_of_phases: 8,
-    update_time: 8[8],
-    phase_list: PhaseList[],
-}
-
-packet SessionSetHybridConfigRsp : SessionConfigResponse (opcode = 0x0c) { //SESSION_SET_HUS_CONFIG
-    status: StatusCode,
-}
 
 struct SessionUpdateControllerMulticastListCmdPayload {
     _count_(controlees): 8,
@@ -1005,28 +992,52 @@ struct SessionUpdateControllerMulticastListCmd_2_0_32_Byte_Payload {
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionConfigResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
-    status: StatusCode,
+    _payload_,
 }
 
 test SessionUpdateControllerMulticastListRsp {
     "\x41\x07\x00\x01\x00\x00\x00\x00",
 }
 
-struct ControleeStatus {
+struct SessionUpdateControllerMulticastListRspV1Payload {
+    status: StatusCode,
+}
+
+struct SessionUpdateControllerMulticastListRspV2Payload {
+    status: StatusCode,
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV2[],
+}
+
+struct ControleeStatusV1 {
     mac_address: 8[2],
     subsession_id: 32,
     status: MulticastUpdateStatusCode,
 }
 
+struct ControleeStatusV2 {
+    mac_address: 8[2],
+    status: MulticastUpdateStatusCode,
+}
+
 packet SessionUpdateControllerMulticastListNtf : SessionConfigNotification (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
     session_token: 32, // Session ID or Session Handle (based on UWBS version)
-    remaining_multicast_list_size: 8,
-    _count_(controlee_status): 8,
-    controlee_status: ControleeStatus[],
+    _payload_,
 }
 
 test SessionUpdateControllerMulticastListNtf {
     "\x61\x07\x00\x06\x00\x00\x00\x00\x01\x02\x03\x04\x00",
+}
+
+struct SessionUpdateControllerMulticastListNtfV1Payload {
+    remaining_multicast_list_size: 8,
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV1[],
+}
+
+struct SessionUpdateControllerMulticastListNtfV2Payload {
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV2[],
 }
 
 packet DataCreditNtf : SessionControlNotification (opcode = 0x04) { // SESSION_DATA_CREDIT_NTF
@@ -1086,6 +1097,65 @@ packet SessionDataTransferPhaseConfigNtf : SessionConfigNotification (opcode = 0
 
 test SessionDataTransferPhaseConfigNtf {
     "\x61\x0E\x00\x05\x00\x00\x00\x00\x00"
+}
+
+struct PhaseListShortMacAddress {
+    session_token: 32,
+    start_slot_index: 16,
+    end_slot_index: 16,
+    phase_participation: 8,
+    mac_address: 8[2],
+}
+
+struct PhaseListExtendedMacAddress {
+    session_token: 32,
+    start_slot_index: 16,
+    end_slot_index: 16,
+    phase_participation: 8,
+    mac_address: 8[8],
+}
+
+packet SessionSetHybridControllerConfigCmd : SessionConfigCommand (opcode = 0x0C) { //SESSION_SET_HUS_CONTROLLER_CONFIG
+    session_token: 32,
+    message_control: 8,
+    number_of_phases: 8,
+    update_time: 8[8],
+    _payload_,
+}
+
+test SessionSetHybridControllerConfigCmd {
+"\x21\x0C\x00\x23\x03\x00\x00\x01\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x05\x01\x00\x19\x00\x00\x30\x00\x02\x00\x00\x03\x1A\x00\x32\x00\x00\x30\x00",
+}
+
+packet SessionSetHybridControllerConfigRsp : SessionConfigResponse (opcode = 0x0C) { //SESSION_SET_HUS_CONTROLLER_CONFIG
+    status: StatusCode,
+}
+
+test SessionSetHybridControllerConfigRsp {
+     "\x41\x0C\x00\x01\x00"
+}
+
+struct ControleePhaseList {
+    session_token: 32,
+    phase_participation: 8,
+}
+
+packet SessionSetHybridControleeConfigCmd : SessionConfigCommand (opcode = 0x0D) { //SESSION_SET_HUS_CONTROLEE_CONFIG
+    session_token: 32,
+    _count_(controlee_phase_list): 8,
+    controlee_phase_list: ControleePhaseList[],
+}
+
+test SessionSetHybridControleeConfigCmd {
+    "\x21\x0D\x00\x0F\x03\x00\x00\x01\x02\x01\x00\x00\x05\x02\x02\x00\x00\x03\x02",
+}
+
+packet SessionSetHybridControleeConfigRsp : SessionConfigResponse (opcode = 0x0D) { //SESSION_SET_HUS_CONTROLEE_CONFIG
+    status: StatusCode,
+}
+
+test SessionSetHybridControleeConfigRsp {
+     "\x41\x0D\x00\x01\x00"
 }
 
 packet SessionStartCmd : SessionControlCommand (opcode = 0x0) { //RANGE_START
@@ -1372,6 +1442,26 @@ packet Cir : FrameReportTlvPacket (t = CIR) {
 
 test Cir {
     "\x02\x15\x00\x01\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x01\x02\x00\x02\x04\x00\x01\x02\x03\x04",
+}
+
+packet SegmentMetrics : FrameReportTlvPacket (t = SEGMENT_METRICS) {
+    segment_metrics: SegmentMetricsValue[],
+}
+
+struct SegmentMetricsValue {
+    receiver: 8,
+    rf_noise_floor: 16,
+    segment_rsl: 16,
+    first_path_index: 16,
+    first_path_rsl: 16,
+    first_path_time_ns: 16,
+    peak_path_index: 16,
+    peak_path_rsl: 16,
+    peak_path_time_ns: 16,
+}
+
+test SegmentMetrics {
+    "\x08\xB0\xFF\x04\x3C\xE1\x02\xA1\xFF\x52\xB8\xE3\x02\xC4\xFF\xC0\xB8",
 }
 
 struct FrameReport {

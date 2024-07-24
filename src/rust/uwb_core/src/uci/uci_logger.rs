@@ -108,10 +108,10 @@ fn filter_uci_response(rsp: UciResponse) -> UciResponse {
 // Log only the Data Packet header bytes, so that we don't log any PII (payload bytes).
 fn filter_uci_data(
     packet: &UciDataPacket,
-) -> std::result::Result<UciDataPacket, pdl_runtime::Error> {
+) -> std::result::Result<UciDataPacket, pdl_runtime::DecodeError> {
     // Initialize a (zeroed out) Vec to the same length as the data packet, and then copy over
     // only the Data Packet header bytes into it. This masks out all the payload bytes to 0.
-    let data_packet_bytes: Vec<u8> = packet.clone().to_vec();
+    let data_packet_bytes: Vec<u8> = packet.encode_to_vec().unwrap();
     let mut filtered_data_packet_bytes: Vec<u8> = vec![0; data_packet_bytes.len()];
     for (i, &b) in data_packet_bytes[..UCI_PACKET_HAL_HEADER_LEN].iter().enumerate() {
         filtered_data_packet_bytes[i] = b;
@@ -213,6 +213,7 @@ mod tests {
 
     use crate::params::uci_packets::StatusCode;
     use crate::uci::mock_uci_logger::{MockUciLogger, UciLogEvent};
+    use uwb_uci_packets::{DataPacketFormat, MessageType, UciDataPacketBuilder};
 
     #[test]
     fn test_log_command_filter() -> Result<()> {
@@ -262,6 +263,25 @@ mod tests {
                 0x28, 0x3, 0, 0, 0, //filtered StaticStsIv
                 0xd, 0x4, 0, 0x1, 0x2, 0x3 // unfiltered tlv
             )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_log_data_filter() -> Result<()> {
+        let unfiltered_data_packet: UciDataPacket = UciDataPacketBuilder {
+            data_packet_format: DataPacketFormat::DataSnd,
+            message_type: MessageType::Data,
+            payload: Some(vec![0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8].into()),
+        }
+        .build();
+        let (log_sender, mut log_receiver) = mpsc::unbounded_channel::<UciLogEvent>();
+        let mut logger =
+            UciLoggerWrapper::new(MockUciLogger::new(log_sender), UciLoggerMode::Filtered);
+        logger.log_uci_data(&unfiltered_data_packet);
+        assert_eq!(
+            TryInto::<Vec<u8>>::try_into(log_receiver.blocking_recv().unwrap())?,
+            vec!(0x1, 0x0, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0)
         );
         Ok(())
     }

@@ -25,12 +25,14 @@ use uwb_uci_packets::{
 use crate::error::{Error, Result};
 use crate::params::fira_app_config_params::UwbAddress;
 use crate::params::uci_packets::{
-    BitsPerSample, ControleeStatus, CreditAvailability, DataRcvStatusCode,
+    BitsPerSample, ControleeStatusV1, ControleeStatusV2, CreditAvailability, DataRcvStatusCode,
     DataTransferNtfStatusCode, DataTransferPhaseConfigUpdateStatusCode, DeviceState,
     ExtendedAddressDlTdoaRangingMeasurement, ExtendedAddressOwrAoaRangingMeasurement,
     ExtendedAddressTwoWayRangingMeasurement, RadarDataType, RangingMeasurementType, RawUciMessage,
-    SessionState, SessionToken, ShortAddressDlTdoaRangingMeasurement,
+    SessionId, SessionState, SessionToken, SessionUpdateControllerMulticastListNtfV1Payload,
+    SessionUpdateControllerMulticastListNtfV2Payload, ShortAddressDlTdoaRangingMeasurement,
     ShortAddressOwrAoaRangingMeasurement, ShortAddressTwoWayRangingMeasurement, StatusCode,
+    UCIMajorVersion,
 };
 
 /// enum of all UCI notifications with structured fields.
@@ -58,6 +60,8 @@ pub enum CoreNotification {
 pub enum SessionNotification {
     /// SessionStatusNtf equivalent.
     Status {
+        /// SessionId : u32
+        session_id: SessionId,
         /// SessionToken : u32
         session_token: SessionToken,
         /// uwb_uci_packets::SessionState.
@@ -65,14 +69,21 @@ pub enum SessionNotification {
         /// uwb_uci_packets::Reasoncode.
         reason_code: u8,
     },
-    /// SessionUpdateControllerMulticastListNtf equivalent.
-    UpdateControllerMulticastList {
+    /// SessionUpdateControllerMulticastListNtfV1 equivalent.
+    UpdateControllerMulticastListV1 {
         /// SessionToken : u32
         session_token: SessionToken,
         /// count of controlees: u8
         remaining_multicast_list_size: usize,
         /// list of controlees.
-        status_list: Vec<ControleeStatus>,
+        status_list: Vec<ControleeStatusV1>,
+    },
+    /// SessionUpdateControllerMulticastListNtfV2 equivalent.
+    UpdateControllerMulticastListV2 {
+        /// SessionToken : u32
+        session_token: SessionToken,
+        /// list of controlees.
+        status_list: Vec<ControleeStatusV2>,
     },
     /// (Short/Extended)Mac()SessionInfoNtf equivalent
     SessionInfo(SessionRangeData),
@@ -284,7 +295,7 @@ fn parse_radar_sweep_data(
             + UCI_RADAR_TIMESTAMP_LEN
             + UCI_RADAR_VENDOR_DATA_LEN_LEN
             + vendor_specific_data_len
-            + (samples_per_sweep * bytes_per_sample_value) as usize;
+            + samples_per_sweep as usize * bytes_per_sample_value as usize;
         if data.len() < sweep_data_cursor + sweep_data_len {
             error!("Invalid radar sweep data length, data: {:?}", &data);
             return Err(Error::BadParameters);
@@ -331,15 +342,21 @@ impl UciNotification {
     }
 }
 
-impl TryFrom<uwb_uci_packets::UciNotification> for UciNotification {
+impl TryFrom<(uwb_uci_packets::UciNotification, UCIMajorVersion, bool)> for UciNotification {
     type Error = Error;
-    fn try_from(evt: uwb_uci_packets::UciNotification) -> std::result::Result<Self, Self::Error> {
+    fn try_from(
+        pair: (uwb_uci_packets::UciNotification, UCIMajorVersion, bool),
+    ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::UciNotificationChild;
+        let evt = pair.0;
+        let uci_fira_major_ver = pair.1;
+        let is_multicast_list_ntf_v2_supported = pair.2;
+
         match evt.specialize() {
             UciNotificationChild::CoreNotification(evt) => Ok(Self::Core(evt.try_into()?)),
-            UciNotificationChild::SessionConfigNotification(evt) => {
-                Ok(Self::Session(evt.try_into()?))
-            }
+            UciNotificationChild::SessionConfigNotification(evt) => Ok(Self::Session(
+                (evt, uci_fira_major_ver, is_multicast_list_ntf_v2_supported).try_into()?,
+            )),
             UciNotificationChild::SessionControlNotification(evt) => {
                 Ok(Self::Session(evt.try_into()?))
             }
@@ -375,23 +392,65 @@ impl TryFrom<uwb_uci_packets::CoreNotification> for CoreNotification {
     }
 }
 
-impl TryFrom<uwb_uci_packets::SessionConfigNotification> for SessionNotification {
+impl TryFrom<(uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool)>
+    for SessionNotification
+{
     type Error = Error;
     fn try_from(
-        evt: uwb_uci_packets::SessionConfigNotification,
+        pair: (uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool),
     ) -> std::result::Result<Self, Self::Error> {
         use uwb_uci_packets::SessionConfigNotificationChild;
+        let evt = pair.0;
+        let uci_fira_major_ver = pair.1;
+        let is_multicast_list_ntf_v2_supported = pair.2;
         match evt.specialize() {
             SessionConfigNotificationChild::SessionStatusNtf(evt) => Ok(Self::Status {
+                //no sessionId recieved, assign from sessionIdToToken map in uci_manager
+                session_id: 0,
                 session_token: evt.get_session_token(),
                 session_state: evt.get_session_state(),
                 reason_code: evt.get_reason_code(),
             }),
-            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt) => {
-                Ok(Self::UpdateControllerMulticastList {
+            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt)
+                if uci_fira_major_ver == UCIMajorVersion::V1
+                    || !is_multicast_list_ntf_v2_supported =>
+            {
+                let payload = evt.get_payload();
+                let multicast_update_list_payload_v1 =
+                    SessionUpdateControllerMulticastListNtfV1Payload::parse(payload).map_err(
+                        |e| {
+                            error!(
+                                "Failed to parse Multicast list ntf v1 {:?}, payload: {:?}",
+                                e, &payload
+                            );
+                            Error::BadParameters
+                        },
+                    )?;
+                Ok(Self::UpdateControllerMulticastListV1 {
                     session_token: evt.get_session_token(),
-                    remaining_multicast_list_size: evt.get_remaining_multicast_list_size() as usize,
-                    status_list: evt.get_controlee_status().clone(),
+                    remaining_multicast_list_size: multicast_update_list_payload_v1
+                        .remaining_multicast_list_size
+                        as usize,
+                    status_list: multicast_update_list_payload_v1.controlee_status,
+                })
+            }
+            SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt)
+                if uci_fira_major_ver == UCIMajorVersion::V2 =>
+            {
+                let payload = evt.get_payload();
+                let multicast_update_list_payload_v2 =
+                    SessionUpdateControllerMulticastListNtfV2Payload::parse(payload).map_err(
+                        |e| {
+                            error!(
+                                "Failed to parse Multicast list ntf v2 {:?}, payload: {:?}",
+                                e, &payload
+                            );
+                            Error::BadParameters
+                        },
+                    )?;
+                Ok(Self::UpdateControllerMulticastListV2 {
+                    session_token: evt.get_session_token(),
+                    status_list: multicast_update_list_payload_v2.controlee_status,
                 })
             }
             SessionConfigNotificationChild::SessionDataTransferPhaseConfigNtf(evt) => {
@@ -439,7 +498,7 @@ impl TryFrom<uwb_uci_packets::SessionControlNotification> for SessionNotificatio
 impl TryFrom<uwb_uci_packets::SessionInfoNtf> for SessionNotification {
     type Error = Error;
     fn try_from(evt: uwb_uci_packets::SessionInfoNtf) -> std::result::Result<Self, Self::Error> {
-        let raw_ranging_data = evt.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = evt.encode_to_bytes().unwrap()[UCI_PACKET_HEADER_LEN..].to_vec();
         use uwb_uci_packets::SessionInfoNtfChild;
         let ranging_measurements = match evt.specialize() {
             SessionInfoNtfChild::ShortMacTwoWaySessionInfoNtf(evt) => {
@@ -619,6 +678,7 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::{BufMut, BytesMut};
 
     #[test]
     fn test_ranging_measurements_trait() {
@@ -712,8 +772,9 @@ mod tests {
                 vendor_data: vec![],
             }
             .build();
-        let raw_ranging_data =
-            extended_two_way_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = extended_two_way_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(extended_two_way_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -762,8 +823,9 @@ mod tests {
             vendor_data: vec![0x02, 0x01],
         }
         .build();
-        let raw_ranging_data =
-            short_two_way_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = short_two_way_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(short_two_way_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -808,8 +870,9 @@ mod tests {
                 vendor_data: vec![],
             }
             .build();
-        let raw_ranging_data =
-            extended_owr_aoa_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = extended_owr_aoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(extended_owr_aoa_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -853,8 +916,9 @@ mod tests {
             vendor_data: vec![],
         }
         .build();
-        let raw_ranging_data =
-            short_owr_aoa_session_info_ntf.clone().to_bytes()[UCI_PACKET_HEADER_LEN..].to_vec();
+        let raw_ranging_data = short_owr_aoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
         let range_notification =
             uwb_uci_packets::SessionInfoNtf::try_from(short_owr_aoa_session_info_ntf).unwrap();
         let session_notification = SessionNotification::try_from(range_notification).unwrap();
@@ -885,13 +949,19 @@ mod tests {
         .build();
         let session_notification_packet =
             uwb_uci_packets::SessionConfigNotification::try_from(session_status_ntf).unwrap();
-        let session_notification =
-            SessionNotification::try_from(session_notification_packet).unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            false,
+        ))
+        .unwrap();
         let uci_notification_from_session_status_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
             uci_notification_from_session_status_ntf,
             UciNotification::Session(SessionNotification::Status {
+                session_id: 0x0,
                 session_token: 0x20,
                 session_state: uwb_uci_packets::SessionState::SessionStateActive,
                 reason_code: uwb_uci_packets::ReasonCode::StateChangeWithSessionManagementCommands
@@ -900,41 +970,343 @@ mod tests {
         );
     }
 
+    fn write_multicast_ntf_v1_payload(
+        payload: &SessionUpdateControllerMulticastListNtfV1Payload,
+        buffer: &mut BytesMut,
+    ) {
+        buffer.put_u8(payload.remaining_multicast_list_size);
+        buffer.put_u8(payload.controlee_status.len() as u8);
+        for elem in &payload.controlee_status {
+            write_v1_controlee_status(elem, buffer);
+        }
+    }
+
+    fn write_v1_controlee_status(status: &ControleeStatusV1, buffer: &mut BytesMut) {
+        for elem in &status.mac_address {
+            buffer.put_u8(*elem);
+        }
+        buffer.put_u32_le(status.subsession_id);
+        buffer.put_u8(u8::from(status.status));
+    }
+
+    fn write_multicast_ntf_v2_payload(
+        payload: &SessionUpdateControllerMulticastListNtfV2Payload,
+        buffer: &mut BytesMut,
+    ) {
+        buffer.put_u8(payload.controlee_status.len() as u8);
+        for elem in &payload.controlee_status {
+            write_v2_controlee_status(elem, buffer);
+        }
+    }
+
+    fn write_v2_controlee_status(status: &ControleeStatusV2, buffer: &mut BytesMut) {
+        for elem in &status.mac_address {
+            buffer.put_u8(*elem);
+        }
+        buffer.put_u8(u8::from(status.status));
+    }
+
     #[test]
-    fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_packet()
-    {
-        let controlee_status = uwb_uci_packets::ControleeStatus {
+    fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_v1_packet(
+    ) {
+        let controlee_status_v1 = uwb_uci_packets::ControleeStatusV1 {
             mac_address: [0x0c, 0xa8],
             subsession_id: 0x30,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
         };
-        let another_controlee_status = uwb_uci_packets::ControleeStatus {
+        let another_controlee_status_v1 = uwb_uci_packets::ControleeStatusV1 {
             mac_address: [0x0c, 0xa9],
             subsession_id: 0x31,
             status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
         };
-        let session_update_controller_multicast_list_ntf =
+        let payload = uwb_uci_packets::SessionUpdateControllerMulticastListNtfV1Payload {
+            remaining_multicast_list_size: 0x2,
+            controlee_status: vec![
+                controlee_status_v1.clone(),
+                another_controlee_status_v1.clone(),
+            ],
+        };
+        let mut buf = BytesMut::new();
+        write_multicast_ntf_v1_payload(&payload, &mut buf);
+        let session_update_controller_multicast_list_ntf_v1 =
             uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
                 session_token: 0x32,
-                remaining_multicast_list_size: 0x2,
-                controlee_status: vec![controlee_status.clone(), another_controlee_status.clone()],
+                payload: Some(buf.freeze()),
             }
             .build();
         let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
-            session_update_controller_multicast_list_ntf,
+            session_update_controller_multicast_list_ntf_v1,
         )
         .unwrap();
-        let session_notification =
-            SessionNotification::try_from(session_notification_packet).unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            false,
+        ))
+        .unwrap();
         let uci_notification_from_session_update_controller_multicast_list_ntf =
             UciNotification::Session(session_notification);
         assert_eq!(
             uci_notification_from_session_update_controller_multicast_list_ntf,
-            UciNotification::Session(SessionNotification::UpdateControllerMulticastList {
+            UciNotification::Session(SessionNotification::UpdateControllerMulticastListV1 {
                 session_token: 0x32,
                 remaining_multicast_list_size: 0x2,
-                status_list: vec![controlee_status, another_controlee_status],
+                status_list: vec![controlee_status_v1, another_controlee_status_v1],
             })
+        );
+    }
+
+    #[test]
+    fn test_cast_failed_from_session_update_controller_multicast_list_ntf_v1_packet_v2_payload() {
+        let controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
+            mac_address: [0x0c, 0xa8],
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
+        };
+        let another_controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
+            mac_address: [0x0c, 0xa9],
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
+        };
+        let payload = uwb_uci_packets::SessionUpdateControllerMulticastListNtfV2Payload {
+            controlee_status: vec![controlee_status_v2, another_controlee_status_v2],
+        };
+        let mut buf = BytesMut::new();
+        write_multicast_ntf_v2_payload(&payload, &mut buf);
+        let session_update_controller_multicast_list_ntf_v1 =
+            uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
+                session_token: 0x32,
+                payload: Some(buf.freeze()),
+            }
+            .build();
+        let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
+            session_update_controller_multicast_list_ntf_v1,
+        )
+        .unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            false,
+        ));
+        assert_eq!(session_notification, Err(Error::BadParameters));
+    }
+
+    #[test]
+    fn test_cast_failed_from_session_update_controller_multicast_list_ntf_v2_packet_v1_payload() {
+        let controlee_status_v1 = uwb_uci_packets::ControleeStatusV1 {
+            mac_address: [0x0c, 0xa8],
+            subsession_id: 0x30,
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
+        };
+        let payload = uwb_uci_packets::SessionUpdateControllerMulticastListNtfV1Payload {
+            remaining_multicast_list_size: 0x4,
+            controlee_status: vec![controlee_status_v1],
+        };
+        let mut buf = BytesMut::new();
+        write_multicast_ntf_v1_payload(&payload, &mut buf);
+        let session_update_controller_multicast_list_ntf_v1 =
+            uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
+                session_token: 0x32,
+                payload: Some(buf.freeze()),
+            }
+            .build();
+        let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
+            session_update_controller_multicast_list_ntf_v1,
+        )
+        .unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V2;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            true,
+        ));
+        assert_eq!(session_notification, Err(Error::BadParameters));
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_session_update_controller_multicast_list_ntf_v2_packet(
+    ) {
+        let controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
+            mac_address: [0x0c, 0xa8],
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusOkMulticastListUpdate,
+        };
+        let another_controlee_status_v2 = uwb_uci_packets::ControleeStatusV2 {
+            mac_address: [0x0c, 0xa9],
+            status: uwb_uci_packets::MulticastUpdateStatusCode::StatusErrorKeyFetchFail,
+        };
+        let payload = uwb_uci_packets::SessionUpdateControllerMulticastListNtfV2Payload {
+            controlee_status: vec![
+                controlee_status_v2.clone(),
+                another_controlee_status_v2.clone(),
+            ],
+        };
+        let mut buf = BytesMut::new();
+        write_multicast_ntf_v2_payload(&payload, &mut buf);
+        let session_update_controller_multicast_list_ntf_v2 =
+            uwb_uci_packets::SessionUpdateControllerMulticastListNtfBuilder {
+                session_token: 0x32,
+                payload: Some(buf.freeze()),
+            }
+            .build();
+        let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
+            session_update_controller_multicast_list_ntf_v2,
+        )
+        .unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V2;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            true,
+        ))
+        .unwrap();
+        let uci_notification_from_session_update_controller_multicast_list_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_session_update_controller_multicast_list_ntf,
+            UciNotification::Session(SessionNotification::UpdateControllerMulticastListV2 {
+                session_token: 0x32,
+                status_list: vec![controlee_status_v2, another_controlee_status_v2],
+            })
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_session_data_transfer_phase_config_ntf_packet() {
+        let session_data_transfer_phase_config_ntf =
+            uwb_uci_packets::SessionDataTransferPhaseConfigNtfBuilder {
+                session_token: 0x32,
+                status: DataTransferPhaseConfigUpdateStatusCode::UciDtpcmConfigSuccessStatusOk,
+            }
+            .build();
+        let session_notification_packet = uwb_uci_packets::SessionConfigNotification::try_from(
+            session_data_transfer_phase_config_ntf,
+        )
+        .unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let session_notification = SessionNotification::try_from((
+            session_notification_packet,
+            uci_fira_major_version,
+            false,
+        ))
+        .unwrap();
+        let uci_notification_from_session_data_transfer_phase_config_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_session_data_transfer_phase_config_ntf,
+            UciNotification::Session(SessionNotification::DataTransferPhaseConfig {
+                session_token: 0x32,
+                status: DataTransferPhaseConfigUpdateStatusCode::UciDtpcmConfigSuccessStatusOk
+            })
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_short_mac_dl_tdoa_session_info_ntf_packet() {
+        let dl_tdoa_measurements = vec![
+            0x0a, 0x01, 0x33, 0x05, // 2(Mac address), Status, Message Type
+            0x53, 0x05, 0x02, 0x05, // 2(Message control), 2(Block Index)
+            0x07, 0x09, 0x0a, 0x01, // Round Index, NLoS, 2(AoA Azimuth)
+            0x02, 0x05, 0x07, 0x09, // AoA Azimuth FOM, 2(AoA Elevation), AoA Elevation FOM
+            0x0a, 0x01, 0x02, 0x05, // RSSI, 3(Tx Timestamp..)
+            0x07, 0x09, 0x0a, 0x01, // 4(Tx Timestamp..)
+            0x02, 0x05, 0x07, 0x09, // Tx Timestamp, 3(Rx Timestamp..)
+            0x05, 0x07, 0x09, 0x0a, // 2(Rx Timestamp), 2(Anchor Cfo)
+            0x01, 0x02, 0x05, 0x07, // 2(Cfo), 2(Initiator Reply Time..)
+            0x09, 0x05, 0x07, 0x09, // 2(Initiator Reply Time), 2(Responder Reply Time..)
+            0x0a, 0x01, 0x02, 0x05, // 2(Responder Reply Time), 2(Initiator-Responder ToF)
+            0x07, 0x09, 0x07, 0x09, // 4(Anchor Location..)
+            0x05, 0x07, 0x09, 0x0a, // 4(Anchor Location..)
+            0x01, 0x02, 0x05, 0x07, // 2(Anchor Location..), 2(Active Ranging Rounds..)
+            0x09, 0x0a, 0x01, 0x02, // 4(Active Ranging Rounds..)
+            0x05, 0x07, 0x09, 0x05, // 4(Active Ranging Rounds)
+        ];
+        let short_mac_dl_tdoa_session_info_ntf =
+            uwb_uci_packets::ShortMacDlTDoASessionInfoNtfBuilder {
+                current_ranging_interval: 0x13,
+                dl_tdoa_measurements: dl_tdoa_measurements.clone(),
+                no_of_ranging_measurements: 1,
+                rcr_indicator: 0x12,
+                sequence_number: 0x10,
+                session_token: 0x11,
+            }
+            .build();
+        let raw_ranging_data = short_mac_dl_tdoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
+        let short_measurement =
+            ShortAddressDlTdoaRangingMeasurement::parse(&dl_tdoa_measurements, 1).unwrap();
+        let range_notification_packet =
+            uwb_uci_packets::SessionInfoNtf::try_from(short_mac_dl_tdoa_session_info_ntf).unwrap();
+        let session_notification =
+            SessionNotification::try_from(range_notification_packet).unwrap();
+        let uci_notification_from_short_mac_dl_tdoa_session_info_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_short_mac_dl_tdoa_session_info_ntf,
+            UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
+                sequence_number: 0x10,
+                session_token: 0x11,
+                ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::DlTdoa,
+                current_ranging_interval_ms: 0x13,
+                ranging_measurements: RangingMeasurements::ShortAddressDltdoa(short_measurement),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_session_notification_casting_from_extended_mac_dltdoa_session_info_ntf_packet() {
+        let dl_tdoa_measurements = vec![
+            // All Fields in Little Endian (LE)
+            0x0a, 0x01, 0x33, 0x05, // 4(Mac address..)
+            0x33, 0x05, 0x02, 0x05, // 4(Mac address)
+            0x07, 0x09, 0x0a, 0x01, // Status, Message Type, 2(Message control),
+            0x02, 0x05, 0x07, 0x09, // 2(Block Index), Round Index, NLoS,
+            0x0a, 0x01, 0x02, 0x05, // 2(AoA Azimuth), AoA Azimuth FOM, 1(AoA Elevation..)
+            0x07, 0x09, 0x0a, // 1(AoA Elevation), AoA Elevation FOM, RSSI,
+            0x01, 0x02, 0x05, 0x07, // 4(Tx Timestamp..)
+            0x09, 0x05, 0x07, 0x09, // 4(Tx Timestamp),
+            0x0a, 0x01, 0x02, 0x05, // 4(Rx Timestamp..)
+            0x07, 0x09, 0x05, 0x07, // 4(Rx Timestamp)
+            0x09, 0x0a, 0x01, 0x02, // 2(Anchor Cfo), 2(Cfo),
+            0x05, 0x07, 0x09, 0x05, // 4(Initiator Reply Time)
+            0x07, 0x09, 0x0a, 0x01, // 4(Responder Reply Time),
+            0x02, 0x05, 0x02, 0x05, // 2(Initiator-Responder ToF), 2(Active Ranging Rounds)
+        ];
+        let extended_mac_dl_tdoa_session_info_ntf =
+            uwb_uci_packets::ExtendedMacDlTDoASessionInfoNtfBuilder {
+                current_ranging_interval: 0x13,
+                dl_tdoa_measurements: dl_tdoa_measurements.clone(),
+                no_of_ranging_measurements: 1,
+                rcr_indicator: 0x12,
+                sequence_number: 0x10,
+                session_token: 0x11,
+            }
+            .build();
+        let raw_ranging_data = extended_mac_dl_tdoa_session_info_ntf.encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
+        let short_measurement =
+            ExtendedAddressDlTdoaRangingMeasurement::parse(&dl_tdoa_measurements, 1).unwrap();
+        let range_notification_packet =
+            uwb_uci_packets::SessionInfoNtf::try_from(extended_mac_dl_tdoa_session_info_ntf)
+                .unwrap();
+        let session_notification =
+            SessionNotification::try_from(range_notification_packet).unwrap();
+        let uci_notification_from_extended_mac_dl_tdoa_session_info_ntf =
+            UciNotification::Session(session_notification);
+        assert_eq!(
+            uci_notification_from_extended_mac_dl_tdoa_session_info_ntf,
+            UciNotification::Session(SessionNotification::SessionInfo(SessionRangeData {
+                sequence_number: 0x10,
+                session_token: 0x11,
+                ranging_measurement_type: uwb_uci_packets::RangingMeasurementType::DlTdoa,
+                current_ranging_interval_ms: 0x13,
+                ranging_measurements: RangingMeasurements::ExtendedAddressDltdoa(short_measurement),
+                rcr_indicator: 0x12,
+                raw_ranging_data,
+            }))
         );
     }
 
@@ -952,10 +1324,58 @@ mod tests {
             }
             .build()
             .into();
-        let uci_notification_from_vendor_9 =
-            UciNotification::try_from(vendor_9_empty_notification).unwrap();
-        let uci_notification_from_vendor_A =
-            UciNotification::try_from(vendor_A_nonempty_notification).unwrap();
+        let vendor_B_nonempty_notification: uwb_uci_packets::UciNotification =
+            uwb_uci_packets::UciVendor_B_NotificationBuilder {
+                opcode: 0x41,
+                payload: Some(bytes::Bytes::from_static(b"Placeholder notification.")),
+            }
+            .build()
+            .into();
+        let vendor_E_nonempty_notification: uwb_uci_packets::UciNotification =
+            uwb_uci_packets::UciVendor_E_NotificationBuilder {
+                opcode: 0x41,
+                payload: Some(bytes::Bytes::from_static(b"Placeholder notification.")),
+            }
+            .build()
+            .into();
+        let vendor_F_nonempty_notification: uwb_uci_packets::UciNotification =
+            uwb_uci_packets::UciVendor_F_NotificationBuilder {
+                opcode: 0x41,
+                payload: Some(bytes::Bytes::from_static(b"Placeholder notification.")),
+            }
+            .build()
+            .into();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let uci_notification_from_vendor_9 = UciNotification::try_from((
+            vendor_9_empty_notification,
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
+        let uci_notification_from_vendor_A = UciNotification::try_from((
+            vendor_A_nonempty_notification,
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
+        let uci_notification_from_vendor_B = UciNotification::try_from((
+            vendor_B_nonempty_notification,
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
+        let uci_notification_from_vendor_E = UciNotification::try_from((
+            vendor_E_nonempty_notification,
+            uci_fira_major_version.clone(),
+            false,
+        ))
+        .unwrap();
+        let uci_notification_from_vendor_F = UciNotification::try_from((
+            vendor_F_nonempty_notification,
+            uci_fira_major_version,
+            false,
+        ))
+        .unwrap();
         assert_eq!(
             uci_notification_from_vendor_9,
             UciNotification::Vendor(RawUciMessage {
@@ -972,13 +1392,39 @@ mod tests {
                 payload: b"Placeholder notification.".to_owned().into(),
             })
         );
+        assert_eq!(
+            uci_notification_from_vendor_B,
+            UciNotification::Vendor(RawUciMessage {
+                gid: 0xb,
+                oid: 0x41,
+                payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
+        assert_eq!(
+            uci_notification_from_vendor_E,
+            UciNotification::Vendor(RawUciMessage {
+                gid: 0xe,
+                oid: 0x41,
+                payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
+        assert_eq!(
+            uci_notification_from_vendor_F,
+            UciNotification::Vendor(RawUciMessage {
+                gid: 0xf,
+                oid: 0x41,
+                payload: b"Placeholder notification.".to_owned().into(),
+            })
+        );
     }
 
     #[test]
     fn test_test_to_vendor_notification_casting() {
         let test_notification: uwb_uci_packets::UciNotification =
             uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
-        let test_uci_notification = UciNotification::try_from(test_notification).unwrap();
+        let uci_fira_major_version = UCIMajorVersion::V1;
+        let test_uci_notification =
+            UciNotification::try_from((test_notification, uci_fira_major_version, false)).unwrap();
         assert_eq!(
             test_uci_notification,
             UciNotification::Vendor(RawUciMessage {
