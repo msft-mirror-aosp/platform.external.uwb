@@ -1448,16 +1448,32 @@ packet SegmentMetrics : FrameReportTlvPacket (t = SEGMENT_METRICS) {
     segment_metrics: SegmentMetricsValue[],
 }
 
+enum SegmentIdValue: 3 {
+    Ipatov = 0,
+    Sts0 = 1,
+    Sts1 = 2,
+    Sts2 = 3,
+    Sts3 = 4,
+}
+
+struct ReceiverAndSegmentValue {
+    segment_id: SegmentIdValue,
+    receiver_is_controller: 1,
+    receiver_id: 4,
+}
+
+struct PathSample {
+    index: 16,
+    rsl: 16, // Q8.8
+    time_ns: 16, // Q6.9
+}
+
 struct SegmentMetricsValue {
-    receiver: 8,
-    rf_noise_floor: 16,
-    segment_rsl: 16,
-    first_path_index: 16,
-    first_path_rsl: 16,
-    first_path_time_ns: 16,
-    peak_path_index: 16,
-    peak_path_rsl: 16,
-    peak_path_time_ns: 16,
+    receiver_and_segment: ReceiverAndSegmentValue,
+    rf_noise_floor: 16, // Q8.8
+    segment_rsl: 16, // Q8.8
+    first_path: PathSample,
+    peak_path: PathSample,
 }
 
 test SegmentMetrics {
