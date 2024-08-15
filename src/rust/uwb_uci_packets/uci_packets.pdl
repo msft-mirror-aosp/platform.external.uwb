@@ -299,6 +299,7 @@ enum AppConfigTlvType : 8 {
         NB_OF_ELEVATION_MEASUREMENTS = 0xE5,
         ENABLE_DIAGNOSTICS = 0xE8,
         DIAGRAMS_FRAME_REPORTS_FIELDS = 0xE9,
+        ANTENNA_MODE = 0xEA,
     },
 }
 
@@ -991,11 +992,21 @@ struct SessionUpdateControllerMulticastListCmd_2_0_32_Byte_Payload {
 }
 
 packet SessionUpdateControllerMulticastListRsp : SessionConfigResponse (opcode = 0x7) { //SESSION_UPDATE_CONTROLLER_MULTICAST_LIST
-    status: StatusCode,
+    _payload_,
 }
 
 test SessionUpdateControllerMulticastListRsp {
     "\x41\x07\x00\x01\x00\x00\x00\x00",
+}
+
+struct SessionUpdateControllerMulticastListRspV1Payload {
+    status: StatusCode,
+}
+
+struct SessionUpdateControllerMulticastListRspV2Payload {
+    status: StatusCode,
+    _count_(controlee_status): 8,
+    controlee_status: ControleeStatusV2[],
 }
 
 struct ControleeStatusV1 {
@@ -1437,16 +1448,32 @@ packet SegmentMetrics : FrameReportTlvPacket (t = SEGMENT_METRICS) {
     segment_metrics: SegmentMetricsValue[],
 }
 
+enum SegmentIdValue: 3 {
+    Ipatov = 0,
+    Sts0 = 1,
+    Sts1 = 2,
+    Sts2 = 3,
+    Sts3 = 4,
+}
+
+struct ReceiverAndSegmentValue {
+    segment_id: SegmentIdValue,
+    receiver_is_controller: 1,
+    receiver_id: 4,
+}
+
+struct PathSample {
+    index: 16,
+    rsl: 16, // Q8.8
+    time_ns: 16, // Q6.9
+}
+
 struct SegmentMetricsValue {
-    receiver: 8,
-    rf_noise_floor: 16,
-    segment_rsl: 16,
-    first_path_index: 16,
-    first_path_rsl: 16,
-    first_path_time_ns: 16,
-    peak_path_index: 16,
-    peak_path_rsl: 16,
-    peak_path_time_ns: 16,
+    receiver_and_segment: ReceiverAndSegmentValue,
+    rf_noise_floor: 16, // Q8.8
+    segment_rsl: 16, // Q8.8
+    first_path: PathSample,
+    peak_path: PathSample,
 }
 
 test SegmentMetrics {
