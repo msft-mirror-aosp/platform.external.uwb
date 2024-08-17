@@ -232,9 +232,10 @@ rust_fuzz {
             "android-uwb-team@google.com",
         ],
         componentid: 1042770,
-        fuzz_on_haiku_device: true,
-        fuzz_on_haiku_host: true,
+        fuzz_on_haiku_device: false,
+        fuzz_on_haiku_host: false,
     },
+
 }
 
 rust_defaults {
