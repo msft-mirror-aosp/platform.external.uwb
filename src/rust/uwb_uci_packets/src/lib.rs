@@ -26,6 +26,8 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use zeroize::Zeroize;
 
+mod debug_display;
+
 include!(concat!(env!("OUT_DIR"), "/uci_packets.rs"));
 
 const MAX_PAYLOAD_LEN: usize = 255;
@@ -768,7 +770,7 @@ pub struct ParsedDiagnosticNtfPacket {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ParsedFrameReport {
     uwb_msg_id: u8,
     action: u8,
@@ -1069,15 +1071,11 @@ mod tests {
         }];
         let cir = CirBuilder { cir_value: cir_vec.clone() }.build();
         let segment_metrics_vec = vec![SegmentMetricsValue {
-            receiver: 1,
+            receiver_and_segment: ReceiverAndSegmentValue::parse(&[1]).unwrap(),
             rf_noise_floor: 2,
             segment_rsl: 3,
-            first_path_index: 4,
-            first_path_rsl: 5,
-            first_path_time_ns: 6,
-            peak_path_index: 7,
-            peak_path_rsl: 8,
-            peak_path_time_ns: 9,
+            first_path: PathSample { index: 4, rsl: 5, time_ns: 6 },
+            peak_path: PathSample { index: 7, rsl: 8, time_ns: 9 },
         }];
         let segment_metrics =
             SegmentMetricsBuilder { segment_metrics: segment_metrics_vec.clone() }.build();
