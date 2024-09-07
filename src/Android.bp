@@ -10,7 +10,7 @@ rust_defaults {
     ],
     edition: "2021",
     proc_macros: ["libnum_derive"],
-    rustlibs:[
+    rustlibs: [
         "libbytes",
         "liblog_rust",
         "libnum_traits",
@@ -27,7 +27,7 @@ rust_test {
         android: {
             test_suites: [
                 "general-tests",
-                "mts-uwb"
+                "mts-uwb",
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
         },
@@ -35,8 +35,8 @@ rust_test {
             test_suites: [
                 "general-tests",
             ],
-           // See b/268061150
-           stem: "libuwb_uci_packet_tests_host",
+            // See b/268061150
+            stem: "libuwb_uci_packet_tests_host",
         },
     },
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
@@ -135,7 +135,7 @@ rust_test {
         android: {
             test_suites: [
                 "general-tests",
-                "mts-uwb"
+                "mts-uwb",
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
         },
@@ -189,6 +189,13 @@ rust_library {
     rustlibs: [
         "libprotobuf",
     ],
+    flags: [
+        // Required due to the protoc-gen-rust tool emitting invalid
+        // annotations.  This can be removed when we upgrade to protobuf-4,
+        // if we patch  protobuf-3 to no longer emit `#![allow(box_pointers)]`,
+        // or switch to using a `rust_protobuf` rule instead of a `genrule`.
+        "-A renamed_and_removed_lints",
+    ],
     features: ["proto"],
     host_supported: true,
     native_coverage: false,
@@ -196,11 +203,14 @@ rust_library {
 
 genrule {
     name: "gen_uwb_core_proto",
-    tools: ["aprotoc", "protoc-gen-rust"],
+    tools: [
+        "aprotoc",
+        "protoc-gen-rust",
+    ],
     cmd: "$(location aprotoc)" +
-         " --proto_path=`dirname $(in)`" +
-         " --plugin=protoc-gen-rust=$(location protoc-gen-rust)" +
-         " --rust_out=$(genDir) $(in)",
+        " --proto_path=`dirname $(in)`" +
+        " --plugin=protoc-gen-rust=$(location protoc-gen-rust)" +
+        " --rust_out=$(genDir) $(in)",
     srcs: [
         "rust/uwb_core/protos/uwb_service.proto",
     ],
@@ -212,7 +222,7 @@ genrule {
 genrule {
     name: "include_uwb_core_proto",
     cmd: "echo '#[path = \"uwb_service.rs\"]' > $(out);" +
-         "echo 'pub mod bindings;' >> $(out);",
+        "echo 'pub mod bindings;' >> $(out);",
     out: [
         "proto_bindings.rs",
     ],
@@ -307,7 +317,7 @@ rust_test {
         android: {
             test_suites: [
                 "general-tests",
-                "mts-uwb"
+                "mts-uwb",
             ],
             test_config_template: "uwb_rust_test_config_template.xml",
         },
@@ -340,9 +350,7 @@ genrule {
         "rust/uwb_uci_packets/**/*",
         "rust/Cargo.toml",
     ],
-    cmd:
-        // Create a artifacts directory and copy the source code into it.
-        "mkdir $(genDir)/artifacts && " +
+    cmd: "mkdir $(genDir)/artifacts && " + // Create a artifacts directory and copy the source code into it.
         "cp -r external/uwb/src/rust/uwb_core " +
         "      external/uwb/src/rust/uwb_uci_packets " +
         "      external/uwb/src/rust/Cargo.toml " +
