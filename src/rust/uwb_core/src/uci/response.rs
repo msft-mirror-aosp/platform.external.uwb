@@ -19,8 +19,8 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AndroidRadarConfigResponse, AppConfigTlv, CapTlv, CoreSetConfigResponse, DeviceConfigTlv,
-    GetDeviceInfoResponse, PowerStats, RadarConfigTlv, RawUciMessage, SessionHandle, SessionState,
-    SessionUpdateControllerMulticastListRspV1Payload,
+    GetDeviceInfoResponse, PowerStats, RadarConfigTlv, RawUciMessage, RfTestConfigResponse,
+    SessionHandle, SessionState, SessionUpdateControllerMulticastListRspV1Payload,
     SessionUpdateControllerMulticastListRspV2Payload, SessionUpdateControllerMulticastResponse,
     SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, StatusCode, UCIMajorVersion,
     UciControlPacket,
@@ -60,6 +60,7 @@ pub(super) enum UciResponse {
     SessionSetHybridControllerConfig(Result<()>),
     SessionSetHybridControleeConfig(Result<()>),
     SessionDataTransferPhaseConfig(Result<()>),
+    SessionSetRfTestConfig(RfTestConfigResponse),
 }
 
 impl UciResponse {
@@ -95,6 +96,7 @@ impl UciResponse {
             Self::SessionSetAppConfig(resp) => Self::matches_status_retry(&resp.status),
 
             Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
+            Self::SessionSetRfTestConfig(resp) => Self::matches_status_retry(&resp.status),
             // TODO(b/273376343): Implement retry logic for Data packet send.
             Self::SendUciData(_result) => false,
         }
@@ -124,6 +126,7 @@ impl TryFrom<(uwb_uci_packets::UciResponse, UCIMajorVersion, bool)> for UciRespo
             }
             UciResponseChild::SessionControlResponse(evt) => evt.try_into(),
             UciResponseChild::AndroidResponse(evt) => evt.try_into(),
+            UciResponseChild::TestResponse(evt) => evt.try_into(),
             UciResponseChild::UciVendor_9_Response(evt) => raw_response(evt.into()),
             UciResponseChild::UciVendor_A_Response(evt) => raw_response(evt.into()),
             UciResponseChild::UciVendor_B_Response(evt) => raw_response(evt.into()),
@@ -344,6 +347,22 @@ impl TryFrom<uwb_uci_packets::AndroidResponse> for UciResponse {
                 Ok(UciResponse::AndroidGetRadarConfig(
                     status_code_to_result(evt.get_status()).map(|_| evt.get_tlvs().clone()),
                 ))
+            }
+            _ => Err(Error::Unknown),
+        }
+    }
+}
+
+impl TryFrom<uwb_uci_packets::TestResponse> for UciResponse {
+    type Error = Error;
+    fn try_from(evt: uwb_uci_packets::TestResponse) -> std::result::Result<Self, Self::Error> {
+        use uwb_uci_packets::TestResponseChild;
+        match evt.specialize() {
+            TestResponseChild::SessionSetRfTestConfigRsp(evt) => {
+                Ok(UciResponse::SessionSetRfTestConfig(RfTestConfigResponse {
+                    status: evt.get_status(),
+                    config_status: evt.get_cfg_status().clone(),
+                }))
             }
             _ => Err(Error::Unknown),
         }
