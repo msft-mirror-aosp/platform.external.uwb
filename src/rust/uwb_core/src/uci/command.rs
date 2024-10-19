@@ -20,8 +20,8 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
-    RadarConfigTlv, RadarConfigTlvType, ResetConfig, SessionId, SessionToken, SessionType,
-    UpdateMulticastListAction, UpdateTime,
+    RadarConfigTlv, RadarConfigTlvType, ResetConfig, RfTestConfigTlv, SessionId, SessionToken,
+    SessionType, UpdateMulticastListAction, UpdateTime,
 };
 use uwb_uci_packets::{
     build_data_transfer_phase_config_cmd, build_session_set_hybrid_controller_config_cmd,
@@ -123,6 +123,10 @@ pub enum UciCommand {
         gid: u32,
         oid: u32,
         payload: Vec<u8>,
+    },
+    SessionSetRfTestConfig {
+        session_token: SessionToken,
+        config_tlvs: Vec<RfTestConfigTlv>,
     },
 }
 
@@ -280,6 +284,14 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             )
             .map_err(|_| Error::BadParameters)?
             .into(),
+            UciCommand::SessionSetRfTestConfig { session_token, config_tlvs } => {
+                uwb_uci_packets::SessionSetRfTestConfigCmdBuilder {
+                    session_token,
+                    tlvs: config_tlvs,
+                }
+                .build()
+                .into()
+            }
         };
         Ok(packet)
     }
@@ -584,6 +596,15 @@ mod tests {
             }
             .build()
             .into()
+        );
+
+        cmd = UciCommand::SessionSetRfTestConfig { session_token: 1, config_tlvs: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionSetRfTestConfigCmdBuilder { session_token: 1, tlvs: vec![] }
+                .build()
+                .into()
         );
     }
 }

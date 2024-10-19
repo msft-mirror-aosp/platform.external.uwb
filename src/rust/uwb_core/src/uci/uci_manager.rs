@@ -26,9 +26,10 @@ use crate::params::uci_packets::{
     AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CapTlvType, Controlees,
     CoreSetConfigResponse, CountryCode, CreditAvailability, DeviceConfigId, DeviceConfigTlv,
     DeviceState, GetDeviceInfoResponse, GroupId, MessageType, PowerStats, RadarConfigTlv,
-    RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState, SessionToken,
-    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
-    SetAppConfigResponse, UciDataPacket, UciDataPacketHal, UpdateMulticastListAction, UpdateTime,
+    RadarConfigTlvType, RawUciMessage, ResetConfig, RfTestConfigResponse, RfTestConfigTlv,
+    SessionId, SessionState, SessionToken, SessionType, SessionUpdateControllerMulticastResponse,
+    SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UciDataPacket, UciDataPacketHal,
+    UpdateMulticastListAction, UpdateTime,
 };
 use crate::params::utils::{bytes_to_u16, bytes_to_u64};
 use crate::params::UCIMajorVersion;
@@ -203,6 +204,11 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         session_id: SessionId,
         controlee_phase_list: Vec<ControleePhaseList>,
     ) -> Result<()>;
+    async fn session_set_rf_test_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -718,6 +724,22 @@ impl UciManager for UciManagerImpl {
         };
         match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
             Ok(UciResponse::SessionSetHybridControleeConfig(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn session_set_rf_test_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse> {
+        let cmd = UciCommand::SessionSetRfTestConfig {
+            session_token: self.get_session_token(&session_id).await?,
+            config_tlvs,
+        };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::SessionSetRfTestConfig(resp)) => Ok(resp),
             Ok(_) => Err(Error::Unknown),
             Err(e) => Err(e),
         }
@@ -1712,7 +1734,7 @@ mod tests {
 
     use crate::params::uci_packets::{
         AppConfigStatus, AppConfigTlvType, BitsPerSample, CapTlvType, Controlee, DataRcvStatusCode,
-        DataTransferNtfStatusCode, RadarDataType, StatusCode,
+        DataTransferNtfStatusCode, RadarDataType, RfTestConfigTlvType, StatusCode,
     };
     use crate::params::UwbAddress;
     use crate::uci::mock_uci_hal::MockUciHal;
@@ -4356,6 +4378,43 @@ mod tests {
                 .unwrap();
         assert_eq!(&packet, &rsp_packet);
 
+        assert!(mock_hal.wait_expected_calls_done().await);
+    }
+
+    #[tokio::test]
+    async fn test_session_set_rf_config_ok() {
+        let session_id = 0x123;
+        let session_token = 0x123;
+        let config_tlv =
+            RfTestConfigTlv { cfg_id: RfTestConfigTlvType::NumPackets, v: vec![0x12, 0x34, 0x56] };
+        let config_tlv_clone = config_tlv.clone();
+
+        let (uci_manager, mut mock_hal) = setup_uci_manager_with_session_initialized(
+            |mut hal| async move {
+                let cmd = UciCommand::SessionSetRfTestConfig {
+                    session_token,
+                    config_tlvs: vec![config_tlv_clone],
+                };
+                let resp =
+                    into_uci_hal_packets(uwb_uci_packets::SessionSetRfTestConfigRspBuilder {
+                        status: uwb_uci_packets::StatusCode::UciStatusOk,
+                        cfg_status: vec![],
+                    });
+
+                hal.expected_send_command(cmd, resp, Ok(()));
+            },
+            UciLoggerMode::Disabled,
+            mpsc::unbounded_channel::<UciLogEvent>().0,
+            session_id,
+            session_token,
+        )
+        .await;
+
+        let expected_result =
+            RfTestConfigResponse { status: StatusCode::UciStatusOk, config_status: vec![] };
+        let result =
+            uci_manager.session_set_rf_test_config(session_id, vec![config_tlv]).await.unwrap();
+        assert_eq!(result, expected_result);
         assert!(mock_hal.wait_expected_calls_done().await);
     }
 }

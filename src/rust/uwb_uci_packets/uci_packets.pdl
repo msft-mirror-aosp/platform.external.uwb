@@ -94,6 +94,12 @@ enum AndroidOpCode : 6 {
     ANDROID_RADAR_GET_APP_CONFIG = 0x12,
 }
 
+enum TestOpCode : 6 {
+    RF_TEST_CONFIG_SET_COMMAND  = 0x0,
+    RF_TEST_CONFIG_GET_COMMAND  = 0x1,
+    RF_TEST_PERIODIC_TX_CMD = 0x2,
+}
+
 enum StatusCode : 8 {
     // Generic Status Codes
     UCI_STATUS_OK = 0x00,
@@ -495,6 +501,20 @@ enum MessageType: 3 {
     RESERVED_FOR_TESTING_2 = 0x05,
 }
 
+enum RfTestConfigTlvType : 8 {
+    NUM_PACKETS = 0x00,
+    T_GAP = 0x01,
+    T_START = 0x02,
+    T_WIN = 0x03,
+    RANDOMIZE_PSDU = 0x04,
+    PHR_RANGING_BIT = 0x05,
+    RMARKER_TX_START = 0x06,
+    RMARKER_RX_START = 0x07,
+    STS_INDEX_AUTO_INCR = 0x08,
+    STS_DETECT_BITMAP = 0x09,
+    RFU_TEST_APP_CFG_TLV_TYPE_RANGE = 0x0A..0xFF,
+}
+
 // UCI packet description in compliance with the FIRA UCI spec.
 // Only this packet should be sent/expected across the HAL interface.
 packet UciPacketHal {
@@ -636,6 +656,18 @@ packet AndroidResponse : UciResponse (group_id = VENDOR_ANDROID) {
 }
 
 packet AndroidNotification : UciNotification (group_id = VENDOR_ANDROID) {
+    _body_,
+}
+
+packet TestCommand : UciCommand (group_id = TEST) {
+    _body_,
+}
+
+packet TestResponse : UciResponse (group_id = TEST) {
+    _body_,
+}
+
+packet TestNotification : UciNotification (group_id = TEST) {
     _body_,
 }
 
@@ -1540,10 +1572,6 @@ packet UciVendor_F_Notification : UciNotification (group_id = VENDOR_RESERVED_F)
     _payload_,
 }
 
-packet TestNotification : UciNotification (group_id = TEST) {
-    _payload_,
-}
-
 enum RadarDataType : 8 {
     RADAR_SWEEP_SAMPLES = 0x00,
 }
@@ -1628,3 +1656,33 @@ packet RadarDataRcv : UciDataPacket (data_packet_format = RADAR_DATA_MESSAGE, me
     sweep_data: 8[],
 }
 
+struct RfTestConfigTlv {
+    cfg_id: RfTestConfigTlvType,
+    _count_(v): 8,
+    v: 8[],
+}
+
+packet SessionSetRfTestConfigCmd : TestCommand (opcode = 0x00) {
+    session_token: 32, // Session ID or Session Handle (based on UWBS version)
+    _count_(tlvs): 8,
+    tlvs: RfTestConfigTlv[]
+}
+
+test SessionSetRfTestConfigCmd {
+    "\x2D\x00\x00\x08\x01\x00\x00\x0D\x01\x08\x01\x00",
+}
+
+struct RfTestConfigStatus {
+    cfg_id: RfTestConfigTlvType,
+    status: StatusCode,
+}
+
+packet SessionSetRfTestConfigRsp : TestResponse (opcode = 0x00) {
+    status: StatusCode,
+    _count_(cfg_status): 8,
+    cfg_status: RfTestConfigStatus[],
+}
+
+test SessionSetRfTestConfigRsp {
+    "\x4D\x00\x00\x02\x00\x00",
+}

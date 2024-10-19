@@ -30,7 +30,8 @@ pub use uwb_uci_packets::{
     ExtendedAddressTwoWayRangingMeasurement, GroupId, MacAddressIndicator, MessageType,
     MulticastUpdateStatusCode, PhaseList, PowerStats, RadarConfigStatus, RadarConfigTlv,
     RadarConfigTlvType, RadarDataType, RangingMeasurementType, ReasonCode, ResetConfig,
-    SessionState, SessionType, SessionUpdateControllerMulticastListNtfV1Payload,
+    RfTestConfigStatus, RfTestConfigTlv, RfTestConfigTlvType, SessionState, SessionType,
+    SessionUpdateControllerMulticastListNtfV1Payload,
     SessionUpdateControllerMulticastListNtfV2Payload,
     SessionUpdateControllerMulticastListRspV1Payload,
     SessionUpdateControllerMulticastListRspV2Payload, ShortAddressDlTdoaRangingMeasurement,
@@ -163,6 +164,19 @@ fn radar_config_tlvs_to_map(
     HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
 }
 
+/// Compare if two RfTestConfigTlv array are equal. Convert the array to HashMap before comparing
+/// because the order of TLV elements doesn't matter.
+#[allow(dead_code)]
+pub fn rf_test_config_tlvs_eq(a: &[RfTestConfigTlv], b: &[RfTestConfigTlv]) -> bool {
+    rf_test_config_tlvs_to_map(a) == rf_test_config_tlvs_to_map(b)
+}
+
+fn rf_test_config_tlvs_to_map(
+    tlvs: &[RfTestConfigTlv],
+) -> HashMap<RfTestConfigTlvType, &Vec<u8>, RandomState> {
+    HashMap::from_iter(tlvs.iter().map(|config| (config.cfg_id, &config.v)))
+}
+
 /// The response of the UciManager::core_set_config() method.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreSetConfigResponse {
@@ -206,6 +220,15 @@ pub struct SessionUpdateDtTagRangingRoundsResponse {
     pub status: StatusCode,
     /// Indexes of unsuccessful ranging rounds.
     pub ranging_round_indexes: Vec<u8>,
+}
+
+/// The response of the UciManager::android_set_rf_test_config() method.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RfTestConfigResponse {
+    /// The status code of the response.
+    pub status: StatusCode,
+    /// The status of each config TLV.
+    pub config_status: Vec<RfTestConfigStatus>,
 }
 
 /// The country code struct that contains 2 uppercase ASCII characters.
@@ -325,5 +348,27 @@ mod tests {
         country_code_invalid_1.unwrap_err();
         let country_code_invalid_2: Result<CountryCode, Error> = String::from("ÀÈ").try_into();
         country_code_invalid_2.unwrap_err();
+    }
+
+    #[test]
+    fn test_rf_test_config_tlvs_eq() {
+        let tlv1 = RfTestConfigTlv { cfg_id: RfTestConfigTlvType::NumPackets, v: vec![10, 20] };
+        let tlv2 = RfTestConfigTlv { cfg_id: RfTestConfigTlvType::TStart, v: vec![30, 40] };
+
+        let array1 = vec![tlv1.clone(), tlv2.clone()];
+        let array2 = vec![tlv2.clone(), tlv1.clone()]; // Different order
+
+        // Test that arrays with the same elements in different orders are equal.
+        assert!(rf_test_config_tlvs_eq(&array1, &array2));
+
+        let tlv3 = RfTestConfigTlv {
+            cfg_id: RfTestConfigTlvType::TWin,
+            v: vec![70, 80], // Different value
+        };
+
+        let array3 = vec![tlv1.clone(), tlv3.clone()];
+
+        // Test that arrays with different elements are not equal.
+        assert!(!rf_test_config_tlvs_eq(&array1, &array3));
     }
 }

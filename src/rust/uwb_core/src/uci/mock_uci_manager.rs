@@ -27,10 +27,11 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, AndroidRadarConfigResponse,
-    AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList, Controlees, CoreSetConfigResponse,
-    CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats,
-    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
+    app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, rf_test_config_tlvs_eq,
+    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList,
+    Controlees, CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv,
+    GetDeviceInfoResponse, PhaseList, PowerStats, RadarConfigTlv, RadarConfigTlvType,
+    RawUciMessage, ResetConfig, RfTestConfigResponse, RfTestConfigTlv, SessionId, SessionState,
     SessionToken, SessionType, SessionUpdateControllerMulticastResponse,
     SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
     UpdateTime,
@@ -519,6 +520,25 @@ impl MockUciManager {
                 out,
             },
         );
+    }
+
+    /// Prepare Mock to expect session_set_rf_test_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
+    /// sent.
+    pub fn expect_session_set_rf_test_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RfTestConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<RfTestConfigResponse>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetRfTestConfig {
+            expected_session_id,
+            expected_config_tlvs,
+            notfs,
+            out,
+        });
     }
 
     /// Call Mock to send notifications.
@@ -1209,6 +1229,33 @@ impl UciManager for MockUciManager {
             None => Err(Error::MockUndefined),
         }
     }
+
+    async fn session_set_rf_test_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionSetRfTestConfig {
+                expected_session_id,
+                expected_config_tlvs,
+                notfs,
+                out,
+            }) if expected_session_id == session_id
+                && rf_test_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1354,5 +1401,11 @@ enum ExpectedCall {
         expected_mac_address: Vec<u8>,
         expected_slot_bitmap: Vec<u8>,
         out: Result<()>,
+    },
+    SessionSetRfTestConfig {
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RfTestConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<RfTestConfigResponse>,
     },
 }

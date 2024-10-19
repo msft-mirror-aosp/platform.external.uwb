@@ -28,8 +28,9 @@ use crate::error::{Error, Result};
 use crate::params::{
     AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats,
-    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
+    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, RfTestConfigResponse,
+    RfTestConfigTlv, SessionId, SessionState, SessionType,
+    SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
     SetAppConfigResponse, UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
@@ -469,6 +470,16 @@ impl<U: UciManager> UciManagerSync<U> {
             mac_address,
             slot_bitmap,
         ))
+    }
+
+    /// Set rf test config.
+    pub fn session_set_rf_test_app_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse> {
+        self.runtime_handle
+            .block_on(self.uci_manager.session_set_rf_test_config(session_id, config_tlvs))
     }
 }
 
