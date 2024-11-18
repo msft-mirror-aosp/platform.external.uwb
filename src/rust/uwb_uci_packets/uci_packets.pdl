@@ -1686,3 +1686,38 @@ packet SessionSetRfTestConfigRsp : TestResponse (opcode = 0x00) {
 test SessionSetRfTestConfigRsp {
     "\x4D\x00\x00\x02\x00\x00",
 }
+
+packet TestPeriodicTxCmd : TestCommand (opcode = 0x02) {
+    psdu_data : 8[],
+}
+
+test TestPeriodicTxCmd {
+    "\x2D\x02\x00\x0a\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09",
+}
+
+packet TestPeriodicTxRsp : TestResponse (opcode = 0x02) {
+    status: StatusCode,
+}
+
+test TestPeriodicTxRsp {
+    "\x4D\x02\x00\x01\x00",
+}
+
+packet TestPeriodicTxNtf : TestNotification (opcode = 0x02) {
+    status: StatusCode,
+    vendor_data: 8[],
+}
+
+test TestPeriodicTxNtf {
+    "\x6D\x02\x00\x01\x00",
+}
+
+packet StopRfTestCmd : TestCommand (opcode = 0x07) { }
+
+test StopRfTestCmd { "\x2D\x07\x00\x00", }
+
+packet StopRfTestRsp : TestResponse (opcode = 0x07) {
+    status: StatusCode,
+}
+
+test StopRfTestRsp { "\x4D\x07\x00\x01\x00", }
