@@ -128,6 +128,10 @@ pub enum UciCommand {
         session_token: SessionToken,
         config_tlvs: Vec<RfTestConfigTlv>,
     },
+    TestPeriodicTx {
+        psdu_data: Vec<u8>,
+    },
+    StopRfTest,
 }
 
 impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
@@ -292,6 +296,10 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
                 .build()
                 .into()
             }
+            UciCommand::TestPeriodicTx { psdu_data } => {
+                uwb_uci_packets::TestPeriodicTxCmdBuilder { psdu_data }.build().into()
+            }
+            UciCommand::StopRfTest {} => uwb_uci_packets::StopRfTestCmdBuilder {}.build().into(),
         };
         Ok(packet)
     }
@@ -605,6 +613,13 @@ mod tests {
             uwb_uci_packets::SessionSetRfTestConfigCmdBuilder { session_token: 1, tlvs: vec![] }
                 .build()
                 .into()
+        );
+
+        cmd = UciCommand::TestPeriodicTx { psdu_data: vec![0] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::TestPeriodicTxCmdBuilder { psdu_data: vec![0] }.build().into()
         );
     }
 }

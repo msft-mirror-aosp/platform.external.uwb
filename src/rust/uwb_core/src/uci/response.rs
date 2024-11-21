@@ -61,6 +61,7 @@ pub(super) enum UciResponse {
     SessionSetHybridControleeConfig(Result<()>),
     SessionDataTransferPhaseConfig(Result<()>),
     SessionSetRfTestConfig(RfTestConfigResponse),
+    RfTest(Result<()>),
 }
 
 impl UciResponse {
@@ -97,6 +98,7 @@ impl UciResponse {
 
             Self::SessionQueryMaxDataSize(result) => Self::matches_result_retry(result),
             Self::SessionSetRfTestConfig(resp) => Self::matches_status_retry(&resp.status),
+            Self::RfTest(result) => Self::matches_result_retry(result),
             // TODO(b/273376343): Implement retry logic for Data packet send.
             Self::SendUciData(_result) => false,
         }
@@ -363,6 +365,12 @@ impl TryFrom<uwb_uci_packets::TestResponse> for UciResponse {
                     status: evt.get_status(),
                     config_status: evt.get_cfg_status().clone(),
                 }))
+            }
+            TestResponseChild::TestPeriodicTxRsp(evt) => {
+                Ok(UciResponse::RfTest(status_code_to_result(evt.get_status())))
+            }
+            TestResponseChild::StopRfTestRsp(evt) => {
+                Ok(UciResponse::RfTest(status_code_to_result(evt.get_status())))
             }
             _ => Err(Error::Unknown),
         }
