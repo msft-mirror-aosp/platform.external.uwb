@@ -398,6 +398,9 @@ impl From<ProtoReasonCode> for ReasonCode {
             ProtoReasonCode::ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
                 ReasonCode::ErrorStoppedDueToOtherSessionConflict
             }
+            ProtoReasonCode::SESSION_STOPPED_DUE_TO_MAX_STS_INDEX_VALUE => {
+                ReasonCode::SessionStoppedDueToMaxStsIndexValue
+            }
             _ => ReasonCode::VendorSpecificReasonCode2,
         }
     }
