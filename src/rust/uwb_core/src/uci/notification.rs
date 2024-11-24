@@ -44,6 +44,8 @@ pub enum UciNotification {
     Session(SessionNotification),
     /// UciVendor_X_Notification equivalent.
     Vendor(RawUciMessage),
+    /// RfTestNotification equivalent
+    RfTest(RfTestNotification),
 }
 
 /// UCI CoreNotification.
@@ -111,6 +113,19 @@ pub enum SessionNotification {
         session_token: SessionToken,
         /// status
         status: DataTransferPhaseConfigUpdateStatusCode,
+    },
+}
+
+/// UCI RfTest Notification.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RfTestNotification {
+    ///TestPeriodicTxNtf equivalent
+    TestPeriodicTxNtf {
+        /// Status
+        status: StatusCode,
+        /// The raw data of the notification message.
+        /// It's not at FiRa specification, only used by vendor's extension.
+        raw_notification_data: Vec<u8>,
     },
 }
 
@@ -366,7 +381,7 @@ impl TryFrom<(uwb_uci_packets::UciNotification, UCIMajorVersion, bool)> for UciN
             UciNotificationChild::UciVendor_B_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_E_Notification(evt) => vendor_notification(evt.into()),
             UciNotificationChild::UciVendor_F_Notification(evt) => vendor_notification(evt.into()),
-            UciNotificationChild::TestNotification(evt) => vendor_notification(evt.into()),
+            UciNotificationChild::TestNotification(evt) => Ok(Self::RfTest(evt.try_into()?)),
             _ => {
                 error!("Unknown UciNotification: {:?}", evt);
                 Err(Error::Unknown)
@@ -623,6 +638,24 @@ fn vendor_notification(evt: uwb_uci_packets::UciNotification) -> Result<UciNotif
     }))
 }
 
+impl TryFrom<uwb_uci_packets::TestNotification> for RfTestNotification {
+    type Error = Error;
+    fn try_from(evt: uwb_uci_packets::TestNotification) -> std::result::Result<Self, Self::Error> {
+        use uwb_uci_packets::TestNotificationChild;
+        let raw_ntf_data = evt.clone().encode_to_bytes().unwrap()[UCI_PACKET_HEADER_LEN..].to_vec();
+        match evt.specialize() {
+            TestNotificationChild::TestPeriodicTxNtf(evt) => Ok(Self::TestPeriodicTxNtf {
+                status: evt.get_status(),
+                raw_notification_data: raw_ntf_data,
+            }),
+            _ => {
+                error!("Unknown RfTestNotification: {:?}", evt);
+                Err(Error::Unknown)
+            }
+        }
+    }
+}
+
 fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u8>> {
     match evt.specialize() {
         uwb_uci_packets::UciNotificationChild::UciVendor_9_Notification(evt) => {
@@ -665,10 +698,6 @@ fn get_vendor_uci_payload(evt: uwb_uci_packets::UciNotification) -> Result<Vec<u
                 uwb_uci_packets::UciVendor_F_NotificationChild::None => Ok(Vec::new()),
             }
         }
-        uwb_uci_packets::UciNotificationChild::TestNotification(evt) => match evt.specialize() {
-            uwb_uci_packets::TestNotificationChild::Payload(payload) => Ok(payload.to_vec()),
-            uwb_uci_packets::TestNotificationChild::None => Ok(Vec::new()),
-        },
         _ => {
             error!("Unknown UciVendor packet: {:?}", evt);
             Err(Error::Unknown)
@@ -1419,18 +1448,25 @@ mod tests {
     }
 
     #[test]
-    fn test_test_to_vendor_notification_casting() {
-        let test_notification: uwb_uci_packets::UciNotification =
-            uwb_uci_packets::TestNotificationBuilder { opcode: 0x22, payload: None }.build().into();
-        let uci_fira_major_version = UCIMajorVersion::V1;
-        let test_uci_notification =
-            UciNotification::try_from((test_notification, uci_fira_major_version, false)).unwrap();
+    fn test_rf_test_notification_casting_from_rf_periodic_tx_ntf() {
+        let test_periodic_tx_ntf_packet = uwb_uci_packets::TestPeriodicTxNtfBuilder {
+            status: uwb_uci_packets::StatusCode::UciStatusOk,
+            vendor_data: vec![],
+        }
+        .build();
+        let raw_notification_data = test_periodic_tx_ntf_packet.clone().encode_to_bytes().unwrap()
+            [UCI_PACKET_HEADER_LEN..]
+            .to_vec();
+        let rf_test_notification =
+            uwb_uci_packets::TestNotification::try_from(test_periodic_tx_ntf_packet).unwrap();
+        let uci_notification = RfTestNotification::try_from(rf_test_notification).unwrap();
+        let uci_notification_from_periodic_tx_ntf = UciNotification::RfTest(uci_notification);
+        let status = uwb_uci_packets::StatusCode::UciStatusOk;
         assert_eq!(
-            test_uci_notification,
-            UciNotification::Vendor(RawUciMessage {
-                gid: 0x0d, // per enum Test GroupId in uci_packets.pdl
-                oid: 0x22,
-                payload: vec![],
+            uci_notification_from_periodic_tx_ntf,
+            UciNotification::RfTest(RfTestNotification::TestPeriodicTxNtf {
+                status,
+                raw_notification_data
             })
         );
     }
