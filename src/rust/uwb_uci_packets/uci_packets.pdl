@@ -293,6 +293,7 @@ enum AppConfigTlvType : 8 {
         CCC_PULSESHAPE_COMBO = 0xA5,
         CCC_URSK_TTL = 0xA6,
         CCC_LAST_INDEX_USED  = 0xA8,
+        ALIRO_MAC_MODE = 0xA9,
     },
 
     // Reserved for extension IDs.
@@ -362,6 +363,7 @@ enum CapTlvType : 8 {
         CCC_SUPPORTED_MIN_UWB_INITIATION_TIME_MS = 0xA9,
         CCC_PRIORITIZED_CHANNEL_LIST = 0xAA,
         CCC_SUPPORTED_UWBS_MAX_PPM = 0xAB,
+        ALIRO_SUPPORTED_MAC_MODES = 0xAC,
 
         // RADAR specific
         RADAR_SUPPORT = 0xB0
@@ -416,7 +418,7 @@ enum ReasonCode : 8 {
     RFU_REASON_CODE_RANGE_1 = 0x06..0x1C,
     ERROR_INVALID_UL_TDOA_RANDOM_WINDOW = 0x1D,
     ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED = 0x1E,
-    ERROR_TX_DELAY_NOT_SUPPORTED = 0x1F,
+    ERROR_INTER_FRAME_INTERVAL_NOT_SUPPORTED = 0x1F,
     ERROR_SLOT_LENGTH_NOT_SUPPORTED = 0x20,
     ERROR_INSUFFICIENT_SLOTS_PER_RR = 0x21,
     ERROR_MAC_ADDRESS_MODE_NOT_SUPPORTED = 0x22,
@@ -453,10 +455,12 @@ enum ReasonCode : 8 {
         ERROR_DT_ANCHOR_RANGING_ROUNDS_NOT_CONFIGURED = 0x40,
         ERROR_DT_TAG_RANGING_ROUNDS_NOT_CONFIGURED = 0x41,
     },
-    VENDOR_SPECIFIC_REASON_CODE_RANGE_1 = 0x80..0xFE {
+    VENDOR_SPECIFIC_REASON_CODE_RANGE_1 = 0x80..0xA1 {
         ERROR_INVALID_CHANNEL_WITH_AOA = 0x80,
         ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT = 0x81,
     },
+    SESSION_STOPPED_DUE_TO_MAX_STS_INDEX_VALUE = 0xA2,
+    VENDOR_SPECIFIC_REASON_CODE_RANGE_2 = 0xA3..0xFE,
     // For internal usage, we will use 0xFF as default.
     VENDOR_SPECIFIC_REASON_CODE_2 = 0xFF,
 }
@@ -1686,3 +1690,38 @@ packet SessionSetRfTestConfigRsp : TestResponse (opcode = 0x00) {
 test SessionSetRfTestConfigRsp {
     "\x4D\x00\x00\x02\x00\x00",
 }
+
+packet TestPeriodicTxCmd : TestCommand (opcode = 0x02) {
+    psdu_data : 8[],
+}
+
+test TestPeriodicTxCmd {
+    "\x2D\x02\x00\x0a\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09",
+}
+
+packet TestPeriodicTxRsp : TestResponse (opcode = 0x02) {
+    status: StatusCode,
+}
+
+test TestPeriodicTxRsp {
+    "\x4D\x02\x00\x01\x00",
+}
+
+packet TestPeriodicTxNtf : TestNotification (opcode = 0x02) {
+    status: StatusCode,
+    vendor_data: 8[],
+}
+
+test TestPeriodicTxNtf {
+    "\x6D\x02\x00\x01\x00",
+}
+
+packet StopRfTestCmd : TestCommand (opcode = 0x07) { }
+
+test StopRfTestCmd { "\x2D\x07\x00\x00", }
+
+packet StopRfTestRsp : TestResponse (opcode = 0x07) {
+    status: StatusCode,
+}
+
+test StopRfTestRsp { "\x4D\x07\x00\x01\x00", }
