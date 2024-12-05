@@ -36,8 +36,8 @@ use crate::params::UCIMajorVersion;
 use crate::uci::command::UciCommand;
 use crate::uci::message::UciMessage;
 use crate::uci::notification::{
-    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
-    SessionRangeData, UciNotification,
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, RfTestNotification,
+    SessionNotification, SessionRangeData, UciNotification,
 };
 use crate::uci::response::UciResponse;
 use crate::uci::timeout_uci_hal::TimeoutUciHal;
@@ -81,6 +81,10 @@ pub trait UciManager: 'static + Send + Sync + Clone {
     async fn set_radar_data_rcv_notification_sender(
         &mut self,
         radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    );
+    async fn set_rf_test_notification_sender(
+        &mut self,
+        rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
     );
 
     // Open the UCI HAL.
@@ -209,6 +213,8 @@ pub trait UciManager: 'static + Send + Sync + Clone {
         session_id: SessionId,
         config_tlvs: Vec<RfTestConfigTlv>,
     ) -> Result<RfTestConfigResponse>;
+    async fn rf_test_periodic_tx(&self, psdu_data: Vec<u8>) -> Result<()>;
+    async fn stop_rf_test(&self) -> Result<()>;
 }
 
 /// UciManagerImpl is the main implementation of UciManager. Using the actor model, UciManagerImpl
@@ -314,6 +320,14 @@ impl UciManager for UciManagerImpl {
                 radar_data_rcv_notf_sender,
             })
             .await;
+    }
+
+    async fn set_rf_test_notification_sender(
+        &mut self,
+        rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
+    ) {
+        let _ =
+            self.send_cmd(UciManagerCmd::SetRfTestNotificationSender { rf_test_notf_sender }).await;
     }
 
     async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
@@ -744,6 +758,24 @@ impl UciManager for UciManagerImpl {
             Err(e) => Err(e),
         }
     }
+
+    async fn rf_test_periodic_tx(&self, psdu_data: Vec<u8>) -> Result<()> {
+        let cmd = UciCommand::TestPeriodicTx { psdu_data };
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::RfTest(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn stop_rf_test(&self) -> Result<()> {
+        let cmd = UciCommand::StopRfTest;
+        match self.send_cmd(UciManagerCmd::SendUciCommand { cmd }).await {
+            Ok(UciResponse::RfTest(resp)) => resp,
+            Ok(_) => Err(Error::Unknown),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 struct UciManagerActor<T: UciHal, U: UciLogger> {
@@ -798,6 +830,7 @@ struct UciManagerActor<T: UciHal, U: UciLogger> {
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
     radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
 
     // Used to store the last init session id to help map the session handle sent
     // in session int response can be correctly mapped.
@@ -854,6 +887,7 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             vendor_notf_sender: mpsc::unbounded_channel().0,
             data_rcv_notf_sender: mpsc::unbounded_channel().0,
             radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
+            rf_test_notf_sender: mpsc::unbounded_channel().0,
             last_init_session_id: None,
             session_id_to_token_map,
             get_device_info_rsp: None,
@@ -1036,6 +1070,10 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
             }
             UciManagerCmd::SetRadarDataRcvNotificationSender { radar_data_rcv_notf_sender } => {
                 self.radar_data_rcv_notf_sender = radar_data_rcv_notf_sender;
+                let _ = result_sender.send(Ok(UciResponse::SetNotification));
+            }
+            UciManagerCmd::SetRfTestNotificationSender { rf_test_notf_sender } => {
+                self.rf_test_notf_sender = rf_test_notf_sender;
                 let _ = result_sender.send(Ok(UciResponse::SetNotification));
             }
             UciManagerCmd::OpenHal => {
@@ -1477,6 +1515,9 @@ impl<T: UciHal, U: UciLogger> UciManagerActor<T, U> {
                 }
                 let _ = self.session_notf_sender.send(mod_session_notf);
             }
+            UciNotification::RfTest(rftest_notf) => {
+                let _ = self.rf_test_notf_sender.send(rftest_notf);
+            }
             UciNotification::Vendor(vendor_notf) => {
                 let _ = self.vendor_notf_sender.send(vendor_notf);
             }
@@ -1707,6 +1748,9 @@ enum UciManagerCmd {
     },
     SetRadarDataRcvNotificationSender {
         radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    },
+    SetRfTestNotificationSender {
+        rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
     },
     OpenHal,
     CloseHal {
