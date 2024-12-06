@@ -20,8 +20,8 @@ use log::error;
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
     AppConfigTlv, AppConfigTlvType, Controlees, CountryCode, DeviceConfigId, DeviceConfigTlv,
-    RadarConfigTlv, RadarConfigTlvType, ResetConfig, SessionId, SessionToken, SessionType,
-    UpdateMulticastListAction, UpdateTime,
+    RadarConfigTlv, RadarConfigTlvType, ResetConfig, RfTestConfigTlv, SessionId, SessionToken,
+    SessionType, UpdateMulticastListAction, UpdateTime,
 };
 use uwb_uci_packets::{
     build_data_transfer_phase_config_cmd, build_session_set_hybrid_controller_config_cmd,
@@ -124,6 +124,14 @@ pub enum UciCommand {
         oid: u32,
         payload: Vec<u8>,
     },
+    SessionSetRfTestConfig {
+        session_token: SessionToken,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    },
+    TestPeriodicTx {
+        psdu_data: Vec<u8>,
+    },
+    StopRfTest,
 }
 
 impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
@@ -280,6 +288,18 @@ impl TryFrom<UciCommand> for uwb_uci_packets::UciControlPacket {
             )
             .map_err(|_| Error::BadParameters)?
             .into(),
+            UciCommand::SessionSetRfTestConfig { session_token, config_tlvs } => {
+                uwb_uci_packets::SessionSetRfTestConfigCmdBuilder {
+                    session_token,
+                    tlvs: config_tlvs,
+                }
+                .build()
+                .into()
+            }
+            UciCommand::TestPeriodicTx { psdu_data } => {
+                uwb_uci_packets::TestPeriodicTxCmdBuilder { psdu_data }.build().into()
+            }
+            UciCommand::StopRfTest {} => uwb_uci_packets::StopRfTestCmdBuilder {}.build().into(),
         };
         Ok(packet)
     }
@@ -584,6 +604,22 @@ mod tests {
             }
             .build()
             .into()
+        );
+
+        cmd = UciCommand::SessionSetRfTestConfig { session_token: 1, config_tlvs: vec![] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::SessionSetRfTestConfigCmdBuilder { session_token: 1, tlvs: vec![] }
+                .build()
+                .into()
+        );
+
+        cmd = UciCommand::TestPeriodicTx { psdu_data: vec![0] };
+        packet = uwb_uci_packets::UciControlPacket::try_from(cmd.clone()).unwrap();
+        assert_eq!(
+            packet,
+            uwb_uci_packets::TestPeriodicTxCmdBuilder { psdu_data: vec![0] }.build().into()
         );
     }
 }

@@ -28,14 +28,16 @@ use crate::error::{Error, Result};
 use crate::params::{
     AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, CoreSetConfigResponse,
     CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PowerStats,
-    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
-    SessionType, SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
+    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, RfTestConfigResponse,
+    RfTestConfigTlv, SessionId, SessionState, SessionType,
+    SessionUpdateControllerMulticastResponse, SessionUpdateDtTagRangingRoundsResponse,
     SetAppConfigResponse, UpdateMulticastListAction, UpdateTime,
 };
 #[cfg(any(test, feature = "mock-utils"))]
 use crate::uci::mock_uci_manager::MockUciManager;
 use crate::uci::notification::{
-    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, RfTestNotification,
+    SessionNotification,
 };
 use crate::uci::uci_hal::UciHal;
 use crate::uci::uci_logger::{UciLogger, UciLoggerMode};
@@ -68,6 +70,9 @@ pub trait NotificationManager: 'static {
         &mut self,
         radar_data_rcv_notification: RadarDataRcvNotification,
     ) -> Result<()>;
+
+    /// Callback for RF Test notification.
+    fn on_rf_test_notification(&mut self, rftest_notification: RfTestNotification) -> Result<()>;
 }
 
 /// Builder for NotificationManager. Builder is sent between threads.
@@ -84,6 +89,7 @@ struct NotificationDriver<U: NotificationManager> {
     vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
     data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
     radar_data_rcv_notification_receiver: mpsc::UnboundedReceiver<RadarDataRcvNotification>,
+    rf_test_notification_receiver: mpsc::UnboundedReceiver<RfTestNotification>,
     notification_manager: U,
 }
 impl<U: NotificationManager> NotificationDriver<U> {
@@ -93,6 +99,7 @@ impl<U: NotificationManager> NotificationDriver<U> {
         vendor_notification_receiver: mpsc::UnboundedReceiver<RawUciMessage>,
         data_rcv_notification_receiver: mpsc::UnboundedReceiver<DataRcvNotification>,
         radar_data_rcv_notification_receiver: mpsc::UnboundedReceiver<RadarDataRcvNotification>,
+        rf_test_notification_receiver: mpsc::UnboundedReceiver<RfTestNotification>,
         notification_manager: U,
     ) -> Self {
         Self {
@@ -101,6 +108,7 @@ impl<U: NotificationManager> NotificationDriver<U> {
             vendor_notification_receiver,
             data_rcv_notification_receiver,
             radar_data_rcv_notification_receiver,
+            rf_test_notification_receiver,
             notification_manager,
         }
     }
@@ -130,6 +138,11 @@ impl<U: NotificationManager> NotificationDriver<U> {
                 Some(data) = self.radar_data_rcv_notification_receiver.recv() =>{
                     self.notification_manager.on_radar_data_rcv_notification(data).unwrap_or_else(|e|{
                         error!("NotificationDriver: OnRadarDataRcv callback error: {:?}",e);
+                });
+                }
+                Some(ntf) = self.rf_test_notification_receiver.recv() =>{
+                    self.notification_manager.on_rf_test_notification(ntf).unwrap_or_else(|e|{
+                        error!("NotificationDriver: RF notification callback error: {:?}",e);
                 });
                 }
                 else =>{
@@ -168,6 +181,8 @@ impl<U: UciManager> UciManagerSync<U> {
             mpsc::unbounded_channel::<DataRcvNotification>();
         let (radar_data_rcv_notification_sender, radar_data_rcv_notification_receiver) =
             mpsc::unbounded_channel::<RadarDataRcvNotification>();
+        let (rftest_notification_sender, rf_test_notification_receiver) =
+            mpsc::unbounded_channel::<RfTestNotification>();
         self.runtime_handle.to_owned().block_on(async {
             self.uci_manager.set_core_notification_sender(core_notification_sender).await;
             self.uci_manager.set_session_notification_sender(session_notification_sender).await;
@@ -176,6 +191,7 @@ impl<U: UciManager> UciManagerSync<U> {
             self.uci_manager
                 .set_radar_data_rcv_notification_sender(radar_data_rcv_notification_sender)
                 .await;
+            self.uci_manager.set_rf_test_notification_sender(rftest_notification_sender).await;
         });
         // The potentially !Send NotificationManager is created in a separate thread.
         let (driver_status_sender, mut driver_status_receiver) = mpsc::unbounded_channel::<bool>();
@@ -209,6 +225,7 @@ impl<U: UciManager> UciManagerSync<U> {
                 vendor_notification_receiver,
                 data_rcv_notification_receiver,
                 radar_data_rcv_notification_receiver,
+                rf_test_notification_receiver,
                 notification_manager,
             );
             local.spawn_local(async move {
@@ -470,6 +487,26 @@ impl<U: UciManager> UciManagerSync<U> {
             slot_bitmap,
         ))
     }
+
+    /// Set rf test config.
+    pub fn session_set_rf_test_app_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse> {
+        self.runtime_handle
+            .block_on(self.uci_manager.session_set_rf_test_config(session_id, config_tlvs))
+    }
+
+    /// Test Periodic tx command
+    pub fn rf_test_periodic_tx(&self, psdu_data: Vec<u8>) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.rf_test_periodic_tx(psdu_data))
+    }
+
+    /// Test stop rf test command
+    pub fn stop_rf_test(&self) -> Result<()> {
+        self.runtime_handle.block_on(self.uci_manager.stop_rf_test())
+    }
 }
 
 impl UciManagerSync<UciManagerImpl> {
@@ -572,6 +609,15 @@ mod tests {
         ) -> Result<()> {
             self.nonsend_counter.replace_with(|&mut prev| prev + 1);
             Ok(())
+        }
+        fn on_rf_test_notification(
+            &mut self,
+            rftest_notification: RfTestNotification,
+        ) -> Result<()> {
+            self.nonsend_counter.replace_with(|&mut prev| prev + 1);
+            self.notf_sender
+                .send(UciNotification::RfTest(rftest_notification))
+                .map_err(|_| Error::Unknown)
         }
     }
 
