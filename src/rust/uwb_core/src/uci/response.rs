@@ -219,7 +219,7 @@ impl TryFrom<(uwb_uci_packets::SessionConfigResponse, UCIMajorVersion, bool)> fo
                     SessionUpdateControllerMulticastListRspV1Payload::parse(payload).map_err(
                         |e| {
                             error!(
-                                "Failed to parse Multicast list ntf v1 {:?}, payload: {:?}",
+                                "Failed to parse Multicast list rsp v1 {:?}, payload: {:?}",
                                 e, &payload
                             );
                             Error::BadParameters
@@ -244,7 +244,7 @@ impl TryFrom<(uwb_uci_packets::SessionConfigResponse, UCIMajorVersion, bool)> fo
                     SessionUpdateControllerMulticastListRspV2Payload::parse(payload).map_err(
                         |e| {
                             error!(
-                                "Failed to parse Multicast list ntf v1 {:?}, payload: {:?}",
+                                "Failed to parse Multicast list rsp v2 {:?}, payload: {:?}",
                                 e, &payload
                             );
                             Error::BadParameters
