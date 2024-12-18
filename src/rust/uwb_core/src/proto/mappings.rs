@@ -324,7 +324,9 @@ impl From<ProtoReasonCode> for ReasonCode {
             ProtoReasonCode::ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED => {
                 ReasonCode::ErrorMinRframesPerRrNotSupported
             }
-            ProtoReasonCode::ERROR_TX_DELAY_NOT_SUPPORTED => ReasonCode::ErrorTxDelayNotSupported,
+            ProtoReasonCode::ERROR_INTER_FRAME_INTERVAL_NOT_SUPPORTED => {
+                ReasonCode::ErrorInterFrameIntervalNotSupported
+            }
             ProtoReasonCode::ERROR_SLOT_LENGTH_NOT_SUPPORTED => {
                 ReasonCode::ErrorSlotLengthNotSupported
             }
@@ -398,6 +400,9 @@ impl From<ProtoReasonCode> for ReasonCode {
             ProtoReasonCode::ERROR_STOPPED_DUE_TO_OTHER_SESSION_CONFLICT => {
                 ReasonCode::ErrorStoppedDueToOtherSessionConflict
             }
+            ProtoReasonCode::SESSION_STOPPED_DUE_TO_MAX_STS_INDEX_VALUE => {
+                ReasonCode::SessionStoppedDueToMaxStsIndexValue
+            }
             _ => ReasonCode::VendorSpecificReasonCode2,
         }
     }
@@ -430,7 +435,9 @@ impl From<ReasonCode> for ProtoReasonCode {
             ReasonCode::ErrorMinRframesPerRrNotSupported => {
                 ProtoReasonCode::ERROR_MIN_RFRAMES_PER_RR_NOT_SUPPORTED
             }
-            ReasonCode::ErrorTxDelayNotSupported => ProtoReasonCode::ERROR_TX_DELAY_NOT_SUPPORTED,
+            ReasonCode::ErrorInterFrameIntervalNotSupported => {
+                ProtoReasonCode::ERROR_INTER_FRAME_INTERVAL_NOT_SUPPORTED
+            }
             ReasonCode::ErrorSlotLengthNotSupported => {
                 ProtoReasonCode::ERROR_SLOT_LENGTH_NOT_SUPPORTED
             }

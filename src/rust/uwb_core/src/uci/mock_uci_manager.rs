@@ -27,17 +27,18 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::params::uci_packets::{
-    app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, AndroidRadarConfigResponse,
-    AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList, Controlees, CoreSetConfigResponse,
-    CountryCode, DeviceConfigId, DeviceConfigTlv, GetDeviceInfoResponse, PhaseList, PowerStats,
-    RadarConfigTlv, RadarConfigTlvType, RawUciMessage, ResetConfig, SessionId, SessionState,
+    app_config_tlvs_eq, device_config_tlvs_eq, radar_config_tlvs_eq, rf_test_config_tlvs_eq,
+    AndroidRadarConfigResponse, AppConfigTlv, AppConfigTlvType, CapTlv, ControleePhaseList,
+    Controlees, CoreSetConfigResponse, CountryCode, DeviceConfigId, DeviceConfigTlv,
+    GetDeviceInfoResponse, PhaseList, PowerStats, RadarConfigTlv, RadarConfigTlvType,
+    RawUciMessage, ResetConfig, RfTestConfigResponse, RfTestConfigTlv, SessionId, SessionState,
     SessionToken, SessionType, SessionUpdateControllerMulticastResponse,
     SessionUpdateDtTagRangingRoundsResponse, SetAppConfigResponse, UpdateMulticastListAction,
     UpdateTime,
 };
 use crate::uci::notification::{
-    CoreNotification, DataRcvNotification, RadarDataRcvNotification, SessionNotification,
-    UciNotification,
+    CoreNotification, DataRcvNotification, RadarDataRcvNotification, RfTestNotification,
+    SessionNotification, UciNotification,
 };
 use crate::uci::uci_logger::UciLoggerMode;
 use crate::uci::uci_manager::UciManager;
@@ -52,6 +53,7 @@ pub struct MockUciManager {
     vendor_notf_sender: mpsc::UnboundedSender<RawUciMessage>,
     data_rcv_notf_sender: mpsc::UnboundedSender<DataRcvNotification>,
     radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
+    rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
 }
 
 #[allow(dead_code)]
@@ -66,6 +68,7 @@ impl MockUciManager {
             vendor_notf_sender: mpsc::unbounded_channel().0,
             data_rcv_notf_sender: mpsc::unbounded_channel().0,
             radar_data_rcv_notf_sender: mpsc::unbounded_channel().0,
+            rf_test_notf_sender: mpsc::unbounded_channel().0,
         }
     }
 
@@ -521,6 +524,49 @@ impl MockUciManager {
         );
     }
 
+    /// Prepare Mock to expect session_set_rf_test_config.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
+    /// sent.
+    pub fn expect_session_set_rf_test_config(
+        &mut self,
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RfTestConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<RfTestConfigResponse>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::SessionSetRfTestConfig {
+            expected_session_id,
+            expected_config_tlvs,
+            notfs,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect rf_test_periodic_tx.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response, followed by notfs
+    /// sent.
+    pub fn expect_test_periodic_tx(
+        &mut self,
+        expected_psdu_data: Vec<u8>,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    ) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::TestPeriodicTx {
+            expected_psdu_data,
+            notfs,
+            out,
+        });
+    }
+
+    /// Prepare Mock to expect StopRfTest.
+    ///
+    /// MockUciManager expects call with parameters, returns out as response
+    pub fn expect_stop_rf_test(&mut self, out: Result<()>) {
+        self.expected_calls.lock().unwrap().push_back(ExpectedCall::StopRfTest { out });
+    }
+
     /// Call Mock to send notifications.
     fn send_notifications(&self, notfs: Vec<UciNotification>) {
         for notf in notfs.into_iter() {
@@ -533,6 +579,9 @@ impl MockUciManager {
                 }
                 UciNotification::Vendor(notf) => {
                     let _ = self.vendor_notf_sender.send(notf);
+                }
+                UciNotification::RfTest(notf) => {
+                    let _ = self.rf_test_notf_sender.send(notf);
                 }
             }
         }
@@ -579,6 +628,13 @@ impl UciManager for MockUciManager {
         radar_data_rcv_notf_sender: mpsc::UnboundedSender<RadarDataRcvNotification>,
     ) {
         self.radar_data_rcv_notf_sender = radar_data_rcv_notf_sender;
+    }
+
+    async fn set_rf_test_notification_sender(
+        &mut self,
+        rf_test_notf_sender: mpsc::UnboundedSender<RfTestNotification>,
+    ) {
+        self.rf_test_notf_sender = rf_test_notf_sender;
     }
 
     async fn open_hal(&self) -> Result<GetDeviceInfoResponse> {
@@ -1209,6 +1265,66 @@ impl UciManager for MockUciManager {
             None => Err(Error::MockUndefined),
         }
     }
+
+    async fn session_set_rf_test_config(
+        &self,
+        session_id: SessionId,
+        config_tlvs: Vec<RfTestConfigTlv>,
+    ) -> Result<RfTestConfigResponse> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::SessionSetRfTestConfig {
+                expected_session_id,
+                expected_config_tlvs,
+                notfs,
+                out,
+            }) if expected_session_id == session_id
+                && rf_test_config_tlvs_eq(&expected_config_tlvs, &config_tlvs) =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn rf_test_periodic_tx(&self, psdu_data: Vec<u8>) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::TestPeriodicTx { expected_psdu_data, notfs, out })
+                if expected_psdu_data == psdu_data =>
+            {
+                self.expect_call_consumed.notify_one();
+                self.send_notifications(notfs);
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
+
+    async fn stop_rf_test(&self) -> Result<()> {
+        let mut expected_calls = self.expected_calls.lock().unwrap();
+        match expected_calls.pop_front() {
+            Some(ExpectedCall::StopRfTest { out }) => {
+                self.expect_call_consumed.notify_one();
+                out
+            }
+            Some(call) => {
+                expected_calls.push_front(call);
+                Err(Error::MockUndefined)
+            }
+            None => Err(Error::MockUndefined),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1353,6 +1469,20 @@ enum ExpectedCall {
         expected_dtpml_size: u8,
         expected_mac_address: Vec<u8>,
         expected_slot_bitmap: Vec<u8>,
+        out: Result<()>,
+    },
+    SessionSetRfTestConfig {
+        expected_session_id: SessionId,
+        expected_config_tlvs: Vec<RfTestConfigTlv>,
+        notfs: Vec<UciNotification>,
+        out: Result<RfTestConfigResponse>,
+    },
+    TestPeriodicTx {
+        expected_psdu_data: Vec<u8>,
+        notfs: Vec<UciNotification>,
+        out: Result<()>,
+    },
+    StopRfTest {
         out: Result<()>,
     },
 }
