@@ -66,13 +66,15 @@ pub enum ControleeStatusList {
 }
 
 /// UCI major version
-#[derive(FromPrimitive, ToPrimitive, PartialEq, Clone)]
+#[derive(FromPrimitive, ToPrimitive, PartialEq, Clone, PartialOrd, Ord, Eq)]
 #[repr(u8)]
 pub enum UCIMajorVersion {
     /// Version 1.x
     V1 = 1,
     /// Version 2.0
     V2 = 2,
+    /// Version 3.0
+    V3 = 3,
 }
 
 impl std::fmt::Debug for AppConfigTlv {
