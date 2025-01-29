@@ -234,7 +234,7 @@ impl TryFrom<(uwb_uci_packets::SessionConfigResponse, UCIMajorVersion, bool)> fo
                 )))
             }
             SessionConfigResponseChild::SessionUpdateControllerMulticastListRsp(evt)
-                if uci_fira_major_ver == UCIMajorVersion::V2 =>
+                if uci_fira_major_ver >= UCIMajorVersion::V2 =>
             {
                 error!(
                     "Tryfrom: SessionConfigResponse:: SessionUpdateControllerMulticastListRspV2 "

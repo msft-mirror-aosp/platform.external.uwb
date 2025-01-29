@@ -450,7 +450,7 @@ impl TryFrom<(uwb_uci_packets::SessionConfigNotification, UCIMajorVersion, bool)
                 })
             }
             SessionConfigNotificationChild::SessionUpdateControllerMulticastListNtf(evt)
-                if uci_fira_major_ver == UCIMajorVersion::V2 =>
+                if uci_fira_major_ver >= UCIMajorVersion::V2 =>
             {
                 let payload = evt.get_payload();
                 let multicast_update_list_payload_v2 =
