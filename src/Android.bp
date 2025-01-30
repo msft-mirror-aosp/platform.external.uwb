@@ -278,6 +278,7 @@ rust_defaults {
     ],
     apex_available: [
         "com.android.uwb",
+        "//apex_available:platform",
     ],
     min_sdk_version: "Tiramisu",
     srcs: [
