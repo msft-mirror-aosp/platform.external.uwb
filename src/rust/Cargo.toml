@@ -1,6 +1,0 @@
-[workspace]
-
-members = [
-  "uwb_uci_packets",
-  "uwb_core",
-]
